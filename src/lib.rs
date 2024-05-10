@@ -2,6 +2,7 @@
 use near_sdk::{log, near};
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::store::key::Sha256;
 
 use bitcoin::block::{Header, Version};
 use bitcoin::CompactTarget;
@@ -47,13 +48,30 @@ mod state {
             }
         }
     }
+
+    impl Into<bitcoin::block::Header> for Header {
+        fn into(self) -> bitcoin::block::Header {
+            let prev_blockhash_json = serde_json::json!(self.prev_blockhash);
+            let merkle_root_json = serde_json::json!(self.merkle_root);
+
+            bitcoin::block::Header {
+                version: Version::from_consensus(self.version),
+                prev_blockhash: serde_json::from_value(prev_blockhash_json).unwrap(),
+                merkle_root: serde_json::from_value(merkle_root_json).unwrap(),
+                time: self.time,
+                bits: CompactTarget::from_consensus(self.bits),
+                nonce: self.nonce,
+            }
+        }
+    }
 }
 
 // Define the contract structure
 #[near(contract_state)]
 pub struct Contract {
-    greeting: String,
-    block_header: Vec<state::Header>,
+    block_header: Vec<state::Header>, // block headers received from Bitcoin relay service
+    headers: near_sdk::store::UnorderedMap<String, state::Header>, // mapping of block height to header
+    heaviest_block: String // block with the highest chainWork, i.e., blockchain tip
 }
 
 // Define the default, which automatically initializes the contract
@@ -61,7 +79,8 @@ impl Default for Contract {
     fn default() -> Self {
         Self {
             block_header: Vec::new(),
-            greeting: "Hello".to_string(),
+            headers: near_sdk::store::UnorderedMap::new(b"d"),
+            heaviest_block: "".to_string()
         }
     }
 }
@@ -76,10 +95,86 @@ impl Contract {
     // Saving block header received from a Bitcoin relay service
     pub fn submit_block_header(&mut self, block_header: Header) {
         log!("Saving block_header");
-
+        block_header.merkle_root.to_string();
         let header = state::Header::from(block_header);
-
         self.block_header.push(header);
+    }
+
+    pub fn verify_tx(
+        &self,
+        txid: [u8; 32],
+        tx_block_height: u64,
+        tx_index: u64,
+        merkle_proof: &[u8],
+        confirmations: u64,
+    ) -> bool {
+        // txid must not be 0
+        if txid == [0; 32] {
+            panic!("ERR_INVALID_TXID");
+        }
+
+        // check requested confirmations. No need to compute proof if insufficient confs.
+        // TODO: should be block_height check here
+        if self.headers[&self.heaviest_block].nonce as u64 - tx_block_height < confirmations {
+            panic!("ERR_CONFIRMS");
+        }
+
+        // TODO: change storage layout again
+        // access local state to get the right block header hash
+        let header: Header = self.block_header[tx_block_height as usize].into();
+        let merkle_root = header.merkle_root;
+
+        // Check merkle proof structure: 1st hash == txid and last hash == merkle_root
+        if &merkle_proof[0..32] != txid {
+            panic!("ERR_MERKLE_PROOF");
+        }
+        if &merkle_proof[merkle_proof.len() - 32..] != merkle_root {
+            panic!("ERR_MERKLE_PROOF");
+        }
+
+        // compute merkle tree root and check if it matches block's original merkle tree root
+        if Self::compute_merkle(&txid, tx_index, merkle_proof) == merkle_root {
+            // emit VerityTransaction event
+            println!("VerityTransaction: {:?}, {}", txid, tx_block_height);
+            return true;
+        }
+
+        false
+    }
+
+    fn compute_merkle(tx_hash: &[u8; 32], tx_index: u64, merkle_proof: &[u8]) -> [u8; 32] {
+        // Special case: only coinbase tx in block. Root == proof
+        if merkle_proof.len() == 32 {
+            return merkle_proof.try_into().expect("Invalid merkle proof length");
+        }
+
+        // Merkle proof length must be greater than 64 and power of 2. Case length == 32 covered above.
+        if merkle_proof.len() <= 64 || (merkle_proof.len() & (merkle_proof.len() - 1)) != 0 {
+            panic!("ERR_MERKLE_PROOF");
+        }
+
+        let mut result_hash = *tx_hash;
+        let mut index = tx_index;
+
+        for i in 1..merkle_proof.len() / 32 {
+            let hash_slice = &merkle_proof[i * 32..(i + 1) * 32];
+
+            if index % 2 == 1 {
+                result_hash = Self::concat_sha256_hash(hash_slice, &result_hash);
+            } else {
+                result_hash = Self::concat_sha256_hash(&result_hash, hash_slice);
+            }
+            index /= 2;
+        }
+
+        result_hash
+    }
+
+    fn concat_sha256_hash(left: &[u8], right: &[u8]) -> [u8; 32] {
+        let mut hasher = Sha256::new();
+        hasher.update(left);
+        hasher.update(right);
+        hasher.finalize().into()
     }
 }
 
