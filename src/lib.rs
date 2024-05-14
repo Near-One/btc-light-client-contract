@@ -12,6 +12,14 @@ use near_sdk::env::block_height;
 // TODO: but use borsh-based internal types to serialize contract state,
 // TODO: state structures are stored in a special state module
 
+// TODO: Can we have skipped blocks??? Should we think about it???
+
+// TODO: Still don't have revert fork logic!!!
+
+
+/// Off chain relay service can request the latest block height from this service
+
+
 mod state {
     use bitcoin::block::Version;
     use bitcoin::CompactTarget;
@@ -69,9 +77,15 @@ mod state {
 // Define the contract structure
 #[near(contract_state)]
 pub struct Contract {
-    block_header: Vec<state::Header>, // block headers received from Bitcoin relay service
-    headers: near_sdk::store::UnorderedMap<String, state::Header>, // mapping of block height to header
-    heaviest_block: String // block with the highest chainWork, i.e., blockchain tip
+    // block headers received from Bitcoin relay service
+    block_header: Vec<state::Header>,
+    // mapping of block heights to the block headers received from Bitcoin relay service
+    headers: near_sdk::store::UnorderedMap<String, state::Header>,
+    // block with the highest chainWork, i.e., blockchain tip
+    heaviest_block: String
+    // We use latest block to help offchain relayer to recover the reading of blocks and
+    // to understand if we currently writing a fork or not.
+    // latest_block_info: String
 }
 
 // Define the default, which automatically initializes the contract
@@ -89,8 +103,12 @@ impl Default for Contract {
 #[near]
 impl Contract {
     pub fn get_block_header(&self) -> state::Header {
-        self.block_header.last().expect("genesis block should be there").clone()
+        self.block_header.last().expect("at least genesis block should be there").clone()
     }
+
+    // We use two separates APIs to submit main_chain_block and fork_block // do we need it?
+    pub fn submit_fork_block(&mut self, block_header: Header) {}
+    pub fn submit_main_chain_block(&mut self, block_header: Header) {}
 
     // Saving block header received from a Bitcoin relay service
     pub fn submit_block_header(&mut self, block_header: Header) {
@@ -98,8 +116,20 @@ impl Contract {
         block_header.merkle_root.to_string();
         let header = state::Header::from(block_header);
         self.block_header.push(header);
+
+        // fork logic should go here too
     }
 
+    /*
+    * Verifies that a transaction is included in a block at a given blockheight
+
+    * @param txid transaction identifier
+    * @param txBlockHeight block height at which transacton is supposedly included
+    * @param txIndex index of transaction in the block's tx merkle tree
+    * @param merkleProof  merkle tree path (concatenated LE sha256 hashes)
+    * @param confirmations how many confirmed blocks we want to have before the transaction is valid
+    * @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
+    */
     pub fn verify_tx(
         &self,
         txid: [u8; 32],
@@ -109,6 +139,7 @@ impl Contract {
         confirmations: u64,
     ) -> bool {
         // txid must not be 0
+        // TODO: use other type here
         if txid == [0; 32] {
             panic!("ERR_INVALID_TXID");
         }
@@ -134,14 +165,23 @@ impl Contract {
 
         // compute merkle tree root and check if it matches block's original merkle tree root
         if Self::compute_merkle(&txid, tx_index, merkle_proof) == merkle_root {
-            // emit VerityTransaction event
-            println!("VerityTransaction: {:?}, {}", txid, tx_block_height);
+            log!("VerityTransaction: {:?}, {}", txid, tx_block_height);
             return true;
         }
 
         false
     }
 
+    // TODO: handle contract errors in a better style - try to avoid panicking without a reason
+    // TODO: just return Option or Result
+
+    /*
+    * Reconstructs merkle tree root given a transaction hash, index in block and merkle tree path
+    * @param txHash hash of to be verified transaction
+    * @param txIndex index of transaction given by hash in the corresponding block's merkle tree
+    * @param merkleProof merkle tree path to transaction hash from block's merkle tree root
+    * @return merkle tree root of the block containing the transaction, meaningless hash otherwise
+    */
     fn compute_merkle(tx_hash: &[u8; 32], tx_index: u64, merkle_proof: &[u8]) -> [u8; 32] {
         // Special case: only coinbase tx in block. Root == proof
         if merkle_proof.len() == 32 {
@@ -156,6 +196,8 @@ impl Contract {
         let mut result_hash = *tx_hash;
         let mut index = tx_index;
 
+        // The core idea of providing Merkle proof functionality,
+        // We rehash the provided merkle path and compare to the saved merkle path
         for i in 1..merkle_proof.len() / 32 {
             let hash_slice = &merkle_proof[i * 32..(i + 1) * 32];
 
