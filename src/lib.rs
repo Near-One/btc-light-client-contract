@@ -1,24 +1,18 @@
-// Find all our documentation at https://docs.near.org
+mod merkle_tools;
+
 use near_sdk::{log, near};
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::store::key::Sha256;
 
-use bitcoin::block::{Header, Version};
-use bitcoin::CompactTarget;
-use near_sdk::env::block_height;
+use bitcoin::block::Header;
 
 // TODO: Idea, use bitcoin crate to handle everything in method calls, including validation and helper functions,
 // TODO: but use borsh-based internal types to serialize contract state,
 // TODO: state structures are stored in a special state module
 
-// TODO: Can we have skipped blocks??? Should we think about it???
-
 // TODO: Still don't have revert fork logic!!!
 
-
 /// Off chain relay service can request the latest block height from this service
-
 
 mod state {
     use bitcoin::block::Version;
@@ -106,43 +100,44 @@ impl Contract {
         self.block_header.last().expect("at least genesis block should be there").clone()
     }
 
-    // We use two separates APIs to submit main_chain_block and fork_block // do we need it?
+    /*// We use two separates APIs to submit main_chain_block and fork_block // do we need it?
     pub fn submit_fork_block(&mut self, block_header: Header) {}
-    pub fn submit_main_chain_block(&mut self, block_header: Header) {}
+    pub fn submit_main_chain_block(&mut self, block_header: Header) {}*/
 
     // Saving block header received from a Bitcoin relay service
     pub fn submit_block_header(&mut self, block_header: Header) {
         log!("Saving block_header");
         block_header.merkle_root.to_string();
         let header = state::Header::from(block_header);
+
         self.block_header.push(header);
 
         // fork logic should go here too
+        // TODO: update contract to catch fork_id from realy off chain
     }
 
     /*
-    * Verifies that a transaction is included in a block at a given blockheight
+    * Verifies that a transaction is included in a block at a given block height
 
     * @param txid transaction identifier
     * @param txBlockHeight block height at which transacton is supposedly included
     * @param txIndex index of transaction in the block's tx merkle tree
-    * @param merkleProof  merkle tree path (concatenated LE sha256 hashes)
+    * @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (do not contains initial transaction hash and merkle root)
     * @param confirmations how many confirmed blocks we want to have before the transaction is valid
     * @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
     */
     pub fn verify_tx(
         &self,
-        txid: [u8; 32],
+        txid: String,
         tx_block_height: u64,
-        tx_index: u64,
-        merkle_proof: &[u8],
+        tx_index: usize,
+        merkle_proof: Vec<String>,
         confirmations: u64,
     ) -> bool {
         // txid must not be 0
-        // TODO: use other type here
-        if txid == [0; 32] {
+        /*if txid == [0; 32] {
             panic!("ERR_INVALID_TXID");
-        }
+        }*/
 
         // check requested confirmations. No need to compute proof if insufficient confs.
         // TODO: should be block_height check here
@@ -152,72 +147,30 @@ impl Contract {
 
         // TODO: change storage layout again
         // access local state to get the right block header hash
-        let header: Header = self.block_header[tx_block_height as usize].into();
+        let header = self.block_header[tx_block_height as usize].clone();
         let merkle_root = header.merkle_root;
 
+        // We expect Merkle proof to not include first hash as transaction hash
+        // and last hash as merkle root hash.
         // Check merkle proof structure: 1st hash == txid and last hash == merkle_root
-        if &merkle_proof[0..32] != txid {
+        /*if &merkle_proof[0..32] != txid {
             panic!("ERR_MERKLE_PROOF");
         }
-        if &merkle_proof[merkle_proof.len() - 32..] != merkle_root {
+        if &merkle_proof[merkle_proof.len() - 32..] != merkle_root.as_bytes() {
             panic!("ERR_MERKLE_PROOF");
-        }
+        }*/
 
         // compute merkle tree root and check if it matches block's original merkle tree root
-        if Self::compute_merkle(&txid, tx_index, merkle_proof) == merkle_root {
-            log!("VerityTransaction: {:?}, {}", txid, tx_block_height);
-            return true;
+        if merkle_tools::compute_root_from_merkle_proof(&txid, tx_index, &merkle_proof) == merkle_root {
+            log!("VerityTransaction: Tx {:?} is included in block with height {}", txid, tx_block_height);
+            true
+        } else {
+            log!("VerityTransaction: Tx {:?} is NOT included in block with height {}", txid, tx_block_height);
+            false
         }
-
-        false
     }
 
-    // TODO: handle contract errors in a better style - try to avoid panicking without a reason
-    // TODO: just return Option or Result
 
-    /*
-    * Reconstructs merkle tree root given a transaction hash, index in block and merkle tree path
-    * @param txHash hash of to be verified transaction
-    * @param txIndex index of transaction given by hash in the corresponding block's merkle tree
-    * @param merkleProof merkle tree path to transaction hash from block's merkle tree root
-    * @return merkle tree root of the block containing the transaction, meaningless hash otherwise
-    */
-    fn compute_merkle(tx_hash: &[u8; 32], tx_index: u64, merkle_proof: &[u8]) -> [u8; 32] {
-        // Special case: only coinbase tx in block. Root == proof
-        if merkle_proof.len() == 32 {
-            return merkle_proof.try_into().expect("Invalid merkle proof length");
-        }
-
-        // Merkle proof length must be greater than 64 and power of 2. Case length == 32 covered above.
-        if merkle_proof.len() <= 64 || (merkle_proof.len() & (merkle_proof.len() - 1)) != 0 {
-            panic!("ERR_MERKLE_PROOF");
-        }
-
-        let mut result_hash = *tx_hash;
-        let mut index = tx_index;
-
-        // The core idea of providing Merkle proof functionality,
-        // We rehash the provided merkle path and compare to the saved merkle path
-        for i in 1..merkle_proof.len() / 32 {
-            let hash_slice = &merkle_proof[i * 32..(i + 1) * 32];
-
-            if index % 2 == 1 {
-                result_hash = Self::concat_sha256_hash(hash_slice, &result_hash);
-            } else {
-                result_hash = Self::concat_sha256_hash(&result_hash, hash_slice);
-            }
-            index /= 2;
-        }
-
-        result_hash
-    }
-
-    fn concat_sha256_hash(left: &[u8], right: &[u8]) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-        hasher.update(left);
-        hasher.update(right);
-        hasher.finalize().into()
-    }
 }
 
 /*
