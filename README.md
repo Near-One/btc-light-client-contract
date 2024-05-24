@@ -21,8 +21,18 @@ cargo test
 Deployment is automated with GitHub Actions CI/CD pipeline.
 To deploy manually, install [`cargo-near`](https://github.com/near/cargo-near) and run:
 
+Build a contract
 ```bash
-cargo near deploy <account-id>
+cargo build --target wasm32-unknown-unknown --release
+```
+
+Create testnet account
+```bash
+cargo-near near create-dev-account use-random-account-id autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
+```
+
+```bash
+near contract deploy <<ACCOUNT_NAME_FROM_PREVIOUS_COMMAND>> use-file ./target/wasm32-unknown-unknown/release/btc_light_client_contract.wasm without-init-call network-config testnet sign-with-keychain send
 ```
 
 ## Useful Links

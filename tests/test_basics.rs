@@ -21,7 +21,8 @@ async fn test_setting_block_header() -> Result<(), Box<dyn std::error::Error>> {
             "merkle_root":"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
             "time":1231006505,
             "bits":486604799,
-            "nonce":2083236893}
+            "nonce":2083236893},
+            "height": 2
         }))
         .transact()
         .await?;
@@ -29,7 +30,7 @@ async fn test_setting_block_header() -> Result<(), Box<dyn std::error::Error>> {
     assert!(outcome.is_success());
 
     let user_message_outcome = contract
-        .view("get_block_header")
+        .view("get_last_block_header")
         .args_json(json!({}))
         .await?;
     assert_eq!(user_message_outcome.json::<Header>()?, block_header);
