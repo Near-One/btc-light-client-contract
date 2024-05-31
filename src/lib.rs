@@ -201,37 +201,38 @@ impl Contract {
             // Fork submission
             Some(fork_id) => {
                 // Find fork
-                let blocks = self.forks.get(&fork_id).expect("fork should exists to submit a header");
+                match self.forks.get(&fork_id) {
+                    Some(blocks) => {
+                        // Existing fork submission
+                        let prev_blockheader = blocks.last().expect("ongoing fork blocks should not be empty");
+                        // Validate chain
+                        assert_eq!(prev_blockheader.current_blockhash, header.prev_blockhash);
 
-                if blocks.is_empty() {
-                    // Submission of new fork
-                    // This should never fail
-                    assert_eq!(fork_id, self.current_fork_id);
-                    // Check that block is indeed a fork
-                    assert_ne!(header.prev_blockhash, self.heaviest_block);
+                        // Current chainwork is higher than on a current mainchain, let's promote the fork
+                        if chainwork_bytes > self.high_score {
+                            // Remove the latest blocks in chain starting from fork promotion height
+                            let first_fork_block = blocks.first().expect("first block should exist");
+                            let promotion_height = first_fork_block.block_height;
+                            for height_to_clean in promotion_height .. height {
+                                self.height_to_header.remove(&height_to_clean);
+                            }
 
-                    self.store_fork_header(fork_id, current_block_hash, header);
-                } else {
-                    // Existing fork submission
-                    let prev_blockheader = blocks.last().expect("ongoing fork blocks should not be empty");
-                    // Validate chain
-                    assert_eq!(prev_blockheader.current_blockhash, header.prev_blockhash);
-
-                    // Current chainwork is higher than on a current mainchain, let's promote the fork
-                    if chainwork_bytes > self.high_score {
-                        // Remove the latest blocks in chain starting from fork promotion height
-                        let first_fork_block = blocks.first().expect("first block should exist");
-                        let promotion_height = first_fork_block.block_height;
-                        for height_to_clean in promotion_height .. height {
-                            self.height_to_header.remove(&height_to_clean);
+                            // Update heights with block hashes from the fork
+                            for block in blocks {
+                                self.height_to_header.insert(block.block_height, block.current_blockhash.clone());
+                            }
+                        } else {
+                            // Fork still being extended: append block
+                            self.store_fork_header(fork_id, current_block_hash, header);
                         }
+                    }
+                    None => {
+                        // Submission of new fork
+                        // This should never fail
+                        assert_eq!(fork_id, self.current_fork_id);
+                        // Check that block is indeed a fork
+                        assert_ne!(header.prev_blockhash, self.heaviest_block);
 
-                        // Update heights with block hashes from the fork
-                        for block in blocks {
-                            self.height_to_header.insert(block.block_height, block.current_blockhash.clone());
-                        }
-                    } else {
-                        // Fork still being extended: append block
                         self.store_fork_header(fork_id, current_block_hash, header);
                     }
                 }
@@ -257,13 +258,23 @@ impl Contract {
     }
 
     /*
-            * @notice Stores and handles fork submission.
-            */
+     * @notice Stores and handles fork submission.
+    */
     fn store_fork_header(&mut self, fork_id: usize, current_block_hash: String, header: state::Header) {
-        self.headers.insert(current_block_hash.clone(), header.clone());
-        let mut blocks = self.forks[&fork_id].clone();
-        blocks.push(header);
-        self.forks.insert(fork_id, blocks);
+        self.headers.insert(current_block_hash, header.clone());
+
+        match self.forks.get(&fork_id) {
+            Some(blocks) => {
+                let mut copy = blocks.clone();
+                copy.push(header);
+
+                self.forks.insert(fork_id, copy);
+            },
+            None => {
+                let new_elems = vec![(fork_id, vec![header])];
+                self.forks.extend(new_elems);
+            }
+        }
     }
 
     // Return state of the relay
@@ -323,11 +334,11 @@ mod tests {
     fn genesis_block_header() -> Header {
         let json_value = serde_json::json!({
             "version": 1,
-            "prev_blockhash":"0000000000000000000000000000000000000000000000000000000000000000",
-            "merkle_root":"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-            "time":1231006505,
-            "bits":486604799,
-            "nonce":2083236893
+            "prev_blockhash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+            "time": 1231006505,
+            "bits": 486604799,
+            "nonce": 2083236893
         });
         let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
         parsed_header
@@ -337,24 +348,56 @@ mod tests {
     fn block_header_example() -> Header {
         let json_value = serde_json::json!({
             "version": 1,
-            "prev_blockhash":"000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-            "merkle_root":"4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-            "time":1231006505,
-            "bits":486604799,
-            "nonce":2083236893
+            "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+            "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+            "time": 1231006505,
+            "bits": 486604799,
+            "nonce": 2083236893
+        });
+        let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
+        parsed_header
+    }
+
+    fn fork_block_header_example() -> Header {
+        let json_value = serde_json::json!({
+            "version": 1,
+            "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+            "merkle_root": "589e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+            "time": 1231006505,
+            "bits": 486604799,
+            "nonce": 2083236893
         });
         let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
         parsed_header
     }
 
     #[test]
-    fn test_saving_block_headers() {
+    fn test_saving_mainchain_block_header() {
         let header = block_header_example();
 
         let mut contract = Contract::default();
 
         contract.submit_genesis(genesis_block_header());
         contract.submit_block_header(header, None, 1);
+
+        let received_header = contract.get_last_block_header();
+
+        assert_eq!(received_header, state::Header::new(header,
+                                                       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
+                                                       1)
+        );
+    }
+
+    #[test]
+    fn test_submitting_new_fork_block_header() {
+        let header = block_header_example();
+
+        let mut contract = Contract::default();
+
+        contract.submit_genesis(genesis_block_header());
+        contract.submit_block_header(header, None, 1);
+
+        contract.submit_new_fork_header(fork_block_header_example(), 1);
 
         let received_header = contract.get_last_block_header();
 
