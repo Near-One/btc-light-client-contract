@@ -167,15 +167,6 @@ impl Contract {
         true
     }
 
-    // {
-    //    fork_id: 1, last_block_hash: Hash,
-    //    fork_id: 2, last_block_hash: Hash
-    // }
-
-    // если не нахожу в форках блок, то сабмичу новый форк,
-    // если нахожу, то сравниваю и если он длиннее, то перезаписываю
-    // если он короче, то ничего не делаю
-
     /** Every time offchain relay
        1. retrieve storage state
        2. see if blocks belongs to any forks or bitcoin mainnet
