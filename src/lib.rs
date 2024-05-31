@@ -371,6 +371,19 @@ mod tests {
         parsed_header
     }
 
+    fn fork_block_header_example_2() -> Header {
+        let json_value = serde_json::json!({
+            "version": 1,
+            "prev_blockhash": "8ad4fdb505b0ac54acfd43f6a0b88c5222f4b7d5b23bb2a2dc4e1cf821be8ab6",
+            "merkle_root": "989e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+            "time": 1231006505,
+            "bits": 486604799,
+            "nonce": 2083236893
+        });
+        let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
+        parsed_header
+    }
+
     #[test]
     fn test_saving_mainchain_block_header() {
         let header = block_header_example();
@@ -401,6 +414,29 @@ mod tests {
 
         let received_header = contract.get_last_block_header();
 
+        assert_eq!(received_header, state::Header::new(header,
+                                                       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
+                                                       1)
+        );
+    }
+
+    #[test]
+    fn test_submitting_existing_fork_block_header() {
+        let header = block_header_example();
+
+        let mut contract = Contract::default();
+
+        contract.submit_genesis(genesis_block_header());
+        contract.submit_main_chain_header(header, 1);
+
+        let fork_block_header_example = fork_block_header_example();
+
+        contract.submit_new_fork_header(fork_block_header_example, 1);
+        contract.submit_fork_header(fork_block_header_example_2(), 2, 1);
+
+        let received_header = contract.get_last_block_header();
+
+        // TODO: Demonstrate fork promotio in this test
         assert_eq!(received_header, state::Header::new(header,
                                                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
                                                        1)
