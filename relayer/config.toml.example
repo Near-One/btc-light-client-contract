@@ -1,0 +1,9 @@
+[bitcoin]
+endpoint = "http://127.0.0.1:8332"
+node_user = "user"
+node_password = "password"
+
+[near]
+endpoint = "https://rpc.testnet.near.org"
+account_name = "account.testnet"
+secret_key = "ed25519:4637264364832647328973fh2hfhkfdshfdfkdandsyfdsasdagfdweee"

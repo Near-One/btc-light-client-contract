@@ -1,20 +1,20 @@
-mod merkle_tools;
-
 use near_sdk::{log, near};
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 
 use bitcoin::block::Header;
-use near_sdk::env::block_height;
 
-/// Contract implementing Bitcoin light client
+use merkle_tools;
 
-/// Bitcoin relay service can submit block headers to this service
-/// Off chain relay service can request the latest block height from this service
+/// Contract implementing Bitcoin light client. See README.md for more details about features
+/// and implemetation logic behind the code.
+
+/// This contract could work in a pairing with an external off-chain relay service. To learn more about
+/// relay, take a look at the relay service documentation.
 
 mod state {
     use bitcoin::block::Version;
-    use bitcoin::{CompactTarget, Work};
+    use bitcoin::CompactTarget;
     use bitcoin::hashes::serde::{Deserialize, Serialize};
     use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 
@@ -137,6 +137,8 @@ impl Contract {
         self.headers[&self.heaviest_block].clone()
     }
 
+    // TODO: Should we submit genesis block separately or we can try to find the way to do it as a part
+    // TODO: of a general flow?
     pub fn submit_genesis(&mut self, block_header: Header) -> bool {
         let current_block_hash= block_header.block_hash().to_string();
         let chainwork_bytes = block_header.work().to_be_bytes();
@@ -186,6 +188,7 @@ impl Contract {
         let current_block_hash = block_header.block_hash().to_string();
         let chainwork = block_header.work();
         let chainwork_bytes = chainwork.to_be_bytes();
+        log!("block: {} | chainwork: {}", current_block_hash, chainwork);
 
         // Checking that previous block exists on the chain, abort if not
         if self.headers.get(&prev_blockhash).is_none() {
@@ -420,6 +423,10 @@ mod tests {
         );
     }
 
+
+
+    // TODO: How can we emulate situation with a forking of a bitcoin network in the beginning
+    // TODO: of the chain.
     #[test]
     fn test_submitting_existing_fork_block_header() {
         let header = block_header_example();
