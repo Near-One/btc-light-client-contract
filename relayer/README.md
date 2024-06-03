@@ -3,6 +3,18 @@
 This is a simple implementation of a Bitcoin light client relayer. 
 It is a simple server that listens for new blocks on the Bitcoin network and relays them to Near network.
 
+## General flow description
+Offcahin relay works in the next way:
+
+1. Retrieve storage state from a smart contract
+2. Checks if current block belongs to any fork or a current Bitcoin main chain
+3. If yes - submit the block with the correct fork ID
+4. If no - submit a new fork, using new_fork_submit interface
+
+In the meantime smart contract does two things:
+1. Accepts blocks using the right interface (fork/non-fork)
+2. Checks if it was a fork and maybe we need to do the reorg of chain
+
 ## How to run
 
 Prerequisites: You should have access to a Bitcoin full node and a Near node. Also you should have Rust installed on your machine.
