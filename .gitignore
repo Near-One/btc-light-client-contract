@@ -1,4 +1,5 @@
-/target
-
 .DS_Store
-.idea/
+.idea
+*.log
+tmp/
+target/
