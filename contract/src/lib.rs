@@ -82,36 +82,27 @@ struct ForkState {
 // Define the contract structure
 #[near(contract_state)]
 pub struct Contract {
-    // block headers received from Bitcoin relay service
-    // block_headers: Vec<state::Header>,
-    // block with the highest chainWork, i.e., blockchain tip
-
-    // fork_id -> vector of block headers from this fork
+    // fork_id -> collection of block headers from this fork
     // we will promote one of the forks if we have to do a chain reorg
     // when one of the forks will eventually reach the highest possible weight
     // fork chainwork of fork is bigger than chainwork of the main chain
     forks: near_sdk::store::LookupMap<usize, Vec<state::Header>>,
-
-    // fork_id -> latest_header
-    latest_fork_block_hashes: near_sdk::store::LookupMap<usize, state::Header>,
 
     // mapping(bytes32 => HeaderInfo) public _headers;
     // mapping(uint256 => bytes32) public _mainChain; // mapping of block heights to block hashes of the MAIN CHAIN
 
     height_to_header: near_sdk::store::LookupMap<usize, String>,
 
-    // mapping of block hashes to block headers (ALL ever submitted, i.e., incl. forks)
+    // Mapping of block hashes to block headers (ALL ever submitted, i.e., incl. forks)
     headers: near_sdk::store::LookupMap<String, state::Header>,
 
+    // The latest tracked fork
     current_fork_id: usize,
-    // We use latest block to help offchain relayer to recover the reading of blocks and
-    // to understand if we currently writing a fork or not.
-    // latest_block_info: String
 
-    // block with the highest chainWork, i.e., blockchain tip
+    // Block with the highest chainWork, i.e., blockchain tip
     heaviest_block: String,
 
-    // highest chainWork, i.e., accumulated PoW at current blockchain tip
+    // Highest chainWork, i.e., accumulated PoW at current blockchain tip
     high_score: [u8; 32]
 }
 
@@ -122,7 +113,6 @@ impl Default for Contract {
             height_to_header: near_sdk::store::LookupMap::new(b"a"),
             headers: near_sdk::store::LookupMap::new(b"h"),
             forks: near_sdk::store::LookupMap::new(b"f"),
-            latest_fork_block_hashes: near_sdk::store::LookupMap::new(b"l"),
             current_fork_id: 0,
             heaviest_block: String::new(),
             high_score: [0; 32],
@@ -291,16 +281,15 @@ impl Contract {
         state
     }
 
-    /*
-    * Verifies that a transaction is included in a block at a given block height
 
-    * @param txid transaction identifier
-    * @param txBlockHeight block height at which transacton is supposedly included
-    * @param txIndex index of transaction in the block's tx merkle tree
-    * @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
-    * @param confirmations how many confirmed blocks we want to have before the transaction is valid
-    * @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
-    */
+    /// Verifies that a transaction is included in a block at a given block height
+
+    /// @param txid transaction identifier
+    /// @param txBlockHeight block height at which transacton is supposedly included
+    /// @param txIndex index of transaction in the block's tx merkle tree
+    /// @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
+    /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
+    /// @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
     pub fn verify_transaction_inclusion(
         &self,
         txid: String,
@@ -359,7 +348,7 @@ mod tests {
             "version": 1,
             "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
             "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-            "time": 1231006505,
+            "time": 1231006506,
             "bits": 486604799,
             "nonce": 2083236893
         });
@@ -369,12 +358,14 @@ mod tests {
 
     fn fork_block_header_example() -> Header {
         let json_value = serde_json::json!({
+            // "hash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
+            //"chainwork": "0000000000000000000000000000000000000000000000000000000200020002",
             "version": 1,
-            "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-            "merkle_root": "589e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-            "time": 1231006505,
+            "merkle_root": "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098",
+            "time": 1231469665,
+            "nonce": 2573394689_u32,
             "bits": 486604799,
-            "nonce": 2083236893
+            "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
         });
         let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
         parsed_header
@@ -382,12 +373,14 @@ mod tests {
 
     fn fork_block_header_example_2() -> Header {
         let json_value = serde_json::json!({
-            "version": 1,
-            "prev_blockhash": "8ad4fdb505b0ac54acfd43f6a0b88c5222f4b7d5b23bb2a2dc4e1cf821be8ab6",
-            "merkle_root": "989e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-            "time": 1231006505,
-            "bits": 486604799,
-            "nonce": 2083236893
+            // "hash": "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd",
+            // "chainwork": "0000000000000000000000000000000000000000000000000000000300030003",
+          "version": 1,
+          "merkle_root": "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5",
+          "time": 1231469744,
+          "nonce": 1639830024,
+          "bits": 486604799,
+          "prev_blockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
         });
         let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
         parsed_header
@@ -449,12 +442,10 @@ mod tests {
     // TODO: Modify this test to properly check fork promotion
     #[test]
     fn test_submitting_existing_fork_block_header() {
-        let header = block_header_example();
-
         let mut contract = Contract::default();
 
         contract.submit_genesis(genesis_block_header());
-        contract.submit_main_chain_header(header, 1);
+        contract.submit_main_chain_header(block_header_example(), 1);
 
         let fork_block_header_example = fork_block_header_example();
 
@@ -464,7 +455,7 @@ mod tests {
         let received_header = contract.get_last_block_header();
 
         // TODO: Demonstrate fork promotio in this test
-        assert_eq!(received_header, state::Header::new(header,
+        assert_eq!(received_header, state::Header::new(fork_block_header_example_2(),
                                                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
                                                        1)
         );
