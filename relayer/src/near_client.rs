@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, HashMap};
 use near_crypto::vrf::SecretKey;
 use near_jsonrpc_client::{methods, JsonRpcClient};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
@@ -18,6 +19,7 @@ use crate::config::Config;
 const SUBMIT_BLOCK_HEADER: &str = "submit_block_header";
 const GET_BLOCK_HEADER: &str = "get_block_header";
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
+const RECEIVE_STATE: &str = "receive_state";
 
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -150,6 +152,35 @@ impl Client {
             return Ok(header);
         } else {
             return Err("failed to read block header")?;
+        }
+    }
+
+    pub async fn receive_state(&self) -> Result<BTreeMap<usize, String>, Box<dyn std::error::Error>> {
+        let node_url = self.config.near.endpoint.clone();
+        let contract_id = self.config.near.account_name.clone();
+
+        let args = json!({});
+        let client = near_jsonrpc_client::JsonRpcClient::connect(node_url);
+
+        let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
+            block_reference: near_primitives::types::BlockReference::Finality(
+                near_primitives::types::Finality::Final,
+            ),
+            request: near_primitives::views::QueryRequest::CallFunction {
+                account_id: contract_id.parse().unwrap(),
+                method_name: RECEIVE_STATE.to_string(),
+                args: args.to_string().into_bytes().into(),
+            },
+        };
+        let response = client.call(read_request).await?;
+
+        if let QueryResponseKind::CallResult(result) = response.kind {
+            let state = from_slice::<BTreeMap<usize, String>>(&result.result)?;
+            println!("{:#?}", state);
+
+            return Ok(state);
+        } else {
+            return Err("failed to read smart contract state")?;
         }
     }
 

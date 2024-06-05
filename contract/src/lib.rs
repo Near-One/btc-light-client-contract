@@ -327,8 +327,8 @@ impl Contract {
 
     // Return state of the relay, so offchain service can see all the forks available
     // fork_id -> latest_block_header_hash
-    pub fn receive_state(&self) -> std::collections::HashMap<usize, String> {
-        let mut state = std::collections::HashMap::new();
+    pub fn receive_state(&self) -> std::collections::BTreeMap<usize, String> {
+        let mut state = std::collections::BTreeMap::new();
 
         // Add last mainnet block to the state
         state.insert(0, self.heaviest_block.clone());
