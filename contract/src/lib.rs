@@ -6,8 +6,8 @@ use bitcoin::block::Header;
 
 use merkle_tools;
 
-/// Contract implementing Bitcoin light client. See README.md for more details about features
-/// and implemetation logic behind the code.
+/// Contract implementing Bitcoin light client.
+/// See README.md for more details about features and implementation logic behind the code.
 
 /// This contract could work in a pairing with an external off-chain relay service. To learn more about
 /// relay, take a look at the relay service documentation.
@@ -36,7 +36,7 @@ mod state {
         pub bits: u32,
         /// The nonce, selected to obtain a low enough blockhash.
         pub nonce: u32,
-        /// Chainwork for this block
+        /// Chainwork for this block (big endian storage format)
         pub chainwork: [u8; 32],
         /// Block height in the Bitcoin network
         pub block_height: usize,
@@ -75,8 +75,7 @@ mod state {
 
 struct ForkState {
     fork_chain: Vec<state::Header>,
-    heaviest_block: usize,
-    chainwork: usize,
+    chainwork: [u8; 32],
 }
 
 // Define the contract structure
@@ -88,10 +87,9 @@ pub struct Contract {
     // fork chainwork of fork is bigger than chainwork of the main chain
     forks: near_sdk::store::LookupMap<usize, Vec<state::Header>>,
 
-    // mapping(bytes32 => HeaderInfo) public _headers;
-    // mapping(uint256 => bytes32) public _mainChain; // mapping of block heights to block hashes of the MAIN CHAIN
-
+    // A pair of lookup maps that allows to find header by height and height by header
     height_to_header: near_sdk::store::LookupMap<usize, String>,
+    header_to_height: near_sdk::store::LookupMap<String, usize>,
 
     // Mapping of block hashes to block headers (ALL ever submitted, i.e., incl. forks)
     headers: near_sdk::store::LookupMap<String, state::Header>,
@@ -102,7 +100,7 @@ pub struct Contract {
     // Block with the highest chainWork, i.e., blockchain tip
     heaviest_block: String,
 
-    // Highest chainWork, i.e., accumulated PoW at current blockchain tip
+    // Highest chainWork, i.e., accumulated PoW at current blockchain tip (big endian)
     high_score: [u8; 32]
 }
 
@@ -111,6 +109,7 @@ impl Default for Contract {
     fn default() -> Self {
         Self {
             height_to_header: near_sdk::store::LookupMap::new(b"a"),
+            header_to_height: near_sdk::store::LookupMap::new(b"b"),
             headers: near_sdk::store::LookupMap::new(b"h"),
             forks: near_sdk::store::LookupMap::new(b"f"),
             current_fork_id: 0,
@@ -127,6 +126,14 @@ impl Contract {
         self.headers[&self.heaviest_block].clone()
     }
 
+    pub fn get_blockhash_by_height(&self, height: usize) -> Option<String> {
+        self.height_to_header.get(&height).map(|hash| hash.to_owned())
+    }
+
+    pub fn get_height_by_blockhash(&self, blockhash: String) -> Option<usize> {
+        self.header_to_height.get(&blockhash).map(|height| *height)
+    }
+
     // TODO: Should we submit genesis block separately or we can try to find the way to do it as a part
     // TODO: of a general flow?
     pub fn submit_genesis(&mut self, block_header: Header) -> bool {
@@ -138,6 +145,7 @@ impl Contract {
 
         self.store_block_header(current_block_hash.clone(), header);
         self.heaviest_block = current_block_hash;
+        self.high_score = chainwork_bytes;
         true
     }
 
@@ -155,6 +163,7 @@ impl Contract {
     }
 
     // Submit fork headers
+    // FIXME: Do not submit fork_id and height (same for other public methods)
     pub fn submit_fork_header(&mut self, block_header: Header, height: usize, fork_id: usize) -> bool {
         self.submit_block_header(block_header, Some(fork_id), height);
         true
@@ -168,6 +177,7 @@ impl Contract {
         let current_block_hash = block_header.block_hash().to_string();
         let chainwork = block_header.work();
         let chainwork_bytes = chainwork.to_be_bytes();
+
         log!("block: {} | chainwork: {}", current_block_hash, chainwork);
 
         // Checking that previous block exists on the chain, abort if not
@@ -189,18 +199,25 @@ impl Contract {
                         // Validate chain
                         assert_eq!(prev_blockheader.current_blockhash, header.prev_blockhash);
 
+                        let highest_score = bitcoin::Work::from_be_bytes(self.high_score);
+
                         // Current chainwork is higher than on a current mainchain, let's promote the fork
-                        if chainwork_bytes > self.high_score {
+                        if chainwork > highest_score {
                             // Remove the latest blocks in chain starting from fork promotion height
                             let first_fork_block = blocks.first().expect("first block should exist");
                             let promotion_height = first_fork_block.block_height;
                             for height_to_clean in promotion_height .. height {
-                                self.height_to_header.remove(&height_to_clean);
+                                let removed_block_header_hash = self.height_to_header.remove(&height_to_clean);
+
+                                if let Some(hash) = removed_block_header_hash {
+                                    self.header_to_height.remove(&hash);
+                                }
                             }
 
                             // Update heights with block hashes from the fork
                             for block in blocks {
                                 self.height_to_header.insert(block.block_height, block.current_blockhash.clone());
+                                self.header_to_height.insert(block.current_blockhash.clone(), block.block_height);
                             }
                         } else {
                             // Fork still being extended: append block
@@ -213,6 +230,19 @@ impl Contract {
                         assert_eq!(fork_id, self.current_fork_id);
                         // Check that block is indeed a fork
                         assert_ne!(header.prev_blockhash, self.heaviest_block);
+
+                        // TODO: Chainwork computation, if we submit a new fork we find a block weight
+                        // at the starting position of the fork,
+                        // and compute the chainwork based on this value.
+
+                        let block_before_fork = self.height_to_header
+                            .get(&(height - 1))
+                            .expect("block height should be available");
+                        let block_header_before_fork = self.headers
+                            .get(block_before_fork)
+                            .expect("block should be recorded in headers");
+
+                        let chainwork = block_header_before_fork.chainwork;
 
                         self.store_fork_header(fork_id, current_block_hash, header);
                     }
@@ -236,7 +266,8 @@ impl Contract {
     /// Stores parsed block header and meta information
     fn store_block_header(&mut self, current_block_hash: String, header: state::Header) {
         self.headers.insert(current_block_hash.clone(), header.clone());
-        self.height_to_header.insert(header.block_height, current_block_hash);
+        self.height_to_header.insert(header.block_height, current_block_hash.clone());
+        self.header_to_height.insert(current_block_hash, header.block_height);
     }
 
     /// Stores and handles fork submissions
@@ -437,6 +468,27 @@ mod tests {
         ].into_iter().collect();
 
         assert_eq!(expected_state, received_state);
+    }
+
+    // test we can insert a block and get block back by it's height
+    #[test]
+    fn test_getting_block_by_height() {
+        let mut contract = Contract::default();
+        contract.submit_genesis(genesis_block_header());
+        contract.submit_main_chain_header(block_header_example(), 1);
+
+        assert_eq!(contract.get_blockhash_by_height(0).unwrap(), genesis_block_header().block_hash().to_string());
+        assert_eq!(contract.get_blockhash_by_height(1).unwrap(), block_header_example().block_hash().to_string());
+    }
+
+    #[test]
+    fn test_getting_height_by_block() {
+        let mut contract = Contract::default();
+        contract.submit_genesis(genesis_block_header());
+        contract.submit_main_chain_header(block_header_example(), 1);
+
+        assert_eq!(contract.get_height_by_blockhash(genesis_block_header().block_hash().to_string()).unwrap(), 0);
+        assert_eq!(contract.get_height_by_blockhash(block_header_example().block_hash().to_string()).unwrap(), 1);
     }
 
     // TODO: Modify this test to properly check fork promotion
