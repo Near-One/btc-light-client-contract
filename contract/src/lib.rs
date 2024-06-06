@@ -91,19 +91,18 @@ pub struct Contract {
     // A pair of lookup maps that allows to find header by height and height by header
     height_to_header: near_sdk::store::LookupMap<usize, String>,
     header_to_height: near_sdk::store::LookupMap<String, usize>,
+    // Total chainwork reached at this height
     total_chainwork_at_height: near_sdk::store::LookupMap<usize, [u8; 32]>,
+    // Block with the highest chainWork, i.e., blockchain tip
+    heaviest_block: String,
+    // Highest chainWork, i.e., accumulated PoW at current blockchain tip (big endian)
+    high_score: [u8; 32],
 
     // Mapping of block hashes to block headers (ALL ever submitted, i.e., incl. forks)
     headers: near_sdk::store::LookupMap<String, state::Header>,
 
     // The latest tracked fork
     current_fork_id: usize,
-
-    // Block with the highest chainWork, i.e., blockchain tip
-    heaviest_block: String,
-
-    // Highest chainWork, i.e., accumulated PoW at current blockchain tip (big endian)
-    high_score: [u8; 32]
 }
 
 // Define the default, which automatically initializes the contract
@@ -137,45 +136,43 @@ impl Contract {
         self.header_to_height.get(&blockhash).map(|height| *height)
     }
 
-    // TODO: Should we submit genesis block separately or we can try to find the way to do it as a part
-    // TODO: of a general flow?
-    pub fn submit_genesis(&mut self, block_header: Header) -> bool {
+    // TODO: To make sure we are submiting correct height we might hardcode height related to the genesis block
+    // into the contract.
+    pub fn submit_genesis(&mut self, block_header: Header, block_height: usize) -> bool {
         let current_block_hash= block_header.block_hash().as_raw_hash().to_string();
         let chainwork_bytes = block_header.work().to_be_bytes();
-        let height = 0;
 
-        let header = state::Header::new(block_header, chainwork_bytes, height);
+        let header = state::Header::new(block_header, chainwork_bytes, block_height);
 
         self.store_block_header(current_block_hash.clone(), header, chainwork_bytes);
         self.heaviest_block = current_block_hash;
         self.high_score = chainwork_bytes;
-        self.total_chainwork_at_height.insert(height, chainwork_bytes);
+        self.total_chainwork_at_height.insert(block_height, chainwork_bytes);
         true
     }
 
     // Submit fork headers for a new fork
-    pub fn submit_new_fork_header(&mut self, block_header: Header, height: usize) -> bool {
+    pub fn submit_new_fork_header(&mut self, block_header: Header) -> bool {
         self.current_fork_id = self.current_fork_id + 1;
-        self.submit_block_header(block_header, Some(self.current_fork_id), height);
+        self.submit_block_header(block_header, Some(self.current_fork_id));
         true
     }
 
     // Submit main chain headers
-    pub fn submit_main_chain_header(&mut self, block_header: Header, height: usize) -> bool {
-        self.submit_block_header(block_header, None, height);
+    pub fn submit_main_chain_header(&mut self, block_header: Header) -> bool {
+        self.submit_block_header(block_header, None);
         true
     }
 
-    // Submit fork headers
-    // FIXME: Do not submit fork_id and height (same for other public methods)
-    pub fn submit_fork_header(&mut self, block_header: Header, height: usize, fork_id: usize) -> bool {
-        self.submit_block_header(block_header, Some(fork_id), height);
+    // SAFETY: It is safe to pass fork_id here, because we will check the chain validity anyway
+    pub fn submit_fork_header(&mut self, block_header: Header, fork_id: usize) -> bool {
+        self.submit_block_header(block_header, Some(fork_id));
         true
     }
 
     /// Saving block header received from a Bitcoin relay service
     /// This method is private but critically important for the overall execution flow
-    fn submit_block_header(&mut self, block_header: Header, fork_id: Option<usize>, height: usize) {
+    fn submit_block_header(&mut self, block_header: Header, fork_id: Option<usize>) {
         // Chainwork is validated inside block_header structure (other consistency checks too)
         let prev_blockhash = block_header.prev_blockhash.to_string();
         let current_block_hash = block_header.block_hash().to_string();
@@ -184,11 +181,11 @@ impl Contract {
 
         log!("block: {} | chainwork: {}", current_block_hash, current_block_chainwork);
 
-        // Checking that previous block exists on the chain, abort if not
-        if self.headers.get(&prev_blockhash).is_none() {
-            panic!("Cannot find prev_blockhash in header list");
-        }
-
+        // Computing the target height based on the previous block
+        let height = 1 + self.headers
+            .get(&prev_blockhash)
+            .expect("cannot find prev_blockhash in headers list")
+            .block_height;
         let header = state::Header::new(block_header, chainwork_bytes, height);
         let total_chainwork_on_main = bitcoin::Work::from_be_bytes(
             *self.total_chainwork_at_height.get(&(height-1)).expect("chainwork should be assign to the position")
@@ -350,7 +347,6 @@ impl Contract {
         state
     }
 
-
     /// Verifies that a transaction is included in a block at a given block height
 
     /// @param txid transaction identifier
@@ -477,8 +473,8 @@ mod tests {
 
         let mut contract = Contract::default();
 
-        contract.submit_genesis(genesis_block_header());
-        contract.submit_block_header(header, None, 1);
+        contract.submit_genesis(genesis_block_header(), 0);
+        contract.submit_block_header(header, None);
 
         let received_header = contract.get_last_block_header();
 
@@ -494,10 +490,10 @@ mod tests {
 
         let mut contract = Contract::default();
 
-        contract.submit_genesis(genesis_block_header());
-        contract.submit_block_header(header, None, 1);
+        contract.submit_genesis(genesis_block_header(), 0);
+        contract.submit_block_header(header, None);
 
-        contract.submit_new_fork_header(fork_block_header_example(), 1);
+        contract.submit_new_fork_header(fork_block_header_example());
 
         let received_header = contract.get_last_block_header();
 
@@ -511,12 +507,12 @@ mod tests {
     fn test_receiving_a_latest_state_for_the_contract() {
         let mut contract = Contract::default();
 
-        contract.submit_genesis(genesis_block_header());
-        contract.submit_block_header(block_header_example(), None, 1);
-        contract.submit_new_fork_header(fork_block_header_example(), 1);
+        contract.submit_genesis(genesis_block_header(), 0);
+        contract.submit_block_header(block_header_example(), None);
+        contract.submit_new_fork_header(fork_block_header_example());
 
         let received_state = contract.receive_state();
-        let expected_state: std::collections::HashMap<usize, String> = vec![
+        let expected_state: std::collections::BTreeMap<usize, String> = vec![
             (0, block_header_example().block_hash().to_string()),
             (1, fork_block_header_example().block_hash().to_string())
         ].into_iter().collect();
@@ -528,8 +524,8 @@ mod tests {
     #[test]
     fn test_getting_block_by_height() {
         let mut contract = Contract::default();
-        contract.submit_genesis(genesis_block_header());
-        contract.submit_main_chain_header(block_header_example(), 1);
+        contract.submit_genesis(genesis_block_header(), 0);
+        contract.submit_main_chain_header(block_header_example());
 
         assert_eq!(contract.get_blockhash_by_height(0).unwrap(), genesis_block_header().block_hash().to_string());
         assert_eq!(contract.get_blockhash_by_height(1).unwrap(), block_header_example().block_hash().to_string());
@@ -538,8 +534,8 @@ mod tests {
     #[test]
     fn test_getting_height_by_block() {
         let mut contract = Contract::default();
-        contract.submit_genesis(genesis_block_header());
-        contract.submit_main_chain_header(block_header_example(), 1);
+        contract.submit_genesis(genesis_block_header(), 0);
+        contract.submit_main_chain_header(block_header_example());
 
         assert_eq!(contract.get_height_by_blockhash(genesis_block_header().block_hash().to_string()).unwrap(), 0);
         assert_eq!(contract.get_height_by_blockhash(block_header_example().block_hash().to_string()).unwrap(), 1);
@@ -549,13 +545,13 @@ mod tests {
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
         let mut contract = Contract::default();
 
-        contract.submit_genesis(genesis_block_header());
-        contract.submit_main_chain_header(block_header_example(), 1);
+        contract.submit_genesis(genesis_block_header(), 0);
+        contract.submit_main_chain_header(block_header_example());
 
         let fork_block_header_example = fork_block_header_example();
 
-        contract.submit_new_fork_header(fork_block_header_example, 1);
-        contract.submit_fork_header(fork_block_header_example_2(), 2, 1);
+        contract.submit_new_fork_header(fork_block_header_example);
+        contract.submit_fork_header(fork_block_header_example_2(), 1);
 
         let received_header = contract.get_last_block_header();
 
