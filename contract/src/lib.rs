@@ -233,6 +233,10 @@ impl Contract {
                             self.heaviest_block = current_block_hash;
                             // Recalculate chainwork for every position
                             self.total_chainwork_at_height.insert(height, chainwork.to_be_bytes());
+
+                            // Remove unused fork. aka Garbage collection.
+                            self.alive_forks.remove(&fork_id);
+                            self.forks.remove(&fork_id);
                         } else {
                             // Fork still being extended: append block
                             self.store_fork_header(fork_id,
@@ -304,6 +308,7 @@ impl Contract {
                     chainwork: new_chainwork,
                 })];
                 self.forks.extend(new_elems);
+                self.alive_forks.insert(fork_id);
             }
         }
     }
@@ -335,8 +340,7 @@ impl Contract {
         // Add last mainnet block to the state
         state.insert(self.heaviest_block.clone(), 0);
 
-        //TODO: Use a set of existing forks here, we can have wholes on after doing GC
-        for fork_id in 1 ..= self.current_fork_id {
+        for fork_id in self.alive_forks.iter() {
             let block_hash = self.forks
                 .get(&fork_id)
                 .expect("fork data must be available")
@@ -346,7 +350,7 @@ impl Contract {
                 .current_blockhash
                 .clone();
 
-            state.insert(block_hash, fork_id);
+            state.insert(block_hash, *fork_id);
         }
 
         state
@@ -494,7 +498,7 @@ mod tests {
         let mut contract = Contract::default();
 
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_v2(header);
+        contract.submit_block_header(header);
 
         let received_header = contract.get_last_block_header();
 
@@ -511,9 +515,9 @@ mod tests {
         let mut contract = Contract::default();
 
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_v2(header);
+        contract.submit_block_header(header);
 
-        contract.submit_v2(fork_block_header_example());
+        contract.submit_block_header(fork_block_header_example());
 
         let received_header = contract.get_last_block_header();
 
@@ -528,8 +532,8 @@ mod tests {
         let mut contract = Contract::default();
 
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_v2(block_header_example());
-        contract.submit_v2(fork_block_header_example());
+        contract.submit_block_header(block_header_example());
+        contract.submit_block_header(fork_block_header_example());
 
         let received_state = contract.receive_state();
         let expected_state: std::collections::BTreeMap<String, usize> = vec![
@@ -545,7 +549,7 @@ mod tests {
     fn test_getting_block_by_height() {
         let mut contract = Contract::default();
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_v2(block_header_example());
+        contract.submit_block_header(block_header_example());
 
         assert_eq!(contract.get_blockhash_by_height(0).unwrap(), genesis_block_header().block_hash().to_string());
         assert_eq!(contract.get_blockhash_by_height(1).unwrap(), block_header_example().block_hash().to_string());
@@ -555,7 +559,7 @@ mod tests {
     fn test_getting_height_by_block() {
         let mut contract = Contract::default();
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_v2(block_header_example());
+        contract.submit_block_header(block_header_example());
 
         assert_eq!(contract.get_height_by_blockhash(genesis_block_header().block_hash().to_string()).unwrap(), 0);
         assert_eq!(contract.get_height_by_blockhash(block_header_example().block_hash().to_string()).unwrap(), 1);
@@ -566,12 +570,12 @@ mod tests {
         let mut contract = Contract::default();
 
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_v2(block_header_example());
+        contract.submit_block_header(block_header_example());
 
         let fork_block_header_example = fork_block_header_example();
 
-        contract.submit_v2(fork_block_header_example);
-        contract.submit_v2(fork_block_header_example_2());
+        contract.submit_block_header(fork_block_header_example);
+        contract.submit_block_header(fork_block_header_example_2());
 
         let received_header = contract.get_last_block_header();
 
