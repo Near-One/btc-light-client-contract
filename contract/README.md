@@ -24,9 +24,17 @@ If you want to test on a testnet follow next steps
 ```bash
 cargo-near near create-dev-account use-random-account-id autogenerate-new-keypair save-to-legacy-keychain network-config testnet create
 ```
+- Add nears to your test account if needed
+Go to https://near-faucet.io/ website and request Near for your account
 - Deploy contract to testnet
 ```bash
 near contract deploy <<ACCOUNT_NAME_FROM_PREVIOUS_COMMAND>> use-file ./target/wasm32-unknown-unknown/release/btc_light_client_contract.wasm without-init-call network-config testnet sign-with-keychain send
+```
+
+Setup relayer service:
+
+```shell
+cat <<PATH_TO_THE_KEY_FILE_FROM_ACCOUNT_CREATION_COMMAND>> | jq -r '.private_key'
 ```
 
 ## Useful Links

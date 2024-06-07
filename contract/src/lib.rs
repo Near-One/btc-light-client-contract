@@ -73,6 +73,17 @@ mod state {
     }
 }
 
+// Reply if we cannot find a previous block in a contract state.
+
+// Relay algorithm in this case:
+// Request last 10 blocks from the mainchain.
+// Move cursor back for bitcoin node and find the right block
+// if still no blocks found, request 10 next old blocks from smart contract
+// move cursor back on the bitcoin node
+// when right block is detected, set current height to this block and start submitting them 1 by 1
+// eventually this fork will be promoted on the smart contract relayer level
+const NF: &str = "NF";
+
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 struct ForkState {
     fork_headers: Vec<state::Header>,
@@ -156,21 +167,23 @@ impl Contract {
 
     /// Saving block header received from a Bitcoin relay service
     /// This method is private but critically important for the overall execution flow
-    fn submit_block_header(&mut self, block_header: Header) {
+    fn submit_block_header(&mut self, block_header: Header) -> Result<(), usize> {
         // Chainwork is validated inside block_header structure (other consistency checks too)
         let prev_blockhash = block_header.prev_blockhash.to_string();
         let current_block_hash = block_header.block_hash().to_string();
         let current_block_chainwork = block_header.work();
-        let chainwork_bytes = current_block_chainwork.to_be_bytes();
 
         log!("block: {} | chainwork: {}", current_block_hash, current_block_chainwork);
 
+        let prev_block_header = if let Some(header) = self.headers.get(&prev_blockhash) {
+            header
+        } else {
+            return Err(1);
+        };
+
         // Computing the target height based on the previous block
-        let height = 1 + self.headers
-            .get(&prev_blockhash)
-            .expect("cannot find prev_blockhash in headers list")
-            .block_height;
-        let header = state::Header::new(block_header, chainwork_bytes, height);
+        let height = 1 + prev_block_header.block_height;
+        let header = state::Header::new(block_header, current_block_chainwork.to_be_bytes(), height);
         let total_chainwork_on_main = bitcoin::Work::from_be_bytes(
             *self.total_chainwork_at_height.get(&(height-1)).expect("chainwork should be assign to the position")
         );
@@ -275,7 +288,7 @@ impl Contract {
                 assert_eq!(self.heaviest_block, header.prev_blockhash);
 
                 self.heaviest_block = current_block_hash.clone();
-                self.high_score = chainwork_bytes;
+                self.high_score = current_block_chainwork.to_be_bytes();
                 self.store_block_header(
                     current_block_hash,
                     header,
@@ -283,6 +296,8 @@ impl Contract {
                 );
             }
         }
+
+        Ok(())
     }
 
     /// Stores parsed block header and meta information
@@ -498,7 +513,7 @@ mod tests {
         let mut contract = Contract::default();
 
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_block_header(header);
+        contract.submit_block_header(header).unwrap();
 
         let received_header = contract.get_last_block_header();
 
@@ -515,9 +530,9 @@ mod tests {
         let mut contract = Contract::default();
 
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_block_header(header);
+        contract.submit_block_header(header).unwrap();
 
-        contract.submit_block_header(fork_block_header_example());
+        contract.submit_block_header(fork_block_header_example()).unwrap();
 
         let received_header = contract.get_last_block_header();
 
@@ -532,8 +547,8 @@ mod tests {
         let mut contract = Contract::default();
 
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_block_header(block_header_example());
-        contract.submit_block_header(fork_block_header_example());
+        contract.submit_block_header(block_header_example()).unwrap();
+        contract.submit_block_header(fork_block_header_example()).unwrap();
 
         let received_state = contract.receive_state();
         let expected_state: std::collections::BTreeMap<String, usize> = vec![
@@ -549,7 +564,7 @@ mod tests {
     fn test_getting_block_by_height() {
         let mut contract = Contract::default();
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example()).unwrap();
 
         assert_eq!(contract.get_blockhash_by_height(0).unwrap(), genesis_block_header().block_hash().to_string());
         assert_eq!(contract.get_blockhash_by_height(1).unwrap(), block_header_example().block_hash().to_string());
@@ -559,7 +574,7 @@ mod tests {
     fn test_getting_height_by_block() {
         let mut contract = Contract::default();
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example()).unwrap();
 
         assert_eq!(contract.get_height_by_blockhash(genesis_block_header().block_hash().to_string()).unwrap(), 0);
         assert_eq!(contract.get_height_by_blockhash(block_header_example().block_hash().to_string()).unwrap(), 1);
@@ -570,12 +585,12 @@ mod tests {
         let mut contract = Contract::default();
 
         contract.submit_genesis(genesis_block_header(), 0);
-        contract.submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example()).unwrap();
 
         let fork_block_header_example = fork_block_header_example();
 
-        contract.submit_block_header(fork_block_header_example);
-        contract.submit_block_header(fork_block_header_example_2());
+        contract.submit_block_header(fork_block_header_example).unwrap();
+        contract.submit_block_header(fork_block_header_example_2()).unwrap();
 
         let received_header = contract.get_last_block_header();
 
@@ -583,5 +598,15 @@ mod tests {
                                                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
                                                        2)
         );
+    }
+
+    #[test]
+    fn test_getting_an_error_if_submitting_unattached_block() {
+        let mut contract = Contract::default();
+
+        contract.submit_genesis(genesis_block_header(), 0);
+        let result = contract.submit_block_header(fork_block_header_example_2());
+        assert!(result.is_err());
+        assert!(result.is_err_and(|value| value == 1))
     }
 }

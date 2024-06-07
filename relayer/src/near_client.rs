@@ -20,6 +20,7 @@ const SUBMIT_BLOCK_HEADER: &str = "submit_block_header";
 const GET_BLOCK_HEADER: &str = "get_block_header";
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
 const RECEIVE_STATE: &str = "receive_state";
+const RECEIVE_LAST_N_BLOCKS: &str = "receive_last_n_blocks";
 
 #[derive(Debug, Clone)]
 pub struct Client {
@@ -30,18 +31,21 @@ impl Client {
     pub fn new(config: Config) -> Self {
         Self { config }
     }
+
+
+    /// Submitting block header to the smart contract.
+    /// This method supports retries internally.
     pub async fn submit_block_header(
         &self,
         header: Header,
         height: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<Result<(), usize>, Box<dyn std::error::Error>> {
         let client = JsonRpcClient::connect(&self.config.near.endpoint);
         let signer_account_id = AccountId::from_str(&self.config.near.account_name).unwrap();
         let signer_secret_key =
             near_crypto::SecretKey::from_str(&self.config.near.secret_key).unwrap();
         let args = json!({
-            "block_header": serde_json::to_value(&header).expect("bitcoin should be validate before"),
-            "height": height,
+            "block_header": serde_json::to_value(&header).expect("bitcoin should be validate before")
         });
 
         let signer = near_crypto::InMemorySigner::from_secret_key(
@@ -116,12 +120,12 @@ impl Client {
                 Ok(response) => {
                     println!("response gotten after: {}s", delta);
                     println!("response: {:#?}", response);
-                    break;
+                    return response;
                 }
             }
         }
 
-        Ok(())
+        Ok(Err(0));
     }
 
     pub async fn read_last_block_header(&self) -> Result<Header, Box<dyn std::error::Error>> {
@@ -150,6 +154,37 @@ impl Client {
             println!("Block Hash: {}", response.block_hash);
 
             return Ok(header);
+        } else {
+            return Err("failed to read block header")?;
+        }
+    }
+
+    pub async fn receive_last_n_blocks(&self, n: usize, shift_from_the_end: usize) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        let node_url = self.config.near.endpoint.clone();
+        let contract_id = self.config.near.account_name.clone();
+
+        let args = json!({
+            "n": n,
+            "shift_from_the_end": shift_from_the_end,
+        });
+        let client = near_jsonrpc_client::JsonRpcClient::connect(node_url);
+
+        let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
+            block_reference: near_primitives::types::BlockReference::Finality(
+                near_primitives::types::Finality::Final,
+            ),
+            request: near_primitives::views::QueryRequest::CallFunction {
+                account_id: contract_id.parse().unwrap(),
+                method_name: RECEIVE_LAST_N_BLOCKS.to_string(),
+                args: args.to_string().into_bytes().into(),
+            },
+        };
+        let response = client.call(read_request).await?;
+
+        if let QueryResponseKind::CallResult(result) = response.kind {
+            let block_hashes = from_slice::<Vec<String>>(&result.result)?;
+            println!("{:#?}", block_hashes);
+            return Ok(block_hashes);
         } else {
             return Err("failed to read block header")?;
         }

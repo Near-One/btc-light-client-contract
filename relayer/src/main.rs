@@ -37,7 +37,7 @@ impl Synchronizer {
 
             // Check if we have reached the latest block height
             if current_height >= latest_height {
-                // Wait for a certain duration before checking for new blocks
+                // Wait for a certain duration before checking for a new block
                 tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                 continue;
             }
@@ -45,45 +45,56 @@ impl Synchronizer {
             let block_hash = self.bitcoin_client.get_block_hash(current_height);
             let block_header = self.bitcoin_client.get_block_header(&block_hash);
 
-            // detecting if we might be in fork
-            let fork_detected = self.detect_fork(block_hash, block_header, current_height);
-            let _ = self.get_first_transaction().await;
-
-            // TODO: It is OK to catch up, but to read everything in this way is not efficient
-            // TODO: Add retry logic and more solid error handling
-            self.near_client
+            match self.near_client
             .submit_block_header(block_header.clone(), current_height as usize)
-            .await
-            .expect("failed to submit block header");
-
-            if current_height >= 0 {
-                // Only do one iteration for testing purpose
-                break;
+            .await {
+                Ok(Err(1)) => {
+                    // Contract cannot save block, because no previous block found, we are in fork
+                    current_height = self.adjust_height_to_the_fork(current_height).await;
+                }
+                Ok(_) => {
+                    // Block has been saved
+                }
+                Err(_) => {
+                    // network error after retries
+                    panic!("Off-chain relay panics after multiple attempts to save block");
+                }
             }
 
             current_height += 1;
         }
     }
 
-    // Check if we detected a forking point
-    async fn detect_fork(
+    // Adjust height of the block to start submitting new fork, which might become a new main
+    async fn adjust_height_to_the_fork(
         &self,
-        block_hash: bitcoincore_rpc::bitcoin::BlockHash,
-        block_header: Header,
         current_height: u64,
-    ) -> bool {
-        let near_block_header = self
-            .near_client
-            .read_last_block_header()
-            .await
-            .expect("read block header succesfully");
+    ) -> usize {
+        let mut n = 25;
 
-        // TODO: update logic here, check the height of the block instead of the block hash
-        if block_header.prev_blockhash != near_block_header.prev_blockhash {
-            error!("Fork detected at block height: {}", current_height);
-            true
-        } else {
-            false
+        // if we inspected 100_000 bitcoin blocks and still cannot find
+        // the point where fork happened something is very wrong
+        // it means it happened 10_000 * 10 minutes = 69 days ago (relayer was down for 69 days?)
+        while n < 10_000 {
+            n = n * 2;
+            let height = current_height - 1; // starting to look for diverge point from previous block
+
+            let last_block_hashes = self
+                .near_client
+                .receive_last_n_blocks(n, 0)
+                .await
+                .expect("read block header succesfully");
+
+            let block_from_bitcoin_node = self.bitcoin_client.get_block_header_by_height(current_height);
+
+            let hash = block_from_bitcoin_node.hash_code().to_string();
+
+            // We found that this is the first block in current bitcoin node state that we also have
+            // in our main chain in contract state. This is a diverge point. We will start submitting
+            // new fork from this point.
+            if near_block_hashes.contains(hash) {
+                return current_height;
+            }
         }
     }
 
