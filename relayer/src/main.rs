@@ -85,15 +85,19 @@ impl Synchronizer {
                 .await
                 .expect("read block header succesfully");
 
-            let block_from_bitcoin_node = self.bitcoin_client.get_block_header_by_height(current_height);
+            for i in 0 .. n {
+                let block_from_bitcoin_node = self.bitcoin_client.get_block_header_by_height(height);
 
-            let hash = block_from_bitcoin_node.hash_code().to_string();
+                let hash = block_from_bitcoin_node.hash_code().to_string();
 
-            // We found that this is the first block in current bitcoin node state that we also have
-            // in our main chain in contract state. This is a diverge point. We will start submitting
-            // new fork from this point.
-            if near_block_hashes.contains(hash) {
-                return current_height;
+                // We found that this is the first block in current bitcoin node state that we also have
+                // in our main chain in contract state. This is a diverge point. We will start submitting
+                // new fork from this point.
+                if near_block_hashes.contains(hash) {
+                    return height;
+                }
+
+                height -= 1;
             }
         }
     }
