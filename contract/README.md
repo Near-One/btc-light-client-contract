@@ -48,3 +48,9 @@ In more detail, the verification component performs the operations of a Bitcoin 
 * Transaction Inclusion Verification - given a transaction, a reference to a block header, the transaction’s index in that block and a Merkle tree path, determine whether the transaction is indeed included in the specified block header (which in turn must be already verified and stored in the Bitcoin main chain tracked by BTC-Relay).
 
 An overview and explanation of the different classes of blockchain state verification in the context of cross-chain communication, specifically the difference between full validation of transactions and mere verification of their inclusion in the underlying blockchain, can be found in this paper (Section 5).
+
+## FAQ
+What if somebody start to send older blocks than the genesis we used to initialize the relay?
+
+In this case we will ot insert those block headers, so we will not use storage for it. We also quickly check if prev_block is included into the contract, so
+we will not spend a lot of gas on it.

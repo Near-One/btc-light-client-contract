@@ -1,3 +1,5 @@
+use std::cmp::max;
+use std::collections::VecDeque;
 use near_sdk::{log, near};
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
@@ -24,8 +26,6 @@ mod state {
     pub struct Header {
         /// Block version, now repurposed for soft fork signalling.
         pub version: i32,
-        /// Current block_hash
-        pub current_blockhash: String,
         /// Reference to the previous block in the chain.
         pub prev_blockhash: String,
         /// The root hash of the merkle tree of transactions in the block.
@@ -36,14 +36,28 @@ mod state {
         pub bits: u32,
         /// The nonce, selected to obtain a low enough blockhash.
         pub nonce: u32,
-        /// Chainwork for this block (big endian storage format)
+
+        /// Below, state contains additional fields not presented in the standard blockchain header
+        /// those fields are used to represent additional information required for fork management
+        /// and other utility functionality
+        ///
+        /// Current block_hash
+        pub current_blockhash: String,
+        /// Accumulated chainwork at this position for this block (big endian storage format)
         pub chainwork: [u8; 32],
         /// Block height in the Bitcoin network
         pub block_height: usize,
+        /// Marker if this block belongs to the current mainchain or not
+        pub is_main_chain: bool,
     }
 
     impl Header {
-        pub fn new(header: bitcoin::block::Header, chainwork: [u8; 32], block_height: usize) -> Self {
+        pub fn new(
+            header: bitcoin::block::Header,
+            chainwork: [u8; 32],
+            block_height: usize,
+            is_main_chain: bool
+        ) -> Self {
             Self {
                 version: header.version.to_consensus(),
                 current_blockhash: header.block_hash().to_string(),
@@ -54,6 +68,7 @@ mod state {
                 nonce: header.nonce,
                 chainwork: chainwork,
                 block_height: block_height,
+                is_main_chain,
             }
         }
 
@@ -104,15 +119,23 @@ pub struct Contract {
     // A pair of lookup maps that allows to find header by height and height by header
     height_to_header: near_sdk::store::LookupMap<usize, String>,
     header_to_height: near_sdk::store::LookupMap<String, usize>,
-    // Total chainwork reached at this height
-    total_chainwork_at_height: near_sdk::store::LookupMap<usize, [u8; 32]>,
+
+
     // Block with the highest chainWork, i.e., blockchain tip, you can find latest height inside of it
-    heaviest_block: String,
+    mainchain_tip_blockhash: String,
+
+
     // Highest chainWork, i.e., accumulated PoW at current blockchain tip (big endian)
+    // TODO: should be substituted with self.headers_pool[self.mainchain_tip_blockhash].chainwork
     high_score: [u8; 32],
 
+    // Total chainwork reached at this height
+    // TODO: should be substituted with let blockhash = self.height_to_header[height]
+    // TODO: self.header_pool[blockhash].chainwork;
+    total_chainwork_at_height: near_sdk::store::LookupMap<usize, [u8; 32]>,
+
     // Mapping of block hashes to block headers (ALL ever submitted, i.e., incl. forks)
-    headers: near_sdk::store::LookupMap<String, state::Header>,
+    headers_pool: near_sdk::store::LookupMap<String, state::Header>,
 
     // The latest tracked fork
     current_fork_id: usize,
@@ -126,10 +149,10 @@ impl Default for Contract {
             header_to_height: near_sdk::store::LookupMap::new(b"b"),
             total_chainwork_at_height: near_sdk::store::LookupMap::new(b"c"),
             alive_forks: std::collections::HashSet::new(),
-            headers: near_sdk::store::LookupMap::new(b"h"),
+            headers_pool: near_sdk::store::LookupMap::new(b"h"),
             forks: near_sdk::store::LookupMap::new(b"f"),
             current_fork_id: 0,
-            heaviest_block: String::new(),
+            mainchain_tip_blockhash: String::new(),
             high_score: [0; 32],
         }
     }
@@ -139,7 +162,7 @@ impl Default for Contract {
 #[near]
 impl Contract {
     pub fn get_last_block_header(&self) -> state::Header {
-        self.headers[&self.heaviest_block].clone()
+        self.headers_pool[&self.mainchain_tip_blockhash].clone()
     }
 
     pub fn get_blockhash_by_height(&self, height: usize) -> Option<String> {
@@ -156,10 +179,10 @@ impl Contract {
         let current_block_hash= block_header.block_hash().as_raw_hash().to_string();
         let chainwork_bytes = block_header.work().to_be_bytes();
 
-        let header = state::Header::new(block_header, chainwork_bytes, block_height);
+        let mut header = state::Header::new(block_header, chainwork_bytes, block_height, true);
 
-        self.store_block_header(current_block_hash.clone(), header, chainwork_bytes);
-        self.heaviest_block = current_block_hash;
+        self.store_block_header(current_block_hash.clone(), &mut header, chainwork_bytes);
+        self.mainchain_tip_blockhash = current_block_hash;
         self.high_score = chainwork_bytes;
         self.total_chainwork_at_height.insert(block_height, chainwork_bytes);
         true
@@ -170,25 +193,41 @@ impl Contract {
     fn submit_block_header(&mut self, block_header: Header) -> Result<(), usize> {
         // Chainwork is validated inside block_header structure (other consistency checks too)
         let prev_blockhash = block_header.prev_blockhash.to_string();
-        let current_block_hash = block_header.block_hash().to_string();
+        let current_blockhash = block_header.block_hash().to_string();
         let current_block_chainwork = block_header.work();
 
-        log!("block: {} | chainwork: {}", current_block_hash, current_block_chainwork);
+        log!("block: {} | chainwork: {}", current_blockhash, current_block_chainwork);
 
-        let prev_block_header = if let Some(header) = self.headers.get(&prev_blockhash) {
-            header
+        let prev_block_header = if let Some(header) = self.headers_pool.get(&prev_blockhash) {
+            header.clone()
         } else {
+            // We do not have a previous block in the headers_pool, there is a high probability
+            //it means we are starting to receive a new fork,
+            // so what we do now is we are returning the error code
+            // to ask the relay to deploy the previous block.
+            //
+            // Offchain relay now, should submit blocks one by one in decreasing height order
+            // 80 -> 79 -> 78 -> ...
+            // And do it until we can accept the block.
+            // It means we found an initial fork position.
+            // We are starting to gather new fork from this initial position.
             return Err(1);
         };
 
         // Computing the target height based on the previous block
         let height = 1 + prev_block_header.block_height;
-        let header = state::Header::new(block_header, current_block_chainwork.to_be_bytes(), height);
+        let header = state::Header::new(block_header, current_block_chainwork.to_be_bytes(), height, false);
         let total_chainwork_on_main = bitcoin::Work::from_be_bytes(
             *self.total_chainwork_at_height.get(&(height-1)).expect("chainwork should be assign to the position")
         );
 
+        let total_main_chain_chainwork = bitcoin::Work::from_be_bytes(
+            prev_block_header.chainwork
+        );
+
         let fork_id = self.detect_or_create_fork(&header);
+
+        let mut header = state::Header::new(block_header, current_block_chainwork.to_be_bytes(), height, false);
 
         // Check if it is a MainChain or a Fork
         match fork_id {
@@ -197,7 +236,7 @@ impl Contract {
                 // Find fork
                 match self.forks.get(&fork_id) {
                     Some(fork_state) => {
-                        let blocks = fork_state.fork_headers.clone();
+                        let blocks = fork_state.clone().fork_headers.clone();
                         // Existing fork submission
                         let prev_blockheader = blocks.last().expect("ongoing fork blocks must not be empty");
                         // Validate chain
@@ -206,8 +245,17 @@ impl Contract {
                         let fork_chainwork = bitcoin::Work::from_be_bytes(fork_state.chainwork);
                         let highest_score = bitcoin::Work::from_be_bytes(self.high_score);
 
+                        let fork_chainwork = bitcoin::Work::from_be_bytes(prev_block_header.chainwork);
+
+                        let main_chain_tip_header = self.headers_pool
+                            .get(&self.mainchain_tip_blockhash.clone())
+                            .expect("tip should be in a header pool");
+                        let main_chain_chainwork = bitcoin::Work::from_be_bytes(main_chain_tip_header.chainwork);
+
                         // Current chainwork is higher than on a current mainchain, let's promote the fork
-                        if fork_chainwork + current_block_chainwork > highest_score {
+                        if fork_chainwork + current_block_chainwork > main_chain_chainwork {
+                            self.reorg_chain(&mut header);
+
                             // Remove the latest blocks in chain starting from fork promotion height
                             let first_fork_block = fork_state.fork_headers
                                 .first()
@@ -222,16 +270,29 @@ impl Contract {
                                 }
                             }
 
-                            let mut chainwork = bitcoin::Work::from_be_bytes(self.total_chainwork_at_height[&(height - 1)]);
+                            // TODO: algorithm is changing now, we traverse the map
+                            // TODO: until we reach main_chain_block
+                            // TODO: we run the cleanup after this from mainchain_tip_block
+                            // by removing blocks one by one.
+                            // After this we set that block as mainchain_tip
+                            // After this we update mainchain trackers
+
+                            let main_chain_block_on_fork_position = self.headers_pool
+                                .get(&first_fork_block.prev_blockhash)
+                                .expect("block to be in the pool");
+
+                            // Old chainwork we computed on a fork position
+                            let mut chainwork = bitcoin::Work::from_be_bytes(main_chain_block_on_fork_position.chainwork);
+
                             // Update heights with block hashes from the fork
                             for block in blocks {
                                 chainwork = chainwork + bitcoin::Work::from_be_bytes(block.chainwork);
                                 self.store_block_header(
                                     block.current_blockhash.clone(),
-                                    block.clone(),
+                                    &mut block.clone(),
                                     chainwork.to_be_bytes()
                                 );
-                                self.heaviest_block = block.current_blockhash.clone();
+                                self.mainchain_tip_blockhash = block.current_blockhash.clone();
                                 // Recalculate chainwork for every position
                                 self.total_chainwork_at_height.insert(block.block_height.clone(), chainwork.to_be_bytes());
                             }
@@ -239,11 +300,11 @@ impl Contract {
                             // Appending current block
                             chainwork = chainwork + block_header.work();
                             self.store_block_header(
-                                current_block_hash.clone(),
-                                header,
+                                current_blockhash.clone(),
+                                &mut header,
                                 chainwork.to_be_bytes()
                             );
-                            self.heaviest_block = current_block_hash;
+                            self.mainchain_tip_blockhash = current_blockhash;
                             // Recalculate chainwork for every position
                             self.total_chainwork_at_height.insert(height, chainwork.to_be_bytes());
 
@@ -253,7 +314,7 @@ impl Contract {
                         } else {
                             // Fork still being extended: append block
                             self.store_fork_header(fork_id,
-                                                   current_block_hash,
+                                                   current_blockhash,
                                                    header,
                                                    (fork_chainwork + current_block_chainwork).to_be_bytes()
                             );
@@ -264,7 +325,7 @@ impl Contract {
                         // This should never fail
                         assert_eq!(fork_id, self.current_fork_id);
                         // Check that block is indeed a fork
-                        assert_ne!(header.prev_blockhash, self.heaviest_block);
+                        assert_ne!(header.prev_blockhash, self.mainchain_tip_blockhash);
 
                         let height_before_fork = self.header_to_height
                             .get(&header.prev_blockhash)
@@ -275,7 +336,7 @@ impl Contract {
                             .expect("we have this height on main chain, so chainwork is also there");
                         let converted_chainwork = bitcoin::Work::from_be_bytes(*chainwork_before_fork);
 
-                        self.store_fork_header(fork_id, current_block_hash, header, (current_block_chainwork + converted_chainwork).to_be_bytes());
+                        self.store_fork_header(fork_id, current_blockhash, header, (current_block_chainwork + converted_chainwork).to_be_bytes());
                     }
                 }
             },
@@ -285,13 +346,13 @@ impl Contract {
                 // chainwork > highScore
                 log!("Saving to mainchain");
                 // Validate chain
-                assert_eq!(self.heaviest_block, header.prev_blockhash);
+                assert_eq!(self.mainchain_tip_blockhash, header.prev_blockhash);
 
-                self.heaviest_block = current_block_hash.clone();
+                self.mainchain_tip_blockhash = current_blockhash.clone();
                 self.high_score = current_block_chainwork.to_be_bytes();
                 self.store_block_header(
-                    current_block_hash,
-                    header,
+                    current_blockhash,
+                    &mut header,
                     (total_chainwork_on_main + current_block_chainwork).to_be_bytes()
                 );
             }
@@ -300,9 +361,97 @@ impl Contract {
         Ok(())
     }
 
+    /// The most expensive operation which reorganizes the chain, based on fork weight
+    fn reorg_chain(&mut self, fork_tip_header: &mut state::Header) {
+        let mut header_cursor = fork_tip_header;
+
+        // Understand the length of the fork by traversing the fork from the header to the
+        // top.
+
+        // Building a vector of traversed headers
+
+        // Comparing the size of the fork to the size of the main chain
+        // starting from the fork position:
+        //
+        //       [m1] - [m2] - [m3] - [m4] - [m5]
+        //      /
+        // [m0]
+        //      \
+        //       [f1] - [f2] - [f3] - [f4]
+
+        let mut fork_length = 0;
+        let mut fork_blockhashes = Vec::new();
+
+        // Iterating over fork to find where we are connected to main_chain
+        while !header_cursor.is_main_chain {
+            // Add a marker that this block is now belongs to the main chain
+            header_cursor.is_main_chain = true;
+
+            let prev_blockhash = header_cursor.prev_blockhash.clone();
+
+            // As we go through this iteration we are marking this fork chain as a new main
+            header_cursor = self.headers_pool
+                .get_mut(&prev_blockhash)
+                .expect("previous fork block should be there");
+
+            header_cursor.is_main_chain = true;
+            fork_length += 1;
+            fork_blockhashes.push(header_cursor.current_blockhash.clone());
+        }
+
+        // We do update operation lazily in the next fashion
+        //
+        //      [m1] - [m2] - [m3] - [m4] <- main_chain_tip_blockhash
+        //     /
+        // [m0]
+        //     \
+        //      [f1] - [f2] - [f3]
+        //
+        // What we need to do is to substitute
+        //
+        // 1. Substitue main chain blocks with forks when needed.
+        // 2. Remove the main_chain tail.
+
+        //      [f1] - [f2] - [f3] - [m4] <- main_chain_tip_blockhash
+        //     /
+        // [m0]
+        //     \
+        //      [f1] - [f2] - [f3]
+
+        let first_fork_blockhash = fork_blockhashes.last().expect("fork should have at least one element");
+        let start_main_chain_block_height = self.headers_pool[&first_fork_blockhash].block_height;
+
+        let last_main_chain_block_height = self.headers_pool[&self.mainchain_tip_blockhash].block_height.clone();
+
+        // Take the longest chain.
+        let max_height_of_fork_or_main = max(
+            fork_blockhashes.len(),
+            last_main_chain_block_height - start_main_chain_block_height
+        );
+
+        for height in start_main_chain_block_height ..= max_height_of_fork_or_main {
+            if let Some(fork_block_blockhash) = fork_blockhashes.pop() {
+                // If we have old mainchain block at the height, let's remove it
+                if let Some(current_main_chain_blockhash) = self.height_to_header.get(&height).clone() {
+                    self.header_to_height.remove(&current_main_chain_blockhash);
+                    self.headers_pool.remove(&current_main_chain_blockhash);
+                }
+
+                self.height_to_header.insert(height, fork_block_blockhash.clone());
+                self.header_to_height.insert(fork_block_blockhash, height);
+            } else {
+                // Mainchain is longer than fork (due to chainwork), let's clean the tail
+                let current_main_chain_blockhash = self.height_to_header.get(&height);
+                self.header_to_height.remove(&current_main_chain_blockhash);
+                self.headers_pool.remove(&current_main_chain_blockhash);
+            }
+        }
+    }
+
     /// Stores parsed block header and meta information
-    fn store_block_header(&mut self, current_block_hash: String, header: state::Header, new_chainwork: [u8; 32]) {
-        self.headers.insert(current_block_hash.clone(), header.clone());
+    fn store_block_header(&mut self, current_block_hash: String, header: &mut state::Header, new_chainwork: [u8; 32]) {
+        header.is_main_chain = true;
+        self.headers_pool.insert(current_block_hash.clone(), header.clone());
         self.height_to_header.insert(header.block_height, current_block_hash.clone());
         self.header_to_height.insert(current_block_hash, header.block_height);
         self.total_chainwork_at_height.insert(header.block_height, new_chainwork);
@@ -310,7 +459,7 @@ impl Contract {
 
     /// Stores and handles fork submissions
     fn store_fork_header(&mut self, fork_id: usize, current_block_hash: String, header: state::Header, new_chainwork: [u8; 32]) {
-        self.headers.insert(current_block_hash, header.clone());
+        self.headers_pool.insert(current_block_hash, header.clone());
 
         match self.forks.get_mut(&fork_id) {
             Some(fork_state) => {
@@ -353,7 +502,7 @@ impl Contract {
         let mut state = std::collections::BTreeMap::new();
 
         // Add last mainnet block to the state
-        state.insert(self.heaviest_block.clone(), 0);
+        state.insert(self.mainchain_tip_blockhash.clone(), 0);
 
         for fork_id in self.alive_forks.iter() {
             let block_hash = self.forks
@@ -374,8 +523,8 @@ impl Contract {
     // This method return n last blocks from the mainchain
     pub fn receive_last_n_blocks(&self, n: usize, shift_from_the_end: usize) -> Vec<String> {
         let mut block_hashes = vec![];
-        let tip_hash = &self.heaviest_block;
-        let tip = self.headers.get(tip_hash).expect("heaviest block should be recorded");
+        let tip_hash = &self.mainchain_tip_blockhash;
+        let tip = self.headers_pool.get(tip_hash).expect("heaviest block should be recorded");
 
         for height in (tip.block_height - n) .. (tip.block_height - shift_from_the_end) {
             if let Some(block_hash) = self.height_to_header.get(&height) {
@@ -403,13 +552,13 @@ impl Contract {
         confirmations: usize,
     ) -> bool {
         // check requested confirmations. No need to compute proof if insufficient confs.
-        let heaviest_block_header = self.headers.get(&self.heaviest_block).expect("heaviest block must be recorded");
+        let heaviest_block_header = self.headers_pool.get(&self.mainchain_tip_blockhash).expect("heaviest block must be recorded");
         if (heaviest_block_header.block_height).saturating_sub(tx_block_height) < confirmations {
             panic!("Not enough blocks confirmed cannot process verification");
         }
 
         let header_hash = self.height_to_header.get(&tx_block_height).expect("prover cannot find block by height");
-        let header = self.headers.get(header_hash).expect("cannot find requested transaction block");
+        let header = self.headers_pool.get(header_hash).expect("cannot find requested transaction block");
         let merkle_root = header.clone().merkle_root;
 
         // compute merkle tree root and check if it matches block's original merkle tree root
@@ -519,7 +668,8 @@ mod tests {
 
         assert_eq!(received_header, state::Header::new(header,
                                                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
-                                                       1)
+                                                       1,
+                                                       true)
         );
     }
 
@@ -538,7 +688,8 @@ mod tests {
 
         assert_eq!(received_header, state::Header::new(header,
                                                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
-                                                       1)
+                                                       1,
+                                                       true)
         );
     }
 
@@ -596,7 +747,8 @@ mod tests {
 
         assert_eq!(received_header, state::Header::new(fork_block_header_example_2(),
                                                        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
-                                                       2)
+                                                       2,
+                                                       true)
         );
     }
 
