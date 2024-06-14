@@ -163,10 +163,6 @@ impl Contract {
     fn submit_block_header(&mut self, block_header: Header) -> Result<(), usize> {
         // Chainwork is validated inside block_header structure (other consistency checks too)
         let prev_blockhash = block_header.prev_blockhash.to_string();
-        let current_blockhash = block_header.block_hash().to_string();
-        let current_block_chainwork = block_header.work();
-
-        log!("block: {} | chainwork: {}", current_blockhash, current_block_chainwork);
 
         let prev_block_header = if let Some(header) = self.headers_pool.get(&prev_blockhash) {
             header.clone()
@@ -184,12 +180,15 @@ impl Contract {
             return Err(1);
         };
 
+        let current_blockhash = block_header.block_hash().to_string();
+        let current_block_computed_chainwork = bitcoin::Work::from_be_bytes(prev_block_header.chainwork) + block_header.work();
+
         // Computing the target height based on the previous block
         let height = 1 + prev_block_header.block_height;
         let total_main_chain_chainwork = bitcoin::Work::from_be_bytes(
             prev_block_header.chainwork
         );
-        let mut header = state::Header::new(block_header, current_block_chainwork.to_be_bytes(), height, false);
+        let mut header = state::Header::new(block_header, current_block_computed_chainwork.to_be_bytes(), height, false);
 
         // Main chain submission
         if prev_block_header.current_blockhash == self.mainchain_tip_blockhash {
@@ -199,11 +198,13 @@ impl Contract {
             // Validate chain
             assert_eq!(self.mainchain_tip_blockhash, header.prev_blockhash);
 
-            self.mainchain_tip_blockhash = current_blockhash.clone();
+            header.is_main_chain = true;
+
             self.store_block_header(
-                current_blockhash,
-                &mut header
+                current_blockhash.clone(),
+                &header
             );
+            self.mainchain_tip_blockhash = current_blockhash;
         } else if prev_block_header.is_main_chain && prev_block_header.current_blockhash != self.mainchain_tip_blockhash {
             // We received a block which is connected to a mainchain block, but the mainchain block is not the last one
             // it means we are receiving a new fork submission
@@ -221,7 +222,7 @@ impl Contract {
             self.store_fork_header(current_blockhash.clone(), header.clone());
 
             // Current chainwork is higher than on a current mainchain, let's promote the fork
-            if fork_chainwork + current_block_chainwork > total_main_chain_chainwork {
+            if fork_chainwork + current_block_computed_chainwork > total_main_chain_chainwork {
                 self.reorg_chain(&current_blockhash);
             }
         }
@@ -322,8 +323,7 @@ impl Contract {
     }
 
     /// Stores parsed block header and meta information
-    fn store_block_header(&mut self, current_block_hash: String, header: &mut state::Header) {
-        header.is_main_chain = true;
+    fn store_block_header(&mut self, current_block_hash: String, header: &state::Header) {
         self.headers_pool.insert(current_block_hash.clone(), header.clone());
         self.mainchain_height_to_header.insert(header.block_height, current_block_hash.clone());
         self.mainchain_header_to_height.insert(current_block_hash, header.block_height);
@@ -331,7 +331,7 @@ impl Contract {
 
     /// Stores and handles fork submissions
     fn store_fork_header(&mut self, current_block_hash: String, header: state::Header) {
-        self.headers_pool.insert(current_block_hash, header.clone());
+        self.headers_pool.insert(current_block_hash, header);
     }
 
     // This method return n last blocks from the mainchain
@@ -481,7 +481,7 @@ mod tests {
         let received_header = contract.get_last_block_header();
 
         assert_eq!(received_header, state::Header::new(header,
-                                                       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
+                                                       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 2],
                                                        1,
                                                        true)
         );
@@ -501,7 +501,7 @@ mod tests {
         let received_header = contract.get_last_block_header();
 
         assert_eq!(received_header, state::Header::new(header,
-                                                       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
+                                                       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 2],
                                                        1,
                                                        true)
         );
@@ -541,7 +541,7 @@ mod tests {
         let received_header = contract.get_last_block_header();
 
         assert_eq!(received_header, state::Header::new(fork_block_header_example_2(),
-                                                       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1],
+                                                       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 3, 0, 3],
                                                        2,
                                                        true)
         );
