@@ -15,14 +15,7 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
     let outcome = user_account
         .call(contract.id(), "submit_genesis")
         .args_json(json!({
-            "block_header": {
-                "version": 1,
-                "prev_blockhash": "0000000000000000000000000000000000000000000000000000000000000000",
-                "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-                "time": 1231006505,
-                "bits": 486604799,
-                "nonce": 2083236893
-            },
+            "block_header": serde_json::to_value(&block_header).unwrap(),
             "block_height": 0
         }))
         .transact()
@@ -54,14 +47,40 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
     let outcome = user_account
         .call(contract.id(), "submit_genesis")
         .args_json(json!({
-            "block_header": {
-                "version": 1,
-                "prev_blockhash": "0000000000000000000000000000000000000000000000000000000000000000",
-                "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-                "time": 1231006505,
-                "bits": 486604799,
-                "nonce": 2083236893
-            },
+            "block_header": serde_json::to_value(&block_header).unwrap(),
+            "block_height": 0
+        }))
+        .transact()
+        .await?;
+    assert!(outcome.is_success());
+
+    // second block
+    let outcome = user_account
+        .call(contract.id(), "submit_genesis")
+        .args_json(json!({
+            "block_header": serde_json::to_value(&block_header_example()).unwrap(),
+            "block_height": 0
+        }))
+        .transact()
+        .await?;
+    assert!(outcome.is_success());
+
+    // first fork block
+    let outcome = user_account
+        .call(contract.id(), "submit_genesis")
+        .args_json(json!({
+            "block_header": serde_json::to_value(&fork_block_header_example()).unwrap(),
+            "block_height": 0
+        }))
+        .transact()
+        .await?;
+    assert!(outcome.is_success());
+
+    // second fork block
+    let outcome = user_account
+        .call(contract.id(), "submit_genesis")
+        .args_json(json!({
+            "block_header": serde_json::to_value(&fork_block_header_example_2()).unwrap(),
             "block_height": 0
         }))
         .transact()
@@ -73,7 +92,7 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
         .args_json(json!({}))
         .await?;
 
-    assert_eq!(user_message_outcome.json::<Header>()?, block_header);
+    assert_eq!(user_message_outcome.json::<Header>()?, fork_block_header_example_2());
 
     Ok(())
 }
@@ -131,21 +150,6 @@ fn fork_block_header_example_2() -> Header {
           "nonce": 1639830024,
           "bits": 486604799,
           "prev_blockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
-        });
-    let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
-    parsed_header
-}
-
-fn fork_block_header_example_3() -> Header {
-    let json_value = serde_json::json!({
-            // "hash": "0000000082b5015589a3fdf2d4baff403e6f0be035a5d9742c1cae6295464449",
-            // "chainwork": "0000000000000000000000000000000000000000000000000000000400040004",
-            "version": 1,
-            "merkle_root": "999e1c837c76a1b7fbb7e57baf87b309960f5ffefbf2a9b95dd890602272f644",
-            "time": 1231470173,
-            "nonce": 1844305925,
-            "bits": 486604799,
-            "prev_blockhash": "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd",
         });
     let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
     parsed_header
