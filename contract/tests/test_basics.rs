@@ -92,20 +92,23 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
         .args_json(json!({}))
         .await?;
 
-    assert_eq!(user_message_outcome.json::<Header>()?, fork_block_header_example_2());
+    assert_eq!(
+        user_message_outcome.json::<Header>()?,
+        fork_block_header_example_2()
+    );
 
     Ok(())
 }
 
 fn genesis_block_header() -> Header {
     let json_value = serde_json::json!({
-            "version": 1,
-            "prev_blockhash": "0000000000000000000000000000000000000000000000000000000000000000",
-            "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-            "time": 1231006505,
-            "bits": 486604799,
-            "nonce": 2083236893
-        });
+        "version": 1,
+        "prev_blockhash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+        "time": 1231006505,
+        "bits": 486604799,
+        "nonce": 2083236893
+    });
     let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
     parsed_header
 }
@@ -113,44 +116,44 @@ fn genesis_block_header() -> Header {
 // Bitcoin header example
 fn block_header_example() -> Header {
     let json_value = serde_json::json!({
-            // block_hash: 62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345
-            "version": 1,
-            "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-            "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-            "time": 1231006506,
-            "bits": 486604799,
-            "nonce": 2083236893
-        });
+        // block_hash: 62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345
+        "version": 1,
+        "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+        "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+        "time": 1231006506,
+        "bits": 486604799,
+        "nonce": 2083236893
+    });
     let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
     parsed_header
 }
 
 fn fork_block_header_example() -> Header {
     let json_value = serde_json::json!({
-            // "hash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
-            //"chainwork": "0000000000000000000000000000000000000000000000000000000200020002",
-            "version": 1,
-            "merkle_root": "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098",
-            "time": 1231469665,
-            "nonce": 2573394689_u32,
-            "bits": 486604799,
-            "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-        });
+        // "hash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
+        //"chainwork": "0000000000000000000000000000000000000000000000000000000200020002",
+        "version": 1,
+        "merkle_root": "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098",
+        "time": 1231469665,
+        "nonce": 2573394689_u32,
+        "bits": 486604799,
+        "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+    });
     let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
     parsed_header
 }
 
 fn fork_block_header_example_2() -> Header {
     let json_value = serde_json::json!({
-            // "hash": "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd",
-            // "chainwork": "0000000000000000000000000000000000000000000000000000000300030003",
-          "version": 1,
-          "merkle_root": "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5",
-          "time": 1231469744,
-          "nonce": 1639830024,
-          "bits": 486604799,
-          "prev_blockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
-        });
+        // "hash": "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd",
+        // "chainwork": "0000000000000000000000000000000000000000000000000000000300030003",
+      "version": 1,
+      "merkle_root": "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5",
+      "time": 1231469744,
+      "nonce": 1639830024,
+      "bits": 486604799,
+      "prev_blockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
+    });
     let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
     parsed_header
 }
