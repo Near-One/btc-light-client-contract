@@ -185,9 +185,6 @@ impl Contract {
 
         // Computing the target height based on the previous block
         let height = 1 + prev_block_header.block_height;
-        let total_main_chain_chainwork = bitcoin::Work::from_be_bytes(
-            prev_block_header.chainwork
-        );
         let mut header = state::Header::new(block_header, current_block_computed_chainwork.to_be_bytes(), height, false);
 
         // Main chain submission
@@ -205,24 +202,18 @@ impl Contract {
                 &header
             );
             self.mainchain_tip_blockhash = current_blockhash;
-        } else if prev_block_header.is_main_chain && prev_block_header.current_blockhash != self.mainchain_tip_blockhash {
-            // We received a block which is connected to a mainchain block, but the mainchain block is not the last one
-            // it means we are receiving a new fork submission
-            self.store_fork_header(current_blockhash, header);
         } else {
             // Existing fork submission
-            let fork_chainwork = bitcoin::Work::from_be_bytes(prev_block_header.chainwork);
-
             let main_chain_tip_header = self.headers_pool
                 .get(&self.mainchain_tip_blockhash.clone())
                 .expect("tip should be in a header pool");
-            let main_chain_chainwork = bitcoin::Work::from_be_bytes(main_chain_tip_header.chainwork);
 
+            let total_main_chain_chainwork = bitcoin::Work::from_be_bytes(main_chain_tip_header.chainwork);
 
             self.store_fork_header(current_blockhash.clone(), header.clone());
 
             // Current chainwork is higher than on a current mainchain, let's promote the fork
-            if fork_chainwork + current_block_computed_chainwork > total_main_chain_chainwork {
+            if current_block_computed_chainwork > total_main_chain_chainwork {
                 self.reorg_chain(&current_blockhash);
             }
         }
