@@ -45,14 +45,14 @@ mod state {
         /// Accumulated chainwork at this position for this block (big endian storage format)
         pub chainwork: [u8; 32],
         /// Block height in the Bitcoin network
-        pub block_height: usize,
+        pub block_height: u64,
     }
 
     impl Header {
         pub fn new(
             header: bitcoin::block::Header,
             chainwork: [u8; 32],
-            block_height: usize,
+            block_height: u64,
         ) -> Self {
             Self {
                 version: header.version.to_consensus(),
@@ -104,8 +104,8 @@ struct ForkState {
 #[near(contract_state)]
 pub struct Contract {
     // A pair of lookup maps that allows to find header by height and height by header
-    mainchain_height_to_header: near_sdk::store::LookupMap<usize, String>,
-    mainchain_header_to_height: near_sdk::store::LookupMap<String, usize>,
+    mainchain_height_to_header: near_sdk::store::LookupMap<u64, String>,
+    mainchain_header_to_height: near_sdk::store::LookupMap<String, u64>,
 
     // Block with the highest chainWork, i.e., blockchain tip, you can find latest height inside of it
     mainchain_tip_blockhash: String,
@@ -133,13 +133,13 @@ impl Contract {
         self.headers_pool[&self.mainchain_tip_blockhash].clone()
     }
 
-    pub fn get_blockhash_by_height(&self, height: usize) -> Option<String> {
+    pub fn get_blockhash_by_height(&self, height: u64) -> Option<String> {
         self.mainchain_height_to_header
             .get(&height)
             .map(|hash| hash.to_owned())
     }
 
-    pub fn get_height_by_blockhash(&self, blockhash: String) -> Option<usize> {
+    pub fn get_height_by_blockhash(&self, blockhash: String) -> Option<u64> {
         self.mainchain_header_to_height
             .get(&blockhash)
             .map(|height| *height)
@@ -147,7 +147,7 @@ impl Contract {
 
     // TODO: To make sure we are submiting correct height we might hardcode height related to the genesis block
     // into the contract.
-    pub fn submit_genesis(&mut self, block_header: Header, block_height: usize) -> bool {
+    pub fn submit_genesis(&mut self, block_header: Header, block_height: u64) -> bool {
         let current_block_hash = block_header.block_hash().as_raw_hash().to_string();
         let chainwork_bytes = block_header.work().to_be_bytes();
 
@@ -160,7 +160,7 @@ impl Contract {
 
     /// Saving block header received from a Bitcoin relay service
     /// This method is private but critically important for the overall execution flow
-    fn submit_block_header(&mut self, block_header: Header) -> Result<(), usize> {
+    fn submit_block_header(&mut self, block_header: Header) -> Result<(), u64> {
         // Chainwork is validated inside block_header structure (other consistency checks too)
         let prev_blockhash = block_header.prev_blockhash.to_string();
 
@@ -317,7 +317,7 @@ impl Contract {
     }
 
     // This method return n last blocks from the mainchain
-    pub fn receive_last_n_blocks(&self, n: usize, shift_from_the_end: usize) -> Vec<String> {
+    pub fn receive_last_n_blocks(&self, n: u64, shift_from_the_end: u64) -> Vec<String> {
         let mut block_hashes = vec![];
         let tip_hash = &self.mainchain_tip_blockhash;
         let tip = self
@@ -345,10 +345,10 @@ impl Contract {
     pub fn verify_transaction_inclusion(
         &self,
         txid: String,
-        tx_block_height: usize,
-        tx_index: usize,
+        tx_block_height: u64,
+        tx_index: u64,
         merkle_proof: Vec<String>,
-        confirmations: usize,
+        confirmations: u64,
     ) -> bool {
         // check requested confirmations. No need to compute proof if insufficient confs.
         let heaviest_block_header = self
