@@ -1,11 +1,17 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{log, near};
-use std::cmp::max;
 
 use bitcoin::block::Header;
 
 use merkle_tools;
+
+#[derive(BorshSerialize, near_sdk::BorshStorageKey)]
+enum StorageKey {
+    MainchainHeightToHeader,
+    MainchainHeaderToHeight,
+    HeadersPool,
+}
 
 /// Contract implementing Bitcoin light client.
 /// See README.md for more details about features and implementation logic behind the code.
@@ -49,11 +55,7 @@ mod state {
     }
 
     impl Header {
-        pub fn new(
-            header: bitcoin::block::Header,
-            chainwork: [u8; 32],
-            block_height: u64,
-        ) -> Self {
+        pub fn new(header: bitcoin::block::Header, chainwork: [u8; 32], block_height: u64) -> Self {
             Self {
                 version: header.version.to_consensus(),
                 current_blockhash: header.block_hash().to_string(),
@@ -118,9 +120,13 @@ pub struct Contract {
 impl Default for Contract {
     fn default() -> Self {
         Self {
-            mainchain_height_to_header: near_sdk::store::LookupMap::new(b"a"),
-            mainchain_header_to_height: near_sdk::store::LookupMap::new(b"b"),
-            headers_pool: near_sdk::store::LookupMap::new(b"h"),
+            mainchain_height_to_header: near_sdk::store::LookupMap::new(
+                StorageKey::MainchainHeightToHeader,
+            ),
+            mainchain_header_to_height: near_sdk::store::LookupMap::new(
+                StorageKey::MainchainHeaderToHeight,
+            ),
+            headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
             mainchain_tip_blockhash: String::new(),
         }
     }
@@ -230,17 +236,15 @@ impl Contract {
             self.headers_pool[&self.mainchain_tip_blockhash].block_height;
 
         if last_main_chain_block_height > fork_tip_height {
-            // We do update operation lazily in the next fashion
+            // If we see that main chain is longer than fork we first garbage collect
+            // outstanding main chain blocks:
             //
-            //      [m1] - [m2] - [m3] - [m4]
+            //      [m1] - [m2] - [m3] - [m4] <- We should remove [m4]
             //     /
             // [m0]
             //     \
             //      [f1] - [f2] - [f3]
-
-            // If we see that main chain is longer than fork we first garbage collect
-            // outstanding main chain blocks
-            for height in fork_tip_height..=last_main_chain_block_height {
+            for height in (fork_tip_height + 1)..=last_main_chain_block_height {
                 let current_main_chain_blockhash = self
                     .mainchain_height_to_header
                     .get(&height)
@@ -248,10 +252,20 @@ impl Contract {
                 self.mainchain_header_to_height
                     .remove(current_main_chain_blockhash);
                 self.headers_pool.remove(current_main_chain_blockhash);
+                self.mainchain_height_to_header.remove(&height);
             }
         }
 
-        // Now we are in a situation where mainchain is shorter than fork
+        // Now we are in a situation where mainchain is equivalent to fork size:
+        //
+        //      [m1] - [m2] - [m3] - [m4] <- main tip
+        //     /
+        // [m0]
+        //     \
+        //      [f1] - [f2] - [f3] - [f4] <- fork tip
+        //
+        //
+        // Or in a situation where it is shorter:
         //
         //      [m1] - [m2] - [m3] <- main tip
         //     /
@@ -272,11 +286,8 @@ impl Contract {
             let current_blockhash = fork_header_cursor.current_blockhash.clone();
             let current_height = fork_header_cursor.block_height;
 
-            // We know that fork chain is longer, but we don't know is it 1 element longer
-            // or multiple elements longer, so we are trying to GC main chain element if
-            // it exist on a current position.
-            // (current implementation assumes only 1 block difference, but we consider this
-            // unreliable and it could change in the future)
+            // If the fork is longer than mainchain we don't need to do garbage collection on
+            // this height, because we just insert fork block
             if let Some(current_main_chain_blockhash) =
                 self.mainchain_height_to_header.get(&current_height).clone()
             {
@@ -291,13 +302,14 @@ impl Contract {
             self.mainchain_header_to_height
                 .insert(current_blockhash, current_height);
 
-            // As we go through this iteration we are marking this fork chain as a new main
+            // Selecting previous block in fork
             fork_header_cursor = self
                 .headers_pool
                 .get_mut(&prev_blockhash)
                 .expect("previous fork block should be there");
         }
 
+        // Updating tip of the new main chain
         self.mainchain_tip_blockhash = fork_tip_header_blockhash.to_string();
     }
 
