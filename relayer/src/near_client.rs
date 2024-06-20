@@ -1,4 +1,3 @@
-use std::collections::{BTreeMap, HashMap};
 use near_crypto::vrf::SecretKey;
 use near_jsonrpc_client::{methods, JsonRpcClient};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
@@ -6,6 +5,7 @@ use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, Transact
 use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
+use std::collections::{BTreeMap, HashMap};
 
 use bitcoincore_rpc::bitcoin;
 use bitcoincore_rpc::bitcoin::block::Header;
@@ -31,7 +31,6 @@ impl Client {
     pub fn new(config: Config) -> Self {
         Self { config }
     }
-
 
     /// Submitting block header to the smart contract.
     /// This method supports retries internally.
@@ -120,12 +119,12 @@ impl Client {
                 Ok(response) => {
                     println!("response gotten after: {}s", delta);
                     println!("response: {:#?}", response);
-                    return response;
+                    return Ok(Ok(()));
                 }
             }
         }
 
-        Ok(Err(0));
+        Ok(Err(0))
     }
 
     pub async fn read_last_block_header(&self) -> Result<Header, Box<dyn std::error::Error>> {
@@ -159,7 +158,11 @@ impl Client {
         }
     }
 
-    pub async fn receive_last_n_blocks(&self, n: usize, shift_from_the_end: usize) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    pub async fn receive_last_n_blocks(
+        &self,
+        n: usize,
+        shift_from_the_end: usize,
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let node_url = self.config.near.endpoint.clone();
         let contract_id = self.config.near.account_name.clone();
 
@@ -190,7 +193,9 @@ impl Client {
         }
     }
 
-    pub async fn receive_state(&self) -> Result<BTreeMap<usize, String>, Box<dyn std::error::Error>> {
+    pub async fn receive_state(
+        &self,
+    ) -> Result<BTreeMap<usize, String>, Box<dyn std::error::Error>> {
         let node_url = self.config.near.endpoint.clone();
         let contract_id = self.config.near.account_name.clone();
 
