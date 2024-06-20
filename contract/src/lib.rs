@@ -356,46 +356,48 @@ impl Contract {
     /// @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
     pub fn verify_transaction_inclusion(
         &self,
-        txid: String,
-        tx_block_height: u64,
+        tx_id: String,
+        tx_block_blockhash: String,
         tx_index: u64,
         merkle_proof: Vec<String>,
         confirmations: u64,
     ) -> bool {
-        // check requested confirmations. No need to compute proof if insufficient confs.
         let heaviest_block_header = self
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
             .expect("heaviest block must be recorded");
-        if (heaviest_block_header.block_height).saturating_sub(tx_block_height) < confirmations {
-            panic!("Not enough blocks confirmed cannot process verification");
+        let target_block_height = *self
+            .mainchain_header_to_height
+            .get(&tx_block_blockhash)
+            .expect("block does not belong to the current main chain");
+
+        // Check requested confirmations. No need to compute proof if insufficient confirmations.
+        if (heaviest_block_header.block_height).saturating_sub(target_block_height) < confirmations
+        {
+            panic!("Not enough blocks confirmed, cannot process verification");
         }
 
-        let header_hash = self
-            .mainchain_height_to_header
-            .get(&tx_block_height)
-            .expect("prover cannot find block by height");
         let header = self
             .headers_pool
-            .get(header_hash)
+            .get(&tx_block_blockhash)
             .expect("cannot find requested transaction block");
         let merkle_root = header.clone().merkle_root;
 
         // compute merkle tree root and check if it matches block's original merkle tree root
-        if merkle_tools::compute_root_from_merkle_proof(&txid, tx_index, &merkle_proof)
+        if merkle_tools::compute_root_from_merkle_proof(&tx_id, tx_index, &merkle_proof)
             == merkle_root
         {
             log!(
                 "VerityTransaction: Tx {:?} is included in block with height {}",
-                txid,
-                tx_block_height
+                tx_id,
+                target_block_height
             );
             true
         } else {
             log!(
                 "VerityTransaction: Tx {:?} is NOT included in block with height {}",
-                txid,
-                tx_block_height
+                tx_id,
+                target_block_height
             );
             false
         }
