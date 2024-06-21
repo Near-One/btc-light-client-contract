@@ -85,23 +85,6 @@ mod state {
     }
 }
 
-// Reply if we cannot find a previous block in a contract state.
-
-// Relay algorithm in this case:
-// Request last 10 blocks from the mainchain.
-// Move cursor back for bitcoin node and find the right block
-// if still no blocks found, request 10 next old blocks from smart contract
-// move cursor back on the bitcoin node
-// when right block is detected, set current height to this block and start submitting them 1 by 1
-// eventually this fork will be promoted on the smart contract relayer level
-const NF: &str = "NF";
-
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
-struct ForkState {
-    fork_headers: Vec<state::Header>,
-    chainwork: [u8; 32],
-}
-
 // Define the contract structure
 #[near(contract_state)]
 pub struct Contract {
@@ -114,6 +97,9 @@ pub struct Contract {
 
     // Mapping of block hashes to block headers (ALL ever submitted, i.e., incl. forks)
     headers_pool: near_sdk::store::LookupMap<String, state::Header>,
+
+    // If we should run all the block checks or not
+    enable_check: bool,
 }
 
 // Define the default, which automatically initializes the contract
@@ -128,6 +114,7 @@ impl Default for Contract {
             ),
             headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
             mainchain_tip_blockhash: String::new(),
+            enable_check: true,
         }
     }
 }
@@ -135,6 +122,31 @@ impl Default for Contract {
 // Implement the contract structure
 #[near]
 impl Contract {
+    #[init]
+    pub fn new(genesis_block: Header, genesis_block_height: u64, enable_check: bool) -> Self {
+        log!("Running the initialization!");
+
+        let mut contract = Self {
+            enable_check,
+            ..Self::default()
+        };
+
+        contract.submit_genesis(genesis_block, genesis_block_height);
+
+        contract
+    }
+
+    fn submit_genesis(&mut self, block_header: Header, block_height: u64) -> bool {
+        let current_block_hash = block_header.block_hash().as_raw_hash().to_string();
+        let chainwork_bytes = block_header.work().to_be_bytes();
+
+        let mut header = state::Header::new(block_header, chainwork_bytes, block_height);
+
+        self.store_block_header(current_block_hash.clone(), &mut header);
+        self.mainchain_tip_blockhash = current_block_hash;
+        true
+    }
+
     pub fn get_last_block_header(&self) -> state::Header {
         self.headers_pool[&self.mainchain_tip_blockhash].clone()
     }
@@ -151,22 +163,10 @@ impl Contract {
             .map(|height| *height)
     }
 
-    // TODO: To make sure we are submiting correct height we might hardcode height related to the genesis block
-    // into the contract.
-    pub fn submit_genesis(&mut self, block_header: Header, block_height: u64) -> bool {
-        let current_block_hash = block_header.block_hash().as_raw_hash().to_string();
-        let chainwork_bytes = block_header.work().to_be_bytes();
-
-        let mut header = state::Header::new(block_header, chainwork_bytes, block_height);
-
-        self.store_block_header(current_block_hash.clone(), &mut header);
-        self.mainchain_tip_blockhash = current_block_hash;
-        true
-    }
-
     /// Saving block header received from a Bitcoin relay service
     /// This method is private but critically important for the overall execution flow
-    fn submit_block_header(&mut self, block_header: Header) -> Result<(), u64> {
+    #[handle_result]
+    pub fn submit_block_header(&mut self, block_header: Header) -> Result<(), String> {
         // Chainwork is validated inside block_header structure (other consistency checks too)
         let prev_blockhash = block_header.prev_blockhash.to_string();
 
@@ -183,7 +183,7 @@ impl Contract {
             // And do it until we can accept the block.
             // It means we found an initial fork position.
             // We are starting to gather new fork from this initial position.
-            return Err(1);
+            return Err(String::from("1"));
         };
 
         let current_blockhash = block_header.block_hash().to_string();
@@ -286,23 +286,23 @@ impl Contract {
             let current_blockhash = fork_header_cursor.current_blockhash.clone();
             let current_height = fork_header_cursor.block_height;
 
-            // If the fork is longer than mainchain we don't need to do garbage collection on
-            // this height, because we just insert fork block
-            if let Some(current_main_chain_blockhash) =
-                self.mainchain_height_to_header.get(&current_height).clone()
-            {
-                self.mainchain_header_to_height
-                    .remove(current_main_chain_blockhash);
-                self.headers_pool.remove(current_main_chain_blockhash);
-            }
-
-            // Inserting the fork block into the main chain
-            self.mainchain_height_to_header
+            // Inserting the fork block into the main chain, if some mainchain block is occupying
+            // this height let's save its hashcode
+            let main_chain_block = self
+                .mainchain_height_to_header
                 .insert(current_height, current_blockhash.clone());
             self.mainchain_header_to_height
                 .insert(current_blockhash, current_height);
 
-            // Selecting previous block in fork
+            // If we found a mainchain block at the current height than remove this block from the
+            // header pool and from the header -> height map
+            if let Some(current_main_chain_blockhash) = main_chain_block {
+                self.mainchain_header_to_height
+                    .remove(&current_main_chain_blockhash);
+                self.headers_pool.remove(&current_main_chain_blockhash);
+            }
+
+            // Switch iterator cursor to the previous block in fork
             fork_header_cursor = self
                 .headers_pool
                 .get_mut(&prev_blockhash)
@@ -618,6 +618,6 @@ mod tests {
         contract.submit_genesis(genesis_block_header(), 0);
         let result = contract.submit_block_header(fork_block_header_example_2());
         assert!(result.is_err());
-        assert!(result.is_err_and(|value| value == 1))
+        assert!(result.is_err_and(|value| value == String::from("1")))
     }
 }

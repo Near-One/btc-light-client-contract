@@ -8,20 +8,21 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
 
     let contract = sandbox.dev_deploy(&contract_wasm).await?;
 
-    let user_account = sandbox.dev_create_account().await?;
-
     let block_header = genesis_block_header();
 
-    let outcome = user_account
-        .call(contract.id(), "submit_genesis")
+    // Call the init method on the contract
+    let outcome = contract
+        .call("new")
         .args_json(json!({
-            "block_header": serde_json::to_value(&block_header).unwrap(),
-            "block_height": 0
+            "genesis_block": serde_json::to_value(&block_header).unwrap(),
+            "genesis_block_height": 0,
+            "enable_check": false,
         }))
         .transact()
         .await?;
-    eprint!("{:?}", outcome);
     assert!(outcome.is_success());
+
+    let user_account = sandbox.dev_create_account().await?;
 
     let user_message_outcome = contract
         .view("get_last_block_header")
@@ -40,23 +41,24 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
 
     let contract = sandbox.dev_deploy(&contract_wasm).await?;
 
-    let user_account = sandbox.dev_create_account().await?;
-
     let block_header = genesis_block_header();
 
-    let outcome = user_account
-        .call(contract.id(), "submit_genesis")
+    let outcome = contract
+        .call("new")
         .args_json(json!({
-            "block_header": serde_json::to_value(&block_header).unwrap(),
-            "block_height": 0
+            "genesis_block": serde_json::to_value(&block_header).unwrap(),
+            "genesis_block_height": 0,
+            "enable_check": false,
         }))
         .transact()
         .await?;
     assert!(outcome.is_success());
 
+    let user_account = sandbox.dev_create_account().await?;
+
     // second block
     let outcome = user_account
-        .call(contract.id(), "submit_genesis")
+        .call(contract.id(), "submit_block_header")
         .args_json(json!({
             "block_header": serde_json::to_value(&block_header_example()).unwrap(),
             "block_height": 0
@@ -67,7 +69,7 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
 
     // first fork block
     let outcome = user_account
-        .call(contract.id(), "submit_genesis")
+        .call(contract.id(), "submit_block_header")
         .args_json(json!({
             "block_header": serde_json::to_value(&fork_block_header_example()).unwrap(),
             "block_height": 0
@@ -78,7 +80,7 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
 
     // second fork block
     let outcome = user_account
-        .call(contract.id(), "submit_genesis")
+        .call(contract.id(), "submit_block_header")
         .args_json(json!({
             "block_header": serde_json::to_value(&fork_block_header_example_2()).unwrap(),
             "block_height": 0
