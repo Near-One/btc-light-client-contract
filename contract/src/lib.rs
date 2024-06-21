@@ -87,6 +87,7 @@ mod state {
 
 // Define the contract structure
 #[near(contract_state)]
+#[derive(near_sdk::PanicOnDefault)]
 pub struct Contract {
     // A pair of lookup maps that allows to find header by height and height by header
     mainchain_height_to_header: near_sdk::store::LookupMap<u64, String>,
@@ -103,7 +104,7 @@ pub struct Contract {
 }
 
 // Define the default, which automatically initializes the contract
-impl Default for Contract {
+/*impl Default for Contract {
     fn default() -> Self {
         Self {
             mainchain_height_to_header: near_sdk::store::LookupMap::new(
@@ -117,7 +118,7 @@ impl Default for Contract {
             enable_check: true,
         }
     }
-}
+}*/
 
 // Implement the contract structure
 #[near]
@@ -127,16 +128,23 @@ impl Contract {
         log!("Running the initialization!");
 
         let mut contract = Self {
+            mainchain_height_to_header: near_sdk::store::LookupMap::new(
+                StorageKey::MainchainHeightToHeader,
+            ),
+            mainchain_header_to_height: near_sdk::store::LookupMap::new(
+                StorageKey::MainchainHeaderToHeight,
+            ),
+            headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
+            mainchain_tip_blockhash: String::new(),
             enable_check,
-            ..Self::default()
         };
 
-        contract.submit_genesis(genesis_block, genesis_block_height);
+        contract.init_genesis(genesis_block, genesis_block_height);
 
         contract
     }
 
-    fn submit_genesis(&mut self, block_header: Header, block_height: u64) -> bool {
+    fn init_genesis(&mut self, block_header: Header, block_height: u64) -> bool {
         let current_block_hash = block_header.block_hash().as_raw_hash().to_string();
         let chainwork_bytes = block_header.work().to_be_bytes();
 
@@ -491,9 +499,8 @@ mod tests {
     fn test_saving_mainchain_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::default();
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
-        contract.submit_genesis(genesis_block_header(), 0);
         contract.submit_block_header(header).unwrap();
 
         let received_header = contract.get_last_block_header();
@@ -515,9 +522,8 @@ mod tests {
     fn test_submitting_new_fork_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::default();
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
-        contract.submit_genesis(genesis_block_header(), 0);
         contract.submit_block_header(header).unwrap();
 
         contract
@@ -542,8 +548,8 @@ mod tests {
     // test we can insert a block and get block back by it's height
     #[test]
     fn test_getting_block_by_height() {
-        let mut contract = Contract::default();
-        contract.submit_genesis(genesis_block_header(), 0);
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
+
         contract
             .submit_block_header(block_header_example())
             .unwrap();
@@ -560,8 +566,8 @@ mod tests {
 
     #[test]
     fn test_getting_height_by_block() {
-        let mut contract = Contract::default();
-        contract.submit_genesis(genesis_block_header(), 0);
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
+
         contract
             .submit_block_header(block_header_example())
             .unwrap();
@@ -582,9 +588,8 @@ mod tests {
 
     #[test]
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
-        let mut contract = Contract::default();
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
-        contract.submit_genesis(genesis_block_header(), 0);
         contract
             .submit_block_header(block_header_example())
             .unwrap();
@@ -613,9 +618,8 @@ mod tests {
 
     #[test]
     fn test_getting_an_error_if_submitting_unattached_block() {
-        let mut contract = Contract::default();
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
-        contract.submit_genesis(genesis_block_header(), 0);
         let result = contract.submit_block_header(fork_block_header_example_2());
         assert!(result.is_err());
         assert!(result.is_err_and(|value| value == String::from("1")))
