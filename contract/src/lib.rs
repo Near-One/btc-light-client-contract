@@ -103,23 +103,6 @@ pub struct Contract {
     enable_check: bool,
 }
 
-// Define the default, which automatically initializes the contract
-/*impl Default for Contract {
-    fn default() -> Self {
-        Self {
-            mainchain_height_to_header: near_sdk::store::LookupMap::new(
-                StorageKey::MainchainHeightToHeader,
-            ),
-            mainchain_header_to_height: near_sdk::store::LookupMap::new(
-                StorageKey::MainchainHeaderToHeight,
-            ),
-            headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
-            mainchain_tip_blockhash: String::new(),
-            enable_check: true,
-        }
-    }
-}*/
-
 // Implement the contract structure
 #[near]
 impl Contract {
