@@ -1,0 +1,40 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Build and test smart contract
+        run: |
+          cd contract
+          cargo build --verbose
+          cargo test --verbose
+          cargo clippy
+      - name: Build and test merkle tool library
+        run: |
+          cd merkle-tools
+          cargo build --verbose
+          cargo test
+          cargo clippy
+      - name: Build and test offchain relayer
+        run: |
+          cd relayer
+          cargo build --verbose
+          cargo test --verbose
+          cargo clippy
