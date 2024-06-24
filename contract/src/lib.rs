@@ -375,7 +375,7 @@ impl Contract {
         let merkle_root = header.clone().merkle_root;
 
         // compute merkle tree root and check if it matches block's original merkle tree root
-        if merkle_tools::compute_root_from_merkle_proof(&tx_id, tx_index, &merkle_proof)
+        if merkle_tools::compute_root_from_merkle_proof(&tx_id, tx_index as usize, &merkle_proof)
             == merkle_root
         {
             log!(
