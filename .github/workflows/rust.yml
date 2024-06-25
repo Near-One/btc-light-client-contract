@@ -34,4 +34,4 @@ jobs:
         - name: Run tests
           run: |
             rustup target add wasm32-unknown-unknown
-            RUST_BACKTRACE=1 cargo test -- --skip test_setting_genesis_block test_setting_chain_reorg
+            RUST_BACKTRACE=1 cargo test -- --skip test_setting_genesis_block --skip test_setting_chain_reorg
