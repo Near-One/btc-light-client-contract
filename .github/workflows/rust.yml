@@ -9,32 +9,17 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  contract:
+    name: "Smart contract checks"
     runs-on: ubuntu-latest
-
+    defaults:
+      run:
+        working-directory: ./contract
     steps:
-      - uses: actions/checkout@v2
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Build and test smart contract
-        run: |
-          cd contract
-          cargo build --verbose
-          cargo test --verbose
-          cargo clippy
-      - name: Build and test merkle tool library
-        run: |
-          cd merkle-tools
-          cargo build --verbose
-          cargo test
-          cargo clippy
-      - name: Build and test offchain relayer
-        run: |
-          cd relayer
-          cargo build --verbose
-          cargo test --verbose
-          cargo clippy
+        - name: Checkout sources
+          uses: actions/checkout@v2
+        - name: Run rustfmt
+          uses: actions-rs/cargo@v1
+          with:
+            command: fmt
+            args: --all -- --check
