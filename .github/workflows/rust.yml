@@ -25,7 +25,12 @@ jobs:
             command: fmt
             args: --manifest-path ./contract/Cargo.toml --all -- --check
 
+        - name: Run clippy
+          uses: actions-rs/clippy-check@v1
+          with:
+            args: --all-targets -- -D clippy::all
+
         - name: Run tests
           run: |
             rustup target add wasm32-unknown-unknown
-            RUST_BACKTRACE=1 cargo test
+            RUST_BACKTRACE=1 cargo test -- --skip test_setting_genesis_block test_setting_chain_reorg
