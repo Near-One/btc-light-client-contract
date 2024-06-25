@@ -29,7 +29,7 @@ jobs:
           uses: actions-rs/clippy-check@v1
           with:
             token: ${{ secrets.GITHUB_TOKEN }}
-            args: --manifest-path ./contract/Cargo.toml --all-targets -- -D clippy::all
+            args: --manifest-path ./contract/Cargo.toml --all-targets -- -D warnings
 
         - name: Run tests
           run: |
