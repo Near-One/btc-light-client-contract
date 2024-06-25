@@ -14,7 +14,7 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
     let outcome = contract
         .call("new")
         .args_json(json!({
-            "genesis_block": serde_json::to_value(&block_header).unwrap(),
+            "genesis_block": serde_json::to_value(block_header).unwrap(),
             "genesis_block_height": 0,
             "enable_check": false,
         }))
@@ -22,7 +22,7 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
         .await?;
     assert!(outcome.is_success());
 
-    let user_account = sandbox.dev_create_account().await?;
+    let _user_account = sandbox.dev_create_account().await?;
 
     let user_message_outcome = contract
         .view("get_last_block_header")
@@ -46,7 +46,7 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
     let outcome = contract
         .call("new")
         .args_json(json!({
-            "genesis_block": serde_json::to_value(&block_header).unwrap(),
+            "genesis_block": serde_json::to_value(block_header).unwrap(),
             "genesis_block_height": 0,
             "enable_check": false,
         }))
@@ -60,7 +60,7 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
     let outcome = user_account
         .call(contract.id(), "submit_block_header")
         .args_json(json!({
-            "block_header": serde_json::to_value(&block_header_example()).unwrap(),
+            "block_header": serde_json::to_value(block_header_example()).unwrap(),
             "block_height": 0
         }))
         .transact()
@@ -71,7 +71,7 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
     let outcome = user_account
         .call(contract.id(), "submit_block_header")
         .args_json(json!({
-            "block_header": serde_json::to_value(&fork_block_header_example()).unwrap(),
+            "block_header": serde_json::to_value(fork_block_header_example()).unwrap(),
             "block_height": 0
         }))
         .transact()
@@ -82,7 +82,7 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
     let outcome = user_account
         .call(contract.id(), "submit_block_header")
         .args_json(json!({
-            "block_header": serde_json::to_value(&fork_block_header_example_2()).unwrap(),
+            "block_header": serde_json::to_value(fork_block_header_example_2()).unwrap(),
             "block_height": 0
         }))
         .transact()
@@ -111,8 +111,8 @@ fn genesis_block_header() -> Header {
         "bits": 486604799,
         "nonce": 2083236893
     });
-    let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
-    parsed_header
+
+    serde_json::from_value(json_value).expect("value is invalid")
 }
 
 // Bitcoin header example
@@ -126,8 +126,8 @@ fn block_header_example() -> Header {
         "bits": 486604799,
         "nonce": 2083236893
     });
-    let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
-    parsed_header
+
+    serde_json::from_value(json_value).expect("value is invalid")
 }
 
 fn fork_block_header_example() -> Header {
@@ -141,8 +141,8 @@ fn fork_block_header_example() -> Header {
         "bits": 486604799,
         "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
     });
-    let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
-    parsed_header
+
+    serde_json::from_value(json_value).expect("value is invalid")
 }
 
 fn fork_block_header_example_2() -> Header {
@@ -156,6 +156,6 @@ fn fork_block_header_example_2() -> Header {
       "bits": 486604799,
       "prev_blockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
     });
-    let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
-    parsed_header
+
+    serde_json::from_value(json_value).expect("value is invalid")
 }

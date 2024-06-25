@@ -1,10 +1,7 @@
-use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::borsh::{self, BorshSerialize};
 use near_sdk::{log, near};
 
 use bitcoin::block::Header;
-
-use merkle_tools;
 
 #[derive(BorshSerialize, near_sdk::BorshStorageKey)]
 enum StorageKey {
@@ -64,8 +61,8 @@ mod state {
                 time: header.time,
                 bits: header.bits.to_consensus(),
                 nonce: header.nonce,
-                chainwork: chainwork,
-                block_height: block_height,
+                chainwork,
+                block_height,
             }
         }
 
@@ -131,9 +128,9 @@ impl Contract {
         let current_block_hash = block_header.block_hash().as_raw_hash().to_string();
         let chainwork_bytes = block_header.work().to_be_bytes();
 
-        let mut header = state::Header::new(block_header, chainwork_bytes, block_height);
+        let header = state::Header::new(block_header, chainwork_bytes, block_height);
 
-        self.store_block_header(current_block_hash.clone(), &mut header);
+        self.store_block_header(current_block_hash.clone(), &header);
         self.mainchain_tip_blockhash = current_block_hash;
         true
     }
@@ -149,9 +146,7 @@ impl Contract {
     }
 
     pub fn get_height_by_blockhash(&self, blockhash: String) -> Option<u64> {
-        self.mainchain_header_to_height
-            .get(&blockhash)
-            .map(|height| *height)
+        self.mainchain_header_to_height.get(&blockhash).copied()
     }
 
     /// Saving block header received from a Bitcoin relay service
@@ -183,7 +178,7 @@ impl Contract {
 
         // Computing the target height based on the previous block
         let height = 1 + prev_block_header.block_height;
-        let mut header = state::Header::new(
+        let header = state::Header::new(
             block_header,
             current_block_computed_chainwork.to_be_bytes(),
             height,
@@ -375,7 +370,7 @@ impl Contract {
         let merkle_root = header.clone().merkle_root;
 
         // compute merkle tree root and check if it matches block's original merkle tree root
-        if merkle_tools::compute_root_from_merkle_proof(&tx_id, tx_index, &merkle_proof)
+        if merkle_tools::compute_root_from_merkle_proof(&tx_id, tx_index as usize, &merkle_proof)
             == merkle_root
         {
             log!(
@@ -403,7 +398,6 @@ impl Contract {
 mod tests {
     use super::*;
     use bitcoin::block::Header;
-    use bitcoin::hex::DisplayHex;
 
     fn genesis_block_header() -> Header {
         let json_value = serde_json::json!({
@@ -414,8 +408,8 @@ mod tests {
             "bits": 486604799,
             "nonce": 2083236893
         });
-        let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
-        parsed_header
+
+        serde_json::from_value(json_value).expect("value is invalid")
     }
 
     // Bitcoin header example
@@ -429,8 +423,8 @@ mod tests {
             "bits": 486604799,
             "nonce": 2083236893
         });
-        let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
-        parsed_header
+
+        serde_json::from_value(json_value).expect("value is invalid")
     }
 
     fn fork_block_header_example() -> Header {
@@ -444,8 +438,8 @@ mod tests {
             "bits": 486604799,
             "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
         });
-        let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
-        parsed_header
+
+        serde_json::from_value(json_value).expect("value is invalid")
     }
 
     fn fork_block_header_example_2() -> Header {
@@ -459,23 +453,8 @@ mod tests {
           "bits": 486604799,
           "prev_blockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
         });
-        let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
-        parsed_header
-    }
 
-    fn fork_block_header_example_3() -> Header {
-        let json_value = serde_json::json!({
-            // "hash": "0000000082b5015589a3fdf2d4baff403e6f0be035a5d9742c1cae6295464449",
-            // "chainwork": "0000000000000000000000000000000000000000000000000000000400040004",
-            "version": 1,
-            "merkle_root": "999e1c837c76a1b7fbb7e57baf87b309960f5ffefbf2a9b95dd890602272f644",
-            "time": 1231470173,
-            "nonce": 1844305925,
-            "bits": 486604799,
-            "prev_blockhash": "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd",
-        });
-        let parsed_header = serde_json::from_value(json_value).expect("value is invalid");
-        parsed_header
+        serde_json::from_value(json_value).expect("value is invalid")
     }
 
     #[test]
@@ -605,6 +584,6 @@ mod tests {
 
         let result = contract.submit_block_header(fork_block_header_example_2());
         assert!(result.is_err());
-        assert!(result.is_err_and(|value| value == String::from("1")))
+        assert!(result.is_err_and(|value| value == *"1"))
     }
 }

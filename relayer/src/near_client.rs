@@ -1,13 +1,10 @@
-use near_crypto::vrf::SecretKey;
 use near_jsonrpc_client::{methods, JsonRpcClient};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, TransactionInfo};
 use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
-use std::collections::{BTreeMap, HashMap};
 
-use bitcoincore_rpc::bitcoin;
 use bitcoincore_rpc::bitcoin::block::Header;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
@@ -19,7 +16,6 @@ use crate::config::Config;
 const SUBMIT_BLOCK_HEADER: &str = "submit_block_header";
 const GET_BLOCK_HEADER: &str = "get_block_header";
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
-const RECEIVE_STATE: &str = "receive_state";
 const RECEIVE_LAST_N_BLOCKS: &str = "receive_last_n_blocks";
 
 #[derive(Debug, Clone)]
@@ -37,14 +33,13 @@ impl Client {
     pub async fn submit_block_header(
         &self,
         header: Header,
-        height: usize,
     ) -> Result<Result<(), usize>, Box<dyn std::error::Error>> {
         let client = JsonRpcClient::connect(&self.config.near.endpoint);
         let signer_account_id = AccountId::from_str(&self.config.near.account_name).unwrap();
         let signer_secret_key =
             near_crypto::SecretKey::from_str(&self.config.near.secret_key).unwrap();
         let args = json!({
-            "block_header": serde_json::to_value(&header).expect("bitcoin should be validate before")
+            "block_header": serde_json::to_value(header).expect("bitcoin should be validate before")
         });
 
         let signer = near_crypto::InMemorySigner::from_secret_key(
@@ -123,10 +118,9 @@ impl Client {
                 }
             }
         }
-
-        Ok(Err(0))
     }
 
+    #[allow(dead_code)]
     pub async fn read_last_block_header(&self) -> Result<Header, Box<dyn std::error::Error>> {
         let node_url = self.config.near.endpoint.clone();
         let contract_id = self.config.near.account_name.clone();
@@ -152,9 +146,9 @@ impl Client {
             println!("Block Height: {}", response.block_height);
             println!("Block Hash: {}", response.block_hash);
 
-            return Ok(header);
+            Ok(header)
         } else {
-            return Err("failed to read block header")?;
+            Err("failed to read block header")?
         }
     }
 
@@ -187,40 +181,9 @@ impl Client {
         if let QueryResponseKind::CallResult(result) = response.kind {
             let block_hashes = from_slice::<Vec<String>>(&result.result)?;
             println!("{:#?}", block_hashes);
-            return Ok(block_hashes);
+            Ok(block_hashes)
         } else {
-            return Err("failed to read block header")?;
-        }
-    }
-
-    pub async fn receive_state(
-        &self,
-    ) -> Result<BTreeMap<usize, String>, Box<dyn std::error::Error>> {
-        let node_url = self.config.near.endpoint.clone();
-        let contract_id = self.config.near.account_name.clone();
-
-        let args = json!({});
-        let client = near_jsonrpc_client::JsonRpcClient::connect(node_url);
-
-        let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
-            block_reference: near_primitives::types::BlockReference::Finality(
-                near_primitives::types::Finality::Final,
-            ),
-            request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: contract_id.parse().unwrap(),
-                method_name: RECEIVE_STATE.to_string(),
-                args: args.to_string().into_bytes().into(),
-            },
-        };
-        let response = client.call(read_request).await?;
-
-        if let QueryResponseKind::CallResult(result) = response.kind {
-            let state = from_slice::<BTreeMap<usize, String>>(&result.result)?;
-            println!("{:#?}", state);
-
-            return Ok(state);
-        } else {
-            return Err("failed to read smart contract state")?;
+            Err("failed to read block header")?
         }
     }
 
@@ -259,9 +222,9 @@ impl Client {
         if let QueryResponseKind::CallResult(result) = response.kind {
             let included = from_slice::<bool>(&result.result)?;
             println!("{:#?}", included);
-            return Ok(included);
+            Ok(included)
         } else {
-            return Err("failed to read block header")?;
+            Err("failed to read block header")?
         }
     }
 }

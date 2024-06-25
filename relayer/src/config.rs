@@ -7,6 +7,7 @@ pub struct Config {
     pub near: NearConfig,
 }
 
+#[allow(dead_code)]
 #[derive(Deserialize, Clone, Debug)]
 pub struct BitcoinConfig {
     pub endpoint: String,

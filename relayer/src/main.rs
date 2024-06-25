@@ -1,20 +1,16 @@
-use bitcoincore_rpc::bitcoin::block::Header;
-use bitcoincore_rpc::bitcoin::Transaction;
-use log::{debug, error, info, log_enabled, Level};
-use serde_json::{from_slice, json};
+use log::{debug, error, info};
 use std::env;
 
 use crate::bitcoin_client::Client as BitcoinClient;
 use crate::config::Config;
 use crate::near_client::Client as NearClient;
 
+#[allow(clippy::single_component_path_imports)]
 use merkle_tools;
 
 mod bitcoin_client;
 mod config;
 mod near_client;
-
-const GENESIS_BLOCK_HEIGHT: u64 = 0;
 
 struct Synchronizer {
     bitcoin_client: BitcoinClient,
@@ -45,18 +41,10 @@ impl Synchronizer {
             let block_hash = self.bitcoin_client.get_block_hash(current_height);
             let block_header = self.bitcoin_client.get_block_header(&block_hash);
 
-            match self
-                .near_client
-                .submit_block_header(block_header.clone(), current_height as usize)
-                .await
-            {
+            match self.near_client.submit_block_header(block_header).await {
                 Ok(Err(1)) => {
                     // Contract cannot save block, because no previous block found, we are in fork
-                    current_height = self
-                        .adjust_height_to_the_fork(current_height)
-                        .await
-                        .try_into()
-                        .unwrap();
+                    current_height = self.adjust_height_to_the_fork(current_height).await;
                 }
                 Ok(_) => {
                     // Block has been saved
@@ -79,7 +67,7 @@ impl Synchronizer {
         // the point where fork happened something is very wrong
         // it means it happened 10_000 * 10 minutes = 69 days ago (relayer was down for 69 days?)
         while amount_of_blocks_to_request < 10_000 {
-            amount_of_blocks_to_request = amount_of_blocks_to_request * 2;
+            amount_of_blocks_to_request *= 2;
 
             let last_block_hashes_in_relay_contract = self
                 .near_client
@@ -90,7 +78,7 @@ impl Synchronizer {
             // Starting to look for diverge point from previous block
             let mut height = current_height - 1;
 
-            for i in 0..amount_of_blocks_to_request {
+            for _i in 0..amount_of_blocks_to_request {
                 let block_from_bitcoin_node =
                     self.bitcoin_client.get_block_header_by_height(height);
 
@@ -108,19 +96,6 @@ impl Synchronizer {
         }
 
         0
-    }
-
-    async fn get_first_transaction(&self) -> Transaction {
-        let block_hash = self.bitcoin_client.get_block_hash(277136);
-
-        let block = self.bitcoin_client.get_block(&block_hash);
-        let root = block.compute_merkle_root().unwrap();
-        let transaction = block.txdata[0].clone();
-
-        let txid = transaction.txid();
-        let merkle_proof = self.bitcoin_client.compute_merkle_proof(block, 0);
-
-        return transaction;
     }
 
     fn get_block_height(&self) -> u64 {

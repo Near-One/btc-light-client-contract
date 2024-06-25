@@ -1,0 +1,63 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  contract:
+    name: "Smart contract checks"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./contract
+    steps:
+        - name: Checkout sources
+          uses: actions/checkout@v2
+
+        - name: Run rustfmt
+          uses: actions-rs/cargo@v1
+          with:
+            command: fmt
+            args: --manifest-path ./contract/Cargo.toml --all -- --check
+
+        - name: Run clippy
+          uses: actions-rs/clippy-check@v1
+          with:
+            token: ${{ secrets.GITHUB_TOKEN }}
+            args: --manifest-path ./contract/Cargo.toml --all-targets -- -D warnings
+
+        - name: Run tests
+          run: |
+            rustup target add wasm32-unknown-unknown
+            RUST_BACKTRACE=1 cargo test -- --skip test_setting_genesis_block --skip test_setting_chain_reorg
+
+  relayer:
+    name: "Relayer checks"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./relayer
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Run rustfmt
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --manifest-path ./relayer/Cargo.toml --all -- --check
+
+      - name: Run clippy
+        uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          args: --manifest-path ./relayer/Cargo.toml --all-targets -- -D warnings
+
+      - name: Run tests
+        run: |
+          RUST_BACKTRACE=1 cargo test
