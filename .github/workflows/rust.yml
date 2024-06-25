@@ -26,7 +26,6 @@ jobs:
             args: --manifest-path ./contract/Cargo.toml --all -- --check
 
         - name: Run tests
-          uses: actions-rs/cargo@v1
-          with:
-            command: test
-            args: --manifest-path ./contract/Cargo.toml
+          run: |
+            rustup target add wasm32-unknown-unknown
+            cargo test
