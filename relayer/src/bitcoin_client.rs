@@ -6,6 +6,7 @@ use crate::merkle_tools;
 
 use crate::config::Config;
 
+#[derive(Debug)]
 pub struct Client {
     inner: bitcoincore_rpc::Client,
 }
