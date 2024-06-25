@@ -28,4 +28,4 @@ jobs:
         - name: Run tests
           run: |
             rustup target add wasm32-unknown-unknown
-            cargo test
+            RUST_BACKTRACE=1 cargo test
