@@ -18,8 +18,15 @@ jobs:
     steps:
         - name: Checkout sources
           uses: actions/checkout@v2
+
         - name: Run rustfmt
           uses: actions-rs/cargo@v1
           with:
             command: fmt
             args: --manifest-path ./contract/Cargo.toml --all -- --check
+
+        - name: Run tests
+          uses: actions-rs/cargo@v1
+          with:
+            command: test
+            args: --manifest-path ./contract/Cargo.toml
