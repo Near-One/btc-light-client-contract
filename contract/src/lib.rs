@@ -3,7 +3,6 @@ use near_sdk::{log, near};
 
 use bitcoin::block::Header;
 
-
 #[derive(BorshSerialize, near_sdk::BorshStorageKey)]
 enum StorageKey {
     MainchainHeightToHeader,
@@ -147,8 +146,7 @@ impl Contract {
     }
 
     pub fn get_height_by_blockhash(&self, blockhash: String) -> Option<u64> {
-        self.mainchain_header_to_height
-            .get(&blockhash).copied()
+        self.mainchain_header_to_height.get(&blockhash).copied()
     }
 
     /// Saving block header received from a Bitcoin relay service
@@ -400,7 +398,6 @@ impl Contract {
 mod tests {
     use super::*;
     use bitcoin::block::Header;
-    
 
     fn genesis_block_header() -> Header {
         let json_value = serde_json::json!({
@@ -411,7 +408,7 @@ mod tests {
             "bits": 486604799,
             "nonce": 2083236893
         });
-        
+
         serde_json::from_value(json_value).expect("value is invalid")
     }
 
@@ -426,7 +423,7 @@ mod tests {
             "bits": 486604799,
             "nonce": 2083236893
         });
-        
+
         serde_json::from_value(json_value).expect("value is invalid")
     }
 
@@ -441,7 +438,7 @@ mod tests {
             "bits": 486604799,
             "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
         });
-        
+
         serde_json::from_value(json_value).expect("value is invalid")
     }
 
@@ -456,7 +453,7 @@ mod tests {
           "bits": 486604799,
           "prev_blockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
         });
-        
+
         serde_json::from_value(json_value).expect("value is invalid")
     }
 

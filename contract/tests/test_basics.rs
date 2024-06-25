@@ -111,7 +111,7 @@ fn genesis_block_header() -> Header {
         "bits": 486604799,
         "nonce": 2083236893
     });
-    
+
     serde_json::from_value(json_value).expect("value is invalid")
 }
 
@@ -126,7 +126,7 @@ fn block_header_example() -> Header {
         "bits": 486604799,
         "nonce": 2083236893
     });
-    
+
     serde_json::from_value(json_value).expect("value is invalid")
 }
 
@@ -141,7 +141,7 @@ fn fork_block_header_example() -> Header {
         "bits": 486604799,
         "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
     });
-    
+
     serde_json::from_value(json_value).expect("value is invalid")
 }
 
@@ -156,6 +156,6 @@ fn fork_block_header_example_2() -> Header {
       "bits": 486604799,
       "prev_blockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
     });
-    
+
     serde_json::from_value(json_value).expect("value is invalid")
 }
