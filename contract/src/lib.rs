@@ -1,5 +1,4 @@
-use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::borsh::{self, BorshSerialize};
 use near_sdk::{log, near};
 
 use bitcoin::block::Header;
@@ -183,7 +182,7 @@ impl Contract {
 
         // Computing the target height based on the previous block
         let height = 1 + prev_block_header.block_height;
-        let mut header = state::Header::new(
+        let header = state::Header::new(
             block_header,
             current_block_computed_chainwork.to_be_bytes(),
             height,
