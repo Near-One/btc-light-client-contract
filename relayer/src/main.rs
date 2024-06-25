@@ -8,7 +8,6 @@ use crate::near_client::Client as NearClient;
 #[allow(clippy::single_component_path_imports)]
 use merkle_tools;
 
-
 mod bitcoin_client;
 mod config;
 mod near_client;
@@ -42,16 +41,10 @@ impl Synchronizer {
             let block_hash = self.bitcoin_client.get_block_hash(current_height);
             let block_header = self.bitcoin_client.get_block_header(&block_hash);
 
-            match self
-                .near_client
-                .submit_block_header(block_header)
-                .await
-            {
+            match self.near_client.submit_block_header(block_header).await {
                 Ok(Err(1)) => {
                     // Contract cannot save block, because no previous block found, we are in fork
-                    current_height = self
-                        .adjust_height_to_the_fork(current_height)
-                        .await;
+                    current_height = self.adjust_height_to_the_fork(current_height).await;
                 }
                 Ok(_) => {
                     // Block has been saved

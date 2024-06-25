@@ -19,7 +19,7 @@ impl Client {
                 config.bitcoin.node_password.clone(),
             ),
         )
-            .expect("failed to create a bitcoin client");
+        .expect("failed to create a bitcoin client");
 
         Self { inner }
     }
