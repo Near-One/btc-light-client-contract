@@ -108,7 +108,12 @@ pub struct Contract {
 #[near]
 impl Contract {
     #[init]
-    pub fn new(genesis_block: Header, genesis_block_height: u64, enable_check: bool, gc_threshold: u32) -> Self {
+    pub fn new(
+        genesis_block: Header,
+        genesis_block_height: u64,
+        enable_check: bool,
+        gc_threshold: u32,
+    ) -> Self {
         log!("Running the initialization!");
 
         let mut contract = Self {
@@ -397,7 +402,10 @@ impl Contract {
     // Current GC implementation is doing full travers of the blocks starting from the main chain
     // tip. We can optimize this, by storing the height of a current genesis block in our state.
     fn run_gc(&mut self) {
-        let mut block_cursor = self.headers_pool.get(&self.mainchain_tip_blockhash).expect("tip blockheader must be in a header pool");
+        let mut block_cursor = self
+            .headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .expect("tip blockheader must be in a header pool");
         let mut gc_threshold = self.gc_threshold;
 
         while gc_threshold != 0 {
@@ -409,7 +417,7 @@ impl Contract {
                 None => {
                     // We haven't yet reached the gc_threshold, but already exhausted the pool of
                     // the blocks. It means we have nothing to GC now.
-                    return
+                    return;
                 }
             }
         }
