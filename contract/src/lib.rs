@@ -2,7 +2,6 @@ use near_sdk::borsh::{self, BorshSerialize};
 use near_sdk::{log, near};
 
 use bitcoin::block::Header;
-use near_sdk::env::current_account_id;
 
 #[derive(BorshSerialize, near_sdk::BorshStorageKey)]
 enum StorageKey {
@@ -401,6 +400,7 @@ impl Contract {
 
     // Current GC implementation is doing full travers of the blocks starting from the main chain
     // tip. We can optimize this, by storing the height of a current genesis block in our state.
+    #[allow(dead_code)]
     fn run_gc(&mut self) {
         let mut block_cursor = self
             .headers_pool
