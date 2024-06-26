@@ -1,20 +1,16 @@
-use bitcoincore_rpc::bitcoin::block::Header;
-use bitcoincore_rpc::bitcoin::Transaction;
-use log::{debug, error, info, log_enabled, Level};
-use serde_json::{from_slice, json};
+use log::{debug, error, info};
 use std::env;
 
 use crate::bitcoin_client::Client as BitcoinClient;
 use crate::config::Config;
 use crate::near_client::Client as NearClient;
 
+#[allow(clippy::single_component_path_imports)]
 use merkle_tools;
 
 mod bitcoin_client;
 mod config;
 mod near_client;
-
-const GENESIS_BLOCK_HEIGHT: u64 = 0;
 
 struct Synchronizer {
     bitcoin_client: BitcoinClient,
@@ -37,7 +33,7 @@ impl Synchronizer {
 
             // Check if we have reached the latest block height
             if current_height >= latest_height {
-                // Wait for a certain duration before checking for new blocks
+                // Wait for a certain duration before checking for a new block
                 tokio::time::sleep(std::time::Duration::from_secs(60)).await;
                 continue;
             }
@@ -45,59 +41,61 @@ impl Synchronizer {
             let block_hash = self.bitcoin_client.get_block_hash(current_height);
             let block_header = self.bitcoin_client.get_block_header(&block_hash);
 
-            // detecting if we might be in fork
-            let fork_detected = self.detect_fork(block_hash, block_header, current_height);
-            let _ = self.get_first_transaction().await;
-
-            // TODO: It is OK to catch up, but to read everything in this way is not efficient
-            // TODO: Add retry logic and more solid error handling
-            self.near_client
-            .submit_block_header(block_header.clone(), current_height as usize)
-            .await
-            .expect("failed to submit block header");
-
-            if current_height >= 0 {
-                // Only do one iteration for testing purpose
-                break;
+            match self.near_client.submit_block_header(block_header).await {
+                Ok(Err(1)) => {
+                    // Contract cannot save block, because no previous block found, we are in fork
+                    current_height = self.adjust_height_to_the_fork(current_height).await;
+                }
+                Ok(_) => {
+                    // Block has been saved
+                }
+                Err(_) => {
+                    // network error after retries
+                    panic!("Off-chain relay panics after multiple attempts to save block");
+                }
             }
 
             current_height += 1;
         }
     }
 
-    // Check if we detected a forking point
-    async fn detect_fork(
-        &self,
-        block_hash: bitcoincore_rpc::bitcoin::BlockHash,
-        block_header: Header,
-        current_height: u64,
-    ) -> bool {
-        let near_block_header = self
-            .near_client
-            .read_last_block_header()
-            .await
-            .expect("read block header succesfully");
+    // Adjust height of the block to start submitting new fork, which might become a new main
+    async fn adjust_height_to_the_fork(&self, current_height: u64) -> u64 {
+        let mut amount_of_blocks_to_request = 25;
 
-        // TODO: update logic here, check the height of the block instead of the block hash
-        if block_header.prev_blockhash != near_block_header.prev_blockhash {
-            error!("Fork detected at block height: {}", current_height);
-            true
-        } else {
-            false
+        // If we inspected 10_000 bitcoin blocks and still cannot find
+        // the point where fork happened something is very wrong
+        // it means it happened 10_000 * 10 minutes = 69 days ago (relayer was down for 69 days?)
+        while amount_of_blocks_to_request < 10_000 {
+            amount_of_blocks_to_request *= 2;
+
+            let last_block_hashes_in_relay_contract = self
+                .near_client
+                .receive_last_n_blocks(amount_of_blocks_to_request, 0)
+                .await
+                .expect("read block header successfully");
+
+            // Starting to look for diverge point from previous block
+            let mut height = current_height - 1;
+
+            for _i in 0..amount_of_blocks_to_request {
+                let block_from_bitcoin_node =
+                    self.bitcoin_client.get_block_header_by_height(height);
+
+                let hash = block_from_bitcoin_node.block_hash().to_string();
+
+                // We found that this is the first block in current bitcoin node state that we also have
+                // in our main chain in smart contract state.
+                // This is a diverge point. We will start submitting new fork from this point.
+                if last_block_hashes_in_relay_contract.contains(&hash) {
+                    return height;
+                }
+
+                height -= 1;
+            }
         }
-    }
 
-    async fn get_first_transaction(&self) -> Transaction {
-        let block_hash = self.bitcoin_client.get_block_hash(277136);
-
-        let block = self.bitcoin_client.get_block(&block_hash);
-        let root = block.compute_merkle_root().unwrap();
-        let transaction = block.txdata[0].clone();
-
-        let txid = transaction.txid();
-        let merkle_proof = self.bitcoin_client.compute_merkle_proof(block, 0);
-
-        return transaction;
+        0
     }
 
     fn get_block_height(&self) -> u64 {
@@ -116,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bitcoin_client = BitcoinClient::new(config.clone());
     let near_client = NearClient::new(config.clone());
 
+    // RUNNING IN VERIFICATION MODE
     let verify_mode = env::var("VERIFY_MODE").unwrap_or_default();
     if verify_mode == "true" {
         info!("running transaction verification");
@@ -123,12 +122,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // RUNNING IN BLOCK RELAY MODE
     info!("run block header sync");
-    let mut synchonizer = Synchronizer::new(bitcoin_client, near_client.clone());
-    synchonizer.sync().await;
+    let mut synchronizer = Synchronizer::new(bitcoin_client, near_client.clone());
+    synchronizer.sync().await;
     info!("end block header sync");
 
-    //near_client.read_last_block_header().await.expect("read block header succesfully");
+    //near_client.read_last_block_header().await.expect("read block header successfully");
 
     Ok(())
 }
