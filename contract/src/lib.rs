@@ -2,6 +2,7 @@ use near_sdk::borsh::{self, BorshSerialize};
 use near_sdk::{log, near};
 
 use bitcoin::block::Header;
+use near_sdk::env::current_account_id;
 
 #[derive(BorshSerialize, near_sdk::BorshStorageKey)]
 enum StorageKey {
@@ -98,13 +99,16 @@ pub struct Contract {
 
     // If we should run all the block checks or not
     enable_check: bool,
+
+    // GC threshold - how many blocks we would like to store in memory, and GC the older ones
+    gc_threshold: u32,
 }
 
 // Implement the contract structure
 #[near]
 impl Contract {
     #[init]
-    pub fn new(genesis_block: Header, genesis_block_height: u64, enable_check: bool) -> Self {
+    pub fn new(genesis_block: Header, genesis_block_height: u64, enable_check: bool, gc_threshold: u32) -> Self {
         log!("Running the initialization!");
 
         let mut contract = Self {
@@ -117,6 +121,7 @@ impl Contract {
             headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
             mainchain_tip_blockhash: String::new(),
             enable_check,
+            gc_threshold,
         };
 
         contract.init_genesis(genesis_block, genesis_block_height);
@@ -388,6 +393,44 @@ impl Contract {
             false
         }
     }
+
+    // Current GC implementation is doing full travers of the blocks starting from the main chain
+    // tip. We can optimize this, by storing the height of a current genesis block in our state.
+    fn run_gc(&mut self) {
+        let mut block_cursor = self.headers_pool.get(&self.mainchain_tip_blockhash).expect("tip blockheader must be in a header pool");
+        let mut gc_threshold = self.gc_threshold;
+
+        while gc_threshold != 0 {
+            match self.headers_pool.get(&block_cursor.prev_blockhash) {
+                Some(block_header) => {
+                    gc_threshold -= 1;
+                    block_cursor = block_header;
+                }
+                None => {
+                    // We haven't yet reached the gc_threshold, but already exhausted the pool of
+                    // the blocks. It means we have nothing to GC now.
+                    return
+                }
+            }
+        }
+
+        let mut block_cursor = Some(block_cursor);
+
+        // block_cursor is set to the correct position to start cleaning the storage
+        // we move backward through the main chain and remove blockheaders from the pool
+        // + reference to those headers from other LookupMaps
+        while let Some(current_block_header) = block_cursor {
+            let current_blockhash = current_block_header.current_blockhash.clone();
+            let current_height = current_block_header.block_height;
+            let prev_blockhash = current_block_header.prev_blockhash.clone();
+
+            self.mainchain_header_to_height.remove(&current_blockhash);
+            self.mainchain_height_to_header.remove(&current_height);
+            self.headers_pool.remove(&current_blockhash);
+
+            block_cursor = self.headers_pool.get(&prev_blockhash);
+        }
+    }
 }
 
 /*
@@ -461,7 +504,7 @@ mod tests {
     fn test_saving_mainchain_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, true);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         contract.submit_block_header(header).unwrap();
 
@@ -484,7 +527,7 @@ mod tests {
     fn test_submitting_new_fork_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, true);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         contract.submit_block_header(header).unwrap();
 
@@ -510,7 +553,7 @@ mod tests {
     // test we can insert a block and get block back by it's height
     #[test]
     fn test_getting_block_by_height() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         contract
             .submit_block_header(block_header_example())
@@ -528,7 +571,7 @@ mod tests {
 
     #[test]
     fn test_getting_height_by_block() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         contract
             .submit_block_header(block_header_example())
@@ -550,7 +593,7 @@ mod tests {
 
     #[test]
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         contract
             .submit_block_header(block_header_example())
@@ -580,7 +623,7 @@ mod tests {
 
     #[test]
     fn test_getting_an_error_if_submitting_unattached_block() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         let result = contract.submit_block_header(fork_block_header_example_2());
         assert!(result.is_err());
