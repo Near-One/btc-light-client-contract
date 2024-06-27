@@ -1,9 +1,9 @@
 use near_plugins::{
-    access_control, if_paused, pause, AccessControlRole, AccessControllable, Pausable, Upgradable
+    access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
-use near_sdk::borsh::{ self, BorshDeserialize, BorshSerialize };
-use near_sdk::serde::{ Deserialize, Serialize };
-use near_sdk::{ log, near, env, PanicOnDefault, AccountId };
+use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
+use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::{env, log, near, PanicOnDefault};
 
 use bitcoin::block::Header;
 
@@ -39,7 +39,6 @@ pub enum Role {
     /// protected `Upgradable` methods.
     DurationManager,
 }
-
 
 #[derive(BorshSerialize, near_sdk::BorshStorageKey)]
 enum StorageKey {
@@ -149,7 +148,7 @@ pub struct Contract {
 #[near]
 impl Contract {
     #[init]
-    pub fn new(genesis_block: Header, genesis_block_height: u64, enable_check: bool, pause_manager: AccountId) -> Self {
+    pub fn new(genesis_block: Header, genesis_block_height: u64, enable_check: bool) -> Self {
         log!("Running the initialization!");
 
         let mut contract = Self {
@@ -164,25 +163,12 @@ impl Contract {
             enable_check,
         };
 
-        eprintln!("{}", env::current_account_id());
-        eprintln!("{}", pause_manager);
-
-
         // Make the contract itself super admin. This allows us to grant any role in the
         // constructor.
         near_sdk::require!(
             contract.acl_init_super_admin(env::current_account_id()),
             "Failed to initialize super admin",
         );
-
-        // Grant `Role::PauseManager` to the provided account.
-        let result = contract.acl_grant_role(Role::PauseManager.into(), pause_manager.clone());
-
-        let attemtp2 = contract.acl_grant_role(Role::PauseManager.into(), pause_manager);
-
-        let check_admin = contract.acl_get_super_admins(0, 10)[0].to_string();
-
-        near_sdk::require!(Some(true) == result, "Failed to grant role");
 
         contract.init_genesis(genesis_block, genesis_block_height);
 
@@ -464,12 +450,7 @@ impl Contract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::AccountId;
     use bitcoin::block::Header;
-
-    fn sample_account_id() -> AccountId {
-        "sample.near".parse().unwrap()
-    }
 
     fn genesis_block_header() -> Header {
         let json_value = serde_json::json!({
@@ -528,12 +509,12 @@ mod tests {
 
         serde_json::from_value(json_value).expect("value is invalid")
     }
-/*
+
     #[test]
     fn test_saving_mainchain_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, true, sample_account_id());
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
         contract.submit_block_header(header).unwrap();
 
@@ -556,7 +537,7 @@ mod tests {
     fn test_submitting_new_fork_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, true, sample_account_id());
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
         contract.submit_block_header(header).unwrap();
 
@@ -582,7 +563,7 @@ mod tests {
     // test we can insert a block and get block back by it's height
     #[test]
     fn test_getting_block_by_height() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, sample_account_id());
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
         contract
             .submit_block_header(block_header_example())
@@ -600,7 +581,7 @@ mod tests {
 
     #[test]
     fn test_getting_height_by_block() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, sample_account_id());
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
         contract
             .submit_block_header(block_header_example())
@@ -622,7 +603,7 @@ mod tests {
 
     #[test]
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, sample_account_id());
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
         contract
             .submit_block_header(block_header_example())
@@ -652,10 +633,10 @@ mod tests {
 
     #[test]
     fn test_getting_an_error_if_submitting_unattached_block() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, sample_account_id());
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
         let result = contract.submit_block_header(fork_block_header_example_2());
         assert!(result.is_err());
         assert!(result.is_err_and(|value| value == *"1"))
-    }*/
+    }
 }
