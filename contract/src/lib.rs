@@ -93,6 +93,9 @@ pub struct Contract {
     // Block with the highest chainWork, i.e., blockchain tip, you can find latest height inside of it
     mainchain_tip_blockhash: String,
 
+    // The oldest block in main chain we store
+    mainchain_initial_blockhash: String,
+
     // Mapping of block hashes to block headers (ALL ever submitted, i.e., incl. forks)
     headers_pool: near_sdk::store::LookupMap<String, state::Header>,
 
@@ -123,6 +126,7 @@ impl Contract {
                 StorageKey::MainchainHeaderToHeight,
             ),
             headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
+            mainchain_initial_blockhash: String::new(),
             mainchain_tip_blockhash: String::new(),
             enable_check,
             gc_threshold,
@@ -133,15 +137,16 @@ impl Contract {
         contract
     }
 
-    fn init_genesis(&mut self, block_header: Header, block_height: u64) -> bool {
+    fn init_genesis(&mut self, block_header: Header, block_height: u64) {
         let current_block_hash = block_header.block_hash().as_raw_hash().to_string();
         let chainwork_bytes = block_header.work().to_be_bytes();
 
         let header = state::Header::new(block_header, chainwork_bytes, block_height);
 
         self.store_block_header(current_block_hash.clone(), &header);
+        self.mainchain_initial_blockhash
+            .clone_from(&current_block_hash);
         self.mainchain_tip_blockhash = current_block_hash;
-        true
     }
 
     pub fn get_last_block_header(&self) -> state::Header {
@@ -400,43 +405,45 @@ impl Contract {
 
     // Current GC implementation is doing full travers of the blocks starting from the main chain
     // tip. We can optimize this, by storing the height of a current genesis block in our state.
-    #[allow(dead_code)]
-    fn run_gc(&mut self) {
-        let mut block_cursor = self
+    pub fn run_mainchain_gc(&mut self, batch_size: u8) {
+        let initial_blockheader = self
+            .headers_pool
+            .get(&self.mainchain_initial_blockhash)
+            .expect("initial blockheader must be in a header pool");
+
+        let tip_blockheader = self
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
             .expect("tip blockheader must be in a header pool");
-        let mut gc_threshold = self.gc_threshold;
 
-        while gc_threshold != 0 {
-            match self.headers_pool.get(&block_cursor.prev_blockhash) {
-                Some(block_header) => {
-                    gc_threshold -= 1;
-                    block_cursor = block_header;
-                }
-                None => {
-                    // We haven't yet reached the gc_threshold, but already exhausted the pool of
-                    // the blocks. It means we have nothing to GC now.
-                    return;
-                }
+        let amount_of_headers_we_store =
+            tip_blockheader.block_height - initial_blockheader.block_height;
+
+        if amount_of_headers_we_store > self.gc_threshold as u64 {
+            let total_amount_to_remove = amount_of_headers_we_store - self.gc_threshold as u64;
+            let selected_amount_to_remove =
+                std::cmp::min(total_amount_to_remove, batch_size as u64);
+
+            let start_removal_height = initial_blockheader.block_height;
+            let end_removal_height = initial_blockheader.block_height + selected_amount_to_remove;
+
+            for height in start_removal_height..end_removal_height {
+                let blockhash = self
+                    .mainchain_height_to_header
+                    .get(&height)
+                    .expect("target height should exist")
+                    .to_string();
+
+                self.mainchain_header_to_height.remove(&blockhash);
+                self.mainchain_height_to_header.remove(&height);
+                self.headers_pool.remove(&blockhash);
             }
-        }
 
-        let mut block_cursor = Some(block_cursor);
-
-        // block_cursor is set to the correct position to start cleaning the storage
-        // we move backward through the main chain and remove blockheaders from the pool
-        // + reference to those headers from other LookupMaps
-        while let Some(current_block_header) = block_cursor {
-            let current_blockhash = current_block_header.current_blockhash.clone();
-            let current_height = current_block_header.block_height;
-            let prev_blockhash = current_block_header.prev_blockhash.clone();
-
-            self.mainchain_header_to_height.remove(&current_blockhash);
-            self.mainchain_height_to_header.remove(&current_height);
-            self.headers_pool.remove(&current_blockhash);
-
-            block_cursor = self.headers_pool.get(&prev_blockhash);
+            let new_initial_blockhash = self
+                .mainchain_height_to_header
+                .get(&end_removal_height)
+                .expect("target height should exist");
+            self.mainchain_initial_blockhash = new_initial_blockhash.to_string();
         }
     }
 }
