@@ -3,13 +3,13 @@ use std::fs;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Config {
-    pub bitcoin: BitcoinConfig,
-    pub near: NearConfig,
+    pub bitcoin: Bitcoin,
+    pub near: Near,
 }
 
 #[allow(dead_code)]
 #[derive(Deserialize, Clone, Debug)]
-pub struct BitcoinConfig {
+pub struct Bitcoin {
     pub endpoint: String,
     pub node_user: String,
     pub node_password: String,
@@ -17,7 +17,7 @@ pub struct BitcoinConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct NearConfig {
+pub struct Near {
     pub endpoint: String,
     pub account_name: String,
     pub secret_key: String,

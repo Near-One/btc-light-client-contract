@@ -25,7 +25,7 @@ impl Synchronizer {
         }
     }
     async fn sync(&mut self) {
-        let mut current_height = self.get_block_height();
+        let mut current_height = Synchronizer::get_block_height();
 
         loop {
             // Get the latest block height from the Bitcoin client
@@ -49,7 +49,7 @@ impl Synchronizer {
                 Ok(_) => {
                     // Block has been saved
                 }
-                Err(_) => {
+                _ => {
                     // network error after retries
                     panic!("Off-chain relay panics after multiple attempts to save block");
                 }
@@ -98,8 +98,8 @@ impl Synchronizer {
         0
     }
 
-    fn get_block_height(&self) -> u64 {
-        277136
+    fn get_block_height() -> u64 {
+        277_136
     }
 }
 
@@ -111,7 +111,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     debug!("Configuration loaded: {:?}", config);
 
-    let bitcoin_client = BitcoinClient::new(config.clone());
+    let bitcoin_client = BitcoinClient::new(&config);
     let near_client = NearClient::new(config.clone());
 
     // RUNNING IN VERIFICATION MODE
@@ -158,7 +158,7 @@ async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: Nea
 
     // Provide the transaction hash and merkle proof
     let transaction_hash = transactions[transaction_position].clone(); // Provide the transaction hash
-    let merkle_proof = bitcoin_client.compute_merkle_proof(block, transaction_position); // Provide the merkle proof
+    let merkle_proof = bitcoin_client::Client::compute_merkle_proof(&block, transaction_position); // Provide the merkle proof
 
     // If we need to force some specific transaction hash
     let transaction_hash = if force_transaction_hash.is_empty() {

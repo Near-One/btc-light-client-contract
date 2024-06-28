@@ -12,7 +12,7 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: &Config) -> Self {
         let inner = bitcoincore_rpc::Client::new(
             &config.bitcoin.endpoint,
             bitcoincore_rpc::Auth::UserPass(
@@ -57,8 +57,7 @@ impl Client {
     }
 
     pub fn compute_merkle_proof(
-        &self,
-        block: bitcoincore_rpc::bitcoin::Block,
+        block: &bitcoincore_rpc::bitcoin::Block,
         transaction_position: usize,
     ) -> Vec<String> {
         let transactions: Vec<String> = block
