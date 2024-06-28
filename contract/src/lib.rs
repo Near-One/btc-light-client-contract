@@ -370,7 +370,11 @@ impl Contract {
             .expect("block does not belong to the current main chain");
 
         // Check requested confirmations. No need to compute proof if insufficient confirmations.
-        assert!((heaviest_block_header.block_height).saturating_sub(target_block_height) >= confirmations, "Not enough blocks confirmed, cannot process verification");
+        assert!(
+            (heaviest_block_header.block_height).saturating_sub(target_block_height)
+                >= confirmations,
+            "Not enough blocks confirmed, cannot process verification"
+        );
 
         let header = self
             .headers_pool
@@ -379,8 +383,11 @@ impl Contract {
         let merkle_root = header.clone().merkle_root;
 
         // compute merkle tree root and check if it matches block's original merkle tree root
-        if merkle_tools::compute_root_from_merkle_proof(tx_id, usize::try_from(tx_index).unwrap(), merkle_proof)
-            == merkle_root
+        if merkle_tools::compute_root_from_merkle_proof(
+            tx_id,
+            usize::try_from(tx_index).unwrap(),
+            merkle_proof,
+        ) == merkle_root
         {
             log!(
                 "VerityTransaction: Tx {:?} is included in block with height {}",
