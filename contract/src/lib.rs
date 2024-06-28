@@ -181,7 +181,9 @@ impl Contract {
         };
 
         if self.enable_check {
-            block_header.validate_pow(block_header.target()).expect("block should have correct pow");
+            block_header
+                .validate_pow(block_header.target())
+                .expect("block should have correct pow");
         }
 
         let current_blockhash = block_header.block_hash().to_string();
