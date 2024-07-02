@@ -103,7 +103,7 @@ pub struct Contract {
     enable_check: bool,
 
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
-    gc_threshold: u32,
+    gc_threshold: u64,
 }
 
 // Implement the contract structure
@@ -114,7 +114,7 @@ impl Contract {
         genesis_block: Header,
         genesis_block_height: u64,
         enable_check: bool,
-        gc_threshold: u32,
+        gc_threshold: u64,
     ) -> Self {
         log!("Running the initialization!");
 
@@ -405,7 +405,7 @@ impl Contract {
 
     // Current GC implementation is doing full travers of the blocks starting from the main chain
     // tip. We can optimize this, by storing the height of a current genesis block in our state.
-    pub fn run_mainchain_gc(&mut self, batch_size: u8) {
+    pub fn run_mainchain_gc(&mut self, batch_size: u64) {
         let initial_blockheader = self
             .headers_pool
             .get(&self.mainchain_initial_blockhash)
@@ -419,31 +419,23 @@ impl Contract {
         let amount_of_headers_we_store =
             tip_blockheader.block_height - initial_blockheader.block_height;
 
-        if amount_of_headers_we_store > self.gc_threshold as u64 {
-            let total_amount_to_remove = amount_of_headers_we_store - self.gc_threshold as u64;
-            let selected_amount_to_remove =
-                std::cmp::min(total_amount_to_remove, batch_size as u64);
+        if amount_of_headers_we_store > self.gc_threshold {
+            let total_amount_to_remove = amount_of_headers_we_store - self.gc_threshold;
+            let selected_amount_to_remove = std::cmp::min(total_amount_to_remove, batch_size);
 
             let start_removal_height = initial_blockheader.block_height;
             let end_removal_height = initial_blockheader.block_height + selected_amount_to_remove;
 
             for height in start_removal_height..end_removal_height {
-                let blockhash = self
-                    .mainchain_height_to_header
-                    .get(&height)
-                    .expect("target height should exist")
-                    .to_string();
+                let blockhash = self.mainchain_height_to_header[&height].clone();
 
                 self.mainchain_header_to_height.remove(&blockhash);
                 self.mainchain_height_to_header.remove(&height);
                 self.headers_pool.remove(&blockhash);
             }
 
-            let new_initial_blockhash = self
-                .mainchain_height_to_header
-                .get(&end_removal_height)
-                .expect("target height should exist");
-            self.mainchain_initial_blockhash = new_initial_blockhash.to_string();
+            self.mainchain_initial_blockhash =
+                self.mainchain_height_to_header[&end_removal_height].clone();
         }
     }
 }
