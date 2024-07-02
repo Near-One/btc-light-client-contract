@@ -14,6 +14,8 @@ use bitcoin::block::Header;
 pub enum Role {
     /// May pause and unpause features.
     PauseManager,
+    /// Allows to use contract API even after contract is paused
+    UnrestrictedSubmitBlocks,
     /// May successfully call any of the protected `Upgradable` methods since below it is passed to
     /// every attribute of `access_control_roles`.
     ///
@@ -203,7 +205,7 @@ impl Contract {
     /// Saving block header received from a Bitcoin relay service
     /// This method is private but critically important for the overall execution flow
     #[handle_result]
-    #[pause]
+    #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
     pub fn submit_block_header(&mut self, block_header: Header) -> Result<(), String> {
         // Chainwork is validated inside block_header structure (other consistency checks too)
         let prev_blockhash = block_header.prev_blockhash.to_string();
@@ -392,7 +394,7 @@ impl Contract {
     /// @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
     /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
     /// @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
-    #[pause]
+    #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
     pub fn verify_transaction_inclusion(
         &self,
         tx_id: String,
