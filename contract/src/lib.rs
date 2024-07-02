@@ -427,8 +427,11 @@ impl Contract {
         }
     }
 
-    // Current GC implementation is doing full travers of the blocks starting from the main chain
-    // tip. We can optimize this, by storing the height of a current genesis block in our state.
+    /// Public call to run GC on a mainchain.
+    /// batch_size is how many block headers should be removed in the execution
+    ///
+    /// # Panics
+    /// If initial blockheader or tip blockheader are not in a header pool
     pub fn run_mainchain_gc(&mut self, batch_size: u64) {
         let initial_blockheader = self
             .headers_pool
@@ -458,8 +461,8 @@ impl Contract {
                 self.headers_pool.remove(&blockhash);
             }
 
-            self.mainchain_initial_blockhash =
-                self.mainchain_height_to_header[&end_removal_height].clone();
+            self.mainchain_initial_blockhash
+                .clone_from(&self.mainchain_height_to_header[&end_removal_height]);
         }
     }
 }
@@ -545,7 +548,7 @@ mod tests {
     #[test]
     fn test_pow_validator_works_correctly_for_correct_block() {
         let header = fork_block_header_example();
-        let mut contract = Contract::new(genesis_block_header(), 0, true);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         contract.submit_block_header(header).unwrap();
 
@@ -568,7 +571,7 @@ mod tests {
     fn test_saving_mainchain_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, false);
+        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
         contract.submit_block_header(header).unwrap();
 
@@ -591,7 +594,7 @@ mod tests {
     fn test_submitting_new_fork_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, true);
+        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
         contract.submit_block_header(header).unwrap();
 
@@ -635,7 +638,7 @@ mod tests {
 
     #[test]
     fn test_getting_height_by_block() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
         contract
             .submit_block_header(block_header_example())
@@ -657,7 +660,7 @@ mod tests {
 
     #[test]
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
         contract
             .submit_block_header(block_header_example())
@@ -687,7 +690,7 @@ mod tests {
 
     #[test]
     fn test_getting_an_error_if_submitting_unattached_block() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
         let result = contract.submit_block_header(fork_block_header_example_2());
         assert!(result.is_err());
