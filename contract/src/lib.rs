@@ -43,7 +43,7 @@ mod state {
         /// those fields are used to represent additional information required for fork management
         /// and other utility functionality
         ///
-        /// Current block_hash
+        /// Current `block_hash`
         pub current_blockhash: String,
         /// Accumulated chainwork at this position for this block (big endian storage format)
         pub chainwork: [u8; 32],
@@ -110,6 +110,7 @@ pub struct Contract {
 #[near]
 impl Contract {
     #[init]
+    #[must_use]
     pub fn new(
         genesis_block: Header,
         genesis_block_height: u64,
@@ -156,15 +157,22 @@ impl Contract {
     pub fn get_blockhash_by_height(&self, height: u64) -> Option<String> {
         self.mainchain_height_to_header
             .get(&height)
-            .map(|hash| hash.to_owned())
+            .map(std::borrow::ToOwned::to_owned)
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     pub fn get_height_by_blockhash(&self, blockhash: String) -> Option<u64> {
         self.mainchain_header_to_height.get(&blockhash).copied()
     }
 
     /// Saving block header received from a Bitcoin relay service
     /// This method is private but critically important for the overall execution flow
+    ///
+    /// # Panics
+    /// - Many cases
+    ///
+    /// # Errors
+    /// - No previous block recorded, so we cannot validate chain
     #[handle_result]
     pub fn submit_block_header(&mut self, block_header: Header) -> Result<(), String> {
         // Chainwork is validated inside block_header structure (other consistency checks too)
@@ -185,6 +193,12 @@ impl Contract {
             // We are starting to gather new fork from this initial position.
             return Err(String::from("1"));
         };
+
+        if self.enable_check {
+            block_header
+                .validate_pow(block_header.target())
+                .expect("block should have correct pow");
+        }
 
         let current_blockhash = block_header.block_hash().to_string();
         let current_block_computed_chainwork =
@@ -328,7 +342,9 @@ impl Contract {
         self.headers_pool.insert(current_block_hash, header);
     }
 
-    // This method return n last blocks from the mainchain
+    /// This method return n last blocks from the mainchain
+    /// # Panics
+    /// Cannot find a tip of main chain in a pool
     pub fn receive_last_n_blocks(&self, n: u64, shift_from_the_end: u64) -> Vec<String> {
         let mut block_hashes = vec![];
         let tip_hash = &self.mainchain_tip_blockhash;
@@ -354,6 +370,10 @@ impl Contract {
     /// @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
     /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
     /// @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
+    ///
+    /// # Panics
+    /// Multiple cases
+    #[allow(clippy::needless_pass_by_value)]
     pub fn verify_transaction_inclusion(
         &self,
         tx_id: String,
@@ -372,10 +392,11 @@ impl Contract {
             .expect("block does not belong to the current main chain");
 
         // Check requested confirmations. No need to compute proof if insufficient confirmations.
-        if (heaviest_block_header.block_height).saturating_sub(target_block_height) < confirmations
-        {
-            panic!("Not enough blocks confirmed, cannot process verification");
-        }
+        assert!(
+            (heaviest_block_header.block_height).saturating_sub(target_block_height)
+                >= confirmations,
+            "Not enough blocks confirmed, cannot process verification"
+        );
 
         let header = self
             .headers_pool
@@ -384,8 +405,11 @@ impl Contract {
         let merkle_root = header.clone().merkle_root;
 
         // compute merkle tree root and check if it matches block's original merkle tree root
-        if merkle_tools::compute_root_from_merkle_proof(&tx_id, tx_index as usize, &merkle_proof)
-            == merkle_root
+        if merkle_tools::compute_root_from_merkle_proof(
+            &tx_id,
+            usize::try_from(tx_index).unwrap(),
+            &merkle_proof,
+        ) == merkle_root
         {
             log!(
                 "VerityTransaction: Tx {:?} is included in block with height {}",
@@ -454,9 +478,9 @@ mod tests {
             "version": 1,
             "prev_blockhash": "0000000000000000000000000000000000000000000000000000000000000000",
             "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-            "time": 1231006505,
-            "bits": 486604799,
-            "nonce": 2083236893
+            "time": 1_231_006_505,
+            "bits": 486_604_799,
+            "nonce": 2_083_236_893
         });
 
         serde_json::from_value(json_value).expect("value is invalid")
@@ -469,9 +493,9 @@ mod tests {
             "version": 1,
             "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
             "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-            "time": 1231006506,
-            "bits": 486604799,
-            "nonce": 2083236893
+            "time": 1_231_006_506,
+            "bits": 486_604_799,
+            "nonce": 2_083_236_893
         });
 
         serde_json::from_value(json_value).expect("value is invalid")
@@ -483,9 +507,9 @@ mod tests {
             //"chainwork": "0000000000000000000000000000000000000000000000000000000200020002",
             "version": 1,
             "merkle_root": "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098",
-            "time": 1231469665,
-            "nonce": 2573394689_u32,
-            "bits": 486604799,
+            "time": 1_231_469_665,
+            "nonce": 2_573_394_689_u32,
+            "bits": 486_604_799,
             "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
         });
 
@@ -498,9 +522,9 @@ mod tests {
             // "chainwork": "0000000000000000000000000000000000000000000000000000000300030003",
           "version": 1,
           "merkle_root": "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5",
-          "time": 1231469744,
-          "nonce": 1639830024,
-          "bits": 486604799,
+          "time": 1_231_469_744,
+          "nonce": 1_639_830_024,
+          "bits": 486_604_799,
           "prev_blockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
         });
 
@@ -508,10 +532,43 @@ mod tests {
     }
 
     #[test]
-    fn test_saving_mainchain_block_header() {
+    #[should_panic(expected = "block should have correct pow: BadProofOfWork")]
+    fn test_pow_validator_works_correctly_for_wrong_block() {
         let header = block_header_example();
 
         let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+
+        // cannot submit header due to wrong POW
+        contract.submit_block_header(header).unwrap();
+    }
+
+    #[test]
+    fn test_pow_validator_works_correctly_for_correct_block() {
+        let header = fork_block_header_example();
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
+
+        contract.submit_block_header(header).unwrap();
+
+        let received_header = contract.get_last_block_header();
+
+        assert_eq!(
+            received_header,
+            state::Header::new(
+                header,
+                [
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 2, 0, 2, 0, 2
+                ],
+                1
+            )
+        );
+    }
+
+    #[test]
+    fn test_saving_mainchain_block_header() {
+        let header = block_header_example();
+
+        let mut contract = Contract::new(genesis_block_header(), 0, false);
 
         contract.submit_block_header(header).unwrap();
 
@@ -534,7 +591,7 @@ mod tests {
     fn test_submitting_new_fork_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, true);
 
         contract.submit_block_header(header).unwrap();
 
@@ -560,7 +617,7 @@ mod tests {
     // test we can insert a block and get block back by it's height
     #[test]
     fn test_getting_block_by_height() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
         contract
             .submit_block_header(block_header_example())
@@ -634,6 +691,6 @@ mod tests {
 
         let result = contract.submit_block_header(fork_block_header_example_2());
         assert!(result.is_err());
-        assert!(result.is_err_and(|value| value == *"1"))
+        assert!(result.is_err_and(|value| value == *"1"));
     }
 }

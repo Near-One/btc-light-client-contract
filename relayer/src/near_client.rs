@@ -112,8 +112,8 @@ impl Client {
                     _ => Err(err)?,
                 },
                 Ok(response) => {
-                    println!("response gotten after: {}s", delta);
-                    println!("response: {:#?}", response);
+                    println!("response gotten after: {delta}s");
+                    println!("response: {response:#?}");
                     return Ok(Ok(()));
                 }
             }
@@ -142,7 +142,7 @@ impl Client {
 
         if let QueryResponseKind::CallResult(result) = response.kind {
             let header = from_slice::<Header>(&result.result)?;
-            println!("{:#?}", header);
+            println!("{header:#?}");
             println!("Block Height: {}", response.block_height);
             println!("Block Hash: {}", response.block_hash);
 
@@ -180,7 +180,7 @@ impl Client {
 
         if let QueryResponseKind::CallResult(result) = response.kind {
             let block_hashes = from_slice::<Vec<String>>(&result.result)?;
-            println!("{:#?}", block_hashes);
+            println!("{block_hashes:#?}");
             Ok(block_hashes)
         } else {
             Err("failed to read block header")?
@@ -221,7 +221,7 @@ impl Client {
 
         if let QueryResponseKind::CallResult(result) = response.kind {
             let included = from_slice::<bool>(&result.result)?;
-            println!("{:#?}", included);
+            println!("{included:#?}");
             Ok(included)
         } else {
             Err("failed to read block header")?
