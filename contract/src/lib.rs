@@ -16,6 +16,8 @@ pub enum Role {
     PauseManager,
     /// Allows to use contract API even after contract is paused
     UnrestrictedSubmitBlocks,
+    /// Allows to use verify_transaction API on a paused contract
+    UnrestrictedVerifyTransaction,
     /// May successfully call any of the protected `Upgradable` methods since below it is passed to
     /// every attribute of `access_control_roles`.
     ///
@@ -394,7 +396,7 @@ impl Contract {
     /// @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
     /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
     /// @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
-    #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
+    #[pause(except(roles(Role::UnrestrictedVerifyTransaction)))]
     pub fn verify_transaction_inclusion(
         &self,
         tx_id: String,
