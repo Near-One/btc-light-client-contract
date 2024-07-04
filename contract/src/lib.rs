@@ -1,7 +1,48 @@
-use near_sdk::borsh::{self, BorshSerialize};
-use near_sdk::{log, near};
+use near_plugins::{
+    access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
+};
+use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
+use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::{env, log, near, PanicOnDefault};
 
 use bitcoin::block::Header;
+
+/// Define roles for access control of `Pausable` features. Accounts which are
+/// granted a role are authorized to execute the corresponding action.
+#[derive(AccessControlRole, Deserialize, Serialize, Copy, Clone)]
+#[serde(crate = "near_sdk::serde")]
+pub enum Role {
+    /// May pause and unpause features.
+    PauseManager,
+    /// Allows to use contract API even after contract is paused
+    UnrestrictedSubmitBlocks,
+    /// Allows to use verify_transaction API on a paused contract
+    UnrestrictedVerifyTransaction,
+    /// May successfully call any of the protected `Upgradable` methods since below it is passed to
+    /// every attribute of `access_control_roles`.
+    ///
+    /// Using this pattern grantees of a single role are authorized to call all `Upgradable`methods.
+    DAO,
+    /// May successfully call `Upgradable::up_stage_code`, but none of the other protected methods,
+    /// since below is passed only to the `code_stagers` attribute.
+    ///
+    /// Using this pattern grantees of a role are authorized to call only one particular protected
+    /// `Upgradable` method.
+    CodeStager,
+    /// May successfully call `Upgradable::up_deploy_code`, but none of the other protected methods,
+    /// since below is passed only to the `code_deployers` attribute.
+    ///
+    /// Using this pattern grantees of a role are authorized to call only one particular protected
+    /// `Upgradable` method.
+    CodeDeployer,
+    /// May successfully call `Upgradable` methods to initialize and update the staging duration
+    /// since below it is passed to the attributes `duration_initializers`,
+    /// `duration_update_stagers`, and `duration_update_appliers`.
+    ///
+    /// Using this pattern grantees of a single role are authorized to call multiple (but not all)
+    /// protected `Upgradable` methods.
+    DurationManager,
+}
 
 #[derive(BorshSerialize, near_sdk::BorshStorageKey)]
 enum StorageKey {
@@ -17,10 +58,9 @@ enum StorageKey {
 /// relay, take a look at the relay service documentation.
 
 mod state {
+    use super::*;
     use bitcoin::block::Version;
-    use bitcoin::hashes::serde::{Deserialize, Serialize};
     use bitcoin::CompactTarget;
-    use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 
     /// Bitcoin header to store in the block height
     #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -82,9 +122,17 @@ mod state {
     }
 }
 
-// Define the contract structure
+#[access_control(role_type(Role))]
 #[near(contract_state)]
-#[derive(near_sdk::PanicOnDefault)]
+#[derive(Pausable, Upgradable, PanicOnDefault)]
+#[pausable(manager_roles(Role::PauseManager))]
+#[upgradable(access_control_roles(
+    code_stagers(Role::CodeStager, Role::DAO),
+    code_deployers(Role::CodeDeployer, Role::DAO),
+    duration_initializers(Role::DurationManager, Role::DAO),
+    duration_update_stagers(Role::DurationManager, Role::DAO),
+    duration_update_appliers(Role::DurationManager, Role::DAO),
+))]
 pub struct Contract {
     // A pair of lookup maps that allows to find header by height and height by header
     mainchain_height_to_header: near_sdk::store::LookupMap<u64, String>,
@@ -119,6 +167,13 @@ impl Contract {
             enable_check,
         };
 
+        // Make the contract itself super admin. This allows us to grant any role in the
+        // constructor.
+        near_sdk::require!(
+            contract.acl_init_super_admin(env::current_account_id()),
+            "Failed to initialize super admin",
+        );
+
         contract.init_genesis(genesis_block, genesis_block_height);
 
         contract
@@ -152,6 +207,7 @@ impl Contract {
     /// Saving block header received from a Bitcoin relay service
     /// This method is private but critically important for the overall execution flow
     #[handle_result]
+    #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
     pub fn submit_block_header(&mut self, block_header: Header) -> Result<(), String> {
         // Chainwork is validated inside block_header structure (other consistency checks too)
         let prev_blockhash = block_header.prev_blockhash.to_string();
@@ -340,6 +396,7 @@ impl Contract {
     /// @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
     /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
     /// @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
+    #[pause(except(roles(Role::UnrestrictedVerifyTransaction)))]
     pub fn verify_transaction_inclusion(
         &self,
         tx_id: String,
