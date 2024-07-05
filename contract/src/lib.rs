@@ -16,7 +16,7 @@ pub enum Role {
     PauseManager,
     /// Allows to use contract API even after contract is paused
     UnrestrictedSubmitBlocks,
-    /// Allows to use verify_transaction API on a paused contract
+    /// Allows to use `verify_transaction` API on a paused contract
     UnrestrictedVerifyTransaction,
     /// May successfully call any of the protected `Upgradable` methods since below it is passed to
     /// every attribute of `access_control_roles`.
@@ -57,7 +57,7 @@ enum StorageKey {
 /// relay, take a look at the relay service documentation.
 
 mod state {
-    use super::*;
+    use super::borsh;
     use bitcoin::block::Version;
     use bitcoin::hashes::serde::{Deserialize, Serialize};
     use bitcoin::CompactTarget;
@@ -199,9 +199,10 @@ impl Contract {
     pub fn get_blockhash_by_height(&self, height: u64) -> Option<String> {
         self.mainchain_height_to_header
             .get(&height)
-            .map(|hash| hash.to_owned())
+            .map(std::borrow::ToOwned::to_owned)
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     pub fn get_height_by_blockhash(&self, blockhash: String) -> Option<u64> {
         self.mainchain_header_to_height.get(&blockhash).copied()
     }
@@ -235,10 +236,6 @@ impl Contract {
             // We are starting to gather new fork from this initial position.
             return Err(String::from("1"));
         };
-
-        let current_blockhash = block_header.block_hash().to_string();
-        let current_block_computed_chainwork =
-            bitcoin::Work::from_be_bytes(prev_block_header.chainwork) + block_header.work();
 
         if self.enable_check {
             block_header
