@@ -406,7 +406,7 @@ impl Contract {
     }
 
     /// Verifies that a transaction is included in a block at a given block height
-
+    ///
     /// @param txid transaction identifier
     /// @param txBlockHeight block height at which transacton is supposedly included
     /// @param txIndex index of transaction in the block's tx merkle tree
@@ -417,6 +417,7 @@ impl Contract {
     /// # Panics
     /// Multiple cases
     #[allow(clippy::needless_pass_by_value)]
+    #[pause(except(roles(Role::UnrestrictedVerifyTransaction)))]
     pub fn verify_transaction_inclusion(
         &self,
         tx_id: String,
