@@ -1,5 +1,5 @@
 use near_sdk::borsh::{self, BorshSerialize};
-use near_sdk::{log, near};
+use near_sdk::{log, near, env};
 
 use bitcoin::block::Header;
 
@@ -197,7 +197,7 @@ impl Contract {
         if self.enable_check {
             block_header
                 .validate_pow(block_header.target())
-                .expect("block should have correct pow");
+                .unwrap_or_else(|_| env::panic_str("block should have correct pow"));
         }
 
         let current_blockhash = block_header.block_hash().to_string();
@@ -227,7 +227,7 @@ impl Contract {
             let main_chain_tip_header = self
                 .headers_pool
                 .get(&self.mainchain_tip_blockhash.clone())
-                .expect("tip should be in a header pool");
+                .unwrap_or_else(|| env::panic_str("tip should be in a header pool"));
 
             let total_main_chain_chainwork =
                 bitcoin::Work::from_be_bytes(main_chain_tip_header.chainwork);
@@ -262,7 +262,7 @@ impl Contract {
                 let current_main_chain_blockhash = self
                     .mainchain_height_to_header
                     .get(&height)
-                    .expect("cannot get a block");
+                    .unwrap_or_else(|| env::panic_str("cannot get a block"));
                 self.mainchain_header_to_height
                     .remove(current_main_chain_blockhash);
                 self.headers_pool.remove(current_main_chain_blockhash);
@@ -290,7 +290,7 @@ impl Contract {
         let mut fork_header_cursor = self
             .headers_pool
             .get_mut(fork_tip_header_blockhash)
-            .expect("fork block should be already inserted at the time");
+            .unwrap_or_else(|| env::panic_str("fork block should be already inserted at the time"));
 
         while !self
             .mainchain_header_to_height
@@ -320,7 +320,7 @@ impl Contract {
             fork_header_cursor = self
                 .headers_pool
                 .get_mut(&prev_blockhash)
-                .expect("previous fork block should be there");
+                .unwrap_or_else(|| env::panic_str("previous fork block should be there"));
         }
 
         // Updating tip of the new main chain
@@ -351,7 +351,7 @@ impl Contract {
         let tip = self
             .headers_pool
             .get(tip_hash)
-            .expect("heaviest block should be recorded");
+            .unwrap_or_else(|| env::panic_str("heaviest block should be recorded"));
 
         for height in (tip.block_height - n)..(tip.block_height - shift_from_the_end) {
             if let Some(block_hash) = self.mainchain_height_to_header.get(&height) {
@@ -385,11 +385,11 @@ impl Contract {
         let heaviest_block_header = self
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
-            .expect("heaviest block must be recorded");
+            .unwrap_or_else(|| env::panic_str("heaviest block must be recorded"));
         let target_block_height = *self
             .mainchain_header_to_height
             .get(&tx_block_blockhash)
-            .expect("block does not belong to the current main chain");
+            .unwrap_or_else(|| env::panic_str("block does not belong to the current main chain"));
 
         // Check requested confirmations. No need to compute proof if insufficient confirmations.
         assert!(
@@ -401,7 +401,7 @@ impl Contract {
         let header = self
             .headers_pool
             .get(&tx_block_blockhash)
-            .expect("cannot find requested transaction block");
+            .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
         let merkle_root = header.clone().merkle_root;
 
         // compute merkle tree root and check if it matches block's original merkle tree root
@@ -436,12 +436,12 @@ impl Contract {
         let initial_blockheader = self
             .headers_pool
             .get(&self.mainchain_initial_blockhash)
-            .expect("initial blockheader must be in a header pool");
+            .unwrap_or_else(|| env::panic_str("initial blockheader must be in a header pool"));
 
         let tip_blockheader = self
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
-            .expect("tip blockheader must be in a header pool");
+            .unwrap_or_else(|| env::panic_str("tip blockheader must be in a header pool"));
 
         let amount_of_headers_we_store =
             tip_blockheader.block_height - initial_blockheader.block_height;
@@ -454,11 +454,11 @@ impl Contract {
             let end_removal_height = initial_blockheader.block_height + selected_amount_to_remove;
 
             for height in start_removal_height..end_removal_height {
-                let blockhash = self.mainchain_height_to_header[&height].clone();
+                let blockhash = &self.mainchain_height_to_header[&height];
 
-                self.mainchain_header_to_height.remove(&blockhash);
+                self.headers_pool.remove(blockhash);
+                self.mainchain_header_to_height.remove(blockhash);
                 self.mainchain_height_to_header.remove(&height);
-                self.headers_pool.remove(&blockhash);
             }
 
             self.mainchain_initial_blockhash
@@ -535,14 +535,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "block should have correct pow: BadProofOfWork")]
+    #[should_panic(expected = "block should have correct pow")]
     fn test_pow_validator_works_correctly_for_wrong_block() {
         let header = block_header_example();
 
         let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
-        // cannot submit header due to wrong POW
-        contract.submit_block_header(header).unwrap();
+        let _ = contract.submit_block_header(header);
     }
 
     #[test]
