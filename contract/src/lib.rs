@@ -1,5 +1,5 @@
 use near_sdk::borsh::{self, BorshSerialize};
-use near_sdk::{log, near, env};
+use near_sdk::{env, log, near};
 
 use bitcoin::block::Header;
 
