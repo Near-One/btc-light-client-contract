@@ -149,7 +149,9 @@ async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: Nea
         .map(|hash| hash.parse::<String>().unwrap_or_default())
         .unwrap_or_default();
 
-    let block = bitcoin_client.get_block_by_height(transaction_block_height as u64);
+    let block = bitcoin_client.get_block_by_height(
+        u64::try_from(transaction_block_height).expect("correct transaction height"),
+    );
     let transactions = block
         .txdata
         .iter()
