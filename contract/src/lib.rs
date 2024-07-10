@@ -241,7 +241,8 @@ impl Contract {
         // And do it until we can accept the block.
         // It means we found an initial fork position.
         // We are starting to gather new fork from this initial position.
-        let prev_block_header = self.headers_pool
+        let prev_block_header = self
+            .headers_pool
             .get(&prev_blockhash)
             .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"));
 
@@ -647,8 +648,7 @@ mod tests {
 
         contract.submit_block_header(header);
 
-        contract
-            .submit_block_header(fork_block_header_example());
+        contract.submit_block_header(fork_block_header_example());
 
         let received_header = contract.get_last_block_header();
 
@@ -670,8 +670,7 @@ mod tests {
     fn test_getting_block_by_height() {
         let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
-        contract
-            .submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example());
 
         assert_eq!(
             contract.get_blockhash_by_height(0).unwrap(),
@@ -687,8 +686,7 @@ mod tests {
     fn test_getting_height_by_block() {
         let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
-        contract
-            .submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example());
 
         assert_eq!(
             contract
@@ -708,13 +706,10 @@ mod tests {
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
         let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
-        contract
-            .submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example());
 
-        contract
-            .submit_block_header(fork_block_header_example());
-        contract
-            .submit_block_header(fork_block_header_example_2());
+        contract.submit_block_header(fork_block_header_example());
+        contract.submit_block_header(fork_block_header_example_2());
 
         let received_header = contract.get_last_block_header();
 
