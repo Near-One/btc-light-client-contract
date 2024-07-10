@@ -592,7 +592,7 @@ mod tests {
 
         let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
-        let _ = contract.submit_block_header(header);
+        contract.submit_block_header(header);
     }
 
     #[test]
@@ -727,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "PrevBlockNotFound")]
     fn test_getting_an_error_if_submitting_unattached_block() {
         let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
