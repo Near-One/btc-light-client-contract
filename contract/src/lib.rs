@@ -1,4 +1,4 @@
-use btc_types::{validate_pow, Encoding, ExtendedHeader, Header, Work, H256};
+use btc_types::{ExtendedHeader, Header, Work, H256, U256};
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
@@ -187,12 +187,14 @@ impl Contract {
         let current_block_hash = block_header.block_hash();
 
         require!(
-            self.skip_pow_verification || validate_pow(&current_block_hash, block_header.target()),
+            self.skip_pow_verification
+                || U256::from_le_bytes(&current_block_hash.0) <= block_header.target(),
             "block should have correct pow"
         );
 
-        let current_block_computed_chainwork =
-            Work::from_be_slice(&prev_block_header.chainwork).saturating_add(&block_header.work());
+        let (current_block_computed_chainwork, overflow) =
+            Work::from_be_bytes(&prev_block_header.chainwork).overflowing_add(block_header.work());
+        require!(!overflow, "Addition of U256 values overflowed");
 
         let header = ExtendedHeader {
             block_header,
@@ -221,7 +223,7 @@ impl Contract {
                 .get(&self.mainchain_tip_blockhash.clone())
                 .unwrap_or_else(|| env::panic_str("tip should be in a header pool"));
 
-            let total_main_chain_chainwork = Work::from_be_slice(&main_chain_tip_header.chainwork);
+            let total_main_chain_chainwork = Work::from_be_bytes(&main_chain_tip_header.chainwork);
 
             self.store_fork_header(current_block_hash.clone(), header.clone());
 

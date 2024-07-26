@@ -17,7 +17,6 @@ near-sdk = "5.1.0"
 borsh = "1.5.0"
 serde_json = "1"
 serde = { version = "1.0.200", features = ["derive"] }
-crypto-bigint = { version = "0.5.5", default-features = false }
 
 [profile.release]
 codegen-units = 1

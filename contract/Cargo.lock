@@ -465,7 +465,6 @@ name = "btc-types"
 version = "0.1.0"
 dependencies = [
  "borsh 1.5.0",
- "crypto-bigint",
  "near-sdk",
  "serde",
  "serde_json",
@@ -823,15 +822,6 @@ name = "crunchy"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
-
-[[package]]
-name = "crypto-bigint"
-version = "0.5.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0dc92fb57ca44df6db8059111ab3af99a63d5d0f8375d9972e319a379c6bab76"
-dependencies = [
- "subtle",
-]
 
 [[package]]
 name = "crypto-common"
@@ -1846,7 +1836,6 @@ checksum = "8452105ba047068f40ff7093dd1d9da90898e63dd61736462e9cdda6a90ad3c3"
 name = "merkle-tools"
 version = "0.1.0"
 dependencies = [
- "hex",
  "near-sdk",
  "sha2",
 ]

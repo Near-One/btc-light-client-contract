@@ -1,7 +1,7 @@
-pub use crypto_bigint::Encoding;
-use crypto_bigint::U256;
+mod u256;
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
+pub use u256::U256;
 pub type Target = U256;
 pub type Work = U256;
 pub type ChainWork = H256;
@@ -59,7 +59,7 @@ impl Header {
     }
 
     pub fn work(&self) -> Work {
-        inverse_u256(&self.target())
+        self.target().inverse()
     }
 
     pub fn block_hash(&self) -> H256 {
@@ -88,39 +88,4 @@ pub struct ExtendedHeader {
     pub chainwork: [u8; 32],
     /// Block height in the Bitcoin network
     pub block_height: u64,
-}
-
-pub fn validate_pow(block_hash: &H256, target: Target) -> bool {
-    let hash = U256::from_le_slice(&block_hash.0);
-    hash <= target
-}
-
-fn inverse_u256(input: &U256) -> U256 {
-    // We should never have a target/work of zero so this doesn't matter
-    // that much but we define the inverse of 0 as max.
-    if input == &U256::ZERO {
-        return U256::MAX;
-    }
-    // We define the inverse of 1 as max.
-    if input == &U256::ONE {
-        return U256::MAX;
-    }
-    // We define the inverse of max as 1.
-    if input == &U256::MAX {
-        return U256::ONE;
-    }
-
-    let ret = (!*input)
-        .checked_div(&input.wrapping_add(&U256::ONE))
-        .unwrap();
-    ret.wrapping_add(&U256::ONE)
-}
-
-pub fn compute_chain_work(
-    prev_block_header_chainwork: &ChainWork,
-    current_block_work: &Work,
-) -> [u8; 32] {
-    let current_block_computed_chainwork =
-        Work::from_be_slice(&prev_block_header_chainwork.0).saturating_add(current_block_work);
-    current_block_computed_chainwork.to_be_bytes()
 }
