@@ -76,13 +76,7 @@ fn double_sha256(input: &[u8]) -> H256 {
 }
 
 fn compute_hash(first_tx_hash: &H256, second_tx_hash: &H256) -> H256 {
-    // Reverse inputs before and after hashing
-    // due to big-endian
-    // let mut unhex_reverse_first = decode(first_tx_hash).expect("Invalid hex");
-    // unhex_reverse_first.reverse();
-    // let mut unhex_reverse_second = decode(second_tx_hash).expect("Invalid hex");
-    // unhex_reverse_second.reverse();
-
+    // Reverse inputs before and after hashing due to big-endian
     let mut concat_inputs = Vec::new();
     concat_inputs.extend(first_tx_hash.iter().rev());
     concat_inputs.extend(second_tx_hash.iter().rev());
