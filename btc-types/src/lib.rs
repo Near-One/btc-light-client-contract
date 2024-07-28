@@ -1,15 +1,10 @@
 mod u256;
-#[cfg(target_arch = "wasm32")]
-use near_sdk::{serde::{Deserialize, Serialize}, borsh::{BorshDeserialize, BorshSerialize}};
-#[cfg(not(target_arch = "wasm32"))]
+use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-#[cfg(not(target_arch = "wasm32"))]
-use borsh::{self, BorshSerialize, BorshDeserialize};
 
 pub use u256::U256;
 pub type Target = U256;
 pub type Work = U256;
-pub type ChainWork = H256;
 
 #[derive(
     BorshDeserialize,
@@ -118,8 +113,8 @@ pub struct ExtendedHeader {
     ///
     /// Current `block_hash`
     pub current_block_hash: H256,
-    /// Accumulated chainwork at this position for this block (big endian storage format)
-    pub chainwork: ChainWork,
+    /// Accumulated chainwork at this position for this block
+    pub chain_work: Work,
     /// Block height in the Bitcoin network
     pub block_height: u64,
 }

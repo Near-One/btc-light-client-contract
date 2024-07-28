@@ -1,4 +1,4 @@
-use btc_types::{ExtendedHeader, Header, Work, H256, U256};
+use btc_types::{ExtendedHeader, Header, H256, U256};
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
@@ -131,13 +131,13 @@ impl Contract {
 
     fn init_genesis(&mut self, block_header: Header, block_height: u64) {
         let current_block_hash = block_header.block_hash();
-        let chainwork_bytes = block_header.work().to_be_bytes();
+        let chain_work = block_header.work();
 
         let header = ExtendedHeader {
             block_header,
             block_height,
             current_block_hash: current_block_hash.clone(),
-            chainwork: H256(chainwork_bytes),
+            chain_work,
         };
 
         self.store_block_header(current_block_hash.clone(), &header);
@@ -189,14 +189,15 @@ impl Contract {
             "block should have correct pow"
         );
 
-        let (current_block_computed_chainwork, overflow) =
-            Work::from_be_bytes(&prev_block_header.chainwork.0).overflowing_add(block_header.work());
+        let (current_block_computed_chain_work, overflow) = prev_block_header
+            .chain_work
+            .overflowing_add(block_header.work());
         require!(!overflow, "Addition of U256 values overflowed");
 
         let header = ExtendedHeader {
             block_header,
             current_block_hash: current_block_hash.clone(),
-            chainwork: H256(current_block_computed_chainwork.to_be_bytes()),
+            chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
         };
 
@@ -220,12 +221,12 @@ impl Contract {
                 .get(&self.mainchain_tip_blockhash.clone())
                 .unwrap_or_else(|| env::panic_str("tip should be in a header pool"));
 
-            let total_main_chain_chainwork = Work::from_be_bytes(&main_chain_tip_header.chainwork.0);
+            let total_main_chain_chainwork = main_chain_tip_header.chain_work;
 
             self.store_fork_header(current_block_hash.clone(), header.clone());
 
             // Current chainwork is higher than on a current mainchain, let's promote the fork
-            if current_block_computed_chainwork > total_main_chain_chainwork {
+            if current_block_computed_chain_work > total_main_chain_chainwork {
                 self.reorg_chain(current_block_hash);
             }
         }
