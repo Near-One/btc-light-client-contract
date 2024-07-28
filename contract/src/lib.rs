@@ -131,13 +131,13 @@ impl Contract {
 
     fn init_genesis(&mut self, block_header: Header, block_height: u64) {
         let current_block_hash = block_header.block_hash();
-        // let chainwork_bytes = block_header.work().to_be_bytes();
+        let chainwork_bytes = block_header.work().to_be_bytes();
 
         let header = ExtendedHeader {
             block_header,
             block_height,
             current_block_hash: current_block_hash.clone(),
-            chainwork: [0; 32],
+            chainwork: H256(chainwork_bytes),
         };
 
         self.store_block_header(current_block_hash.clone(), &header);
@@ -166,11 +166,8 @@ impl Contract {
     /// - Many cases
     #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
     pub fn submit_block_header(&mut self, block_header: Header) {
-        // // Chainwork is validated inside block_header structure (other consistency checks too)
-        // let prev_blockhash = block_header.prev_block_hash.to_string();
-
         // We do not have a previous block in the headers_pool, there is a high probability
-        //it means we are starting to receive a new fork,
+        // it means we are starting to receive a new fork,
         // so what we do now is we are returning the error code
         // to ask the relay to deploy the previous block.
         //
@@ -193,13 +190,13 @@ impl Contract {
         );
 
         let (current_block_computed_chainwork, overflow) =
-            Work::from_be_bytes(&prev_block_header.chainwork).overflowing_add(block_header.work());
+            Work::from_be_bytes(&prev_block_header.chainwork.0).overflowing_add(block_header.work());
         require!(!overflow, "Addition of U256 values overflowed");
 
         let header = ExtendedHeader {
             block_header,
             current_block_hash: current_block_hash.clone(),
-            chainwork: current_block_computed_chainwork.to_be_bytes(),
+            chainwork: H256(current_block_computed_chainwork.to_be_bytes()),
             block_height: 1 + prev_block_header.block_height,
         };
 
@@ -223,7 +220,7 @@ impl Contract {
                 .get(&self.mainchain_tip_blockhash.clone())
                 .unwrap_or_else(|| env::panic_str("tip should be in a header pool"));
 
-            let total_main_chain_chainwork = Work::from_be_bytes(&main_chain_tip_header.chainwork);
+            let total_main_chain_chainwork = Work::from_be_bytes(&main_chain_tip_header.chainwork.0);
 
             self.store_fork_header(current_block_hash.clone(), header.clone());
 

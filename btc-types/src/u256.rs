@@ -4,14 +4,14 @@ use std::ops::{Div, Not, Rem, Shl, Shr};
 pub struct U256(u128, u128);
 
 impl U256 {
-    const MAX: U256 = U256(
+    pub const MAX: U256 = U256(
         0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
         0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
     );
 
-    const ZERO: U256 = U256(0, 0);
+    pub const ZERO: U256 = U256(0, 0);
 
-    const ONE: U256 = U256(0, 1);
+    pub const ONE: U256 = U256(0, 1);
 
     /// Creates `U256` from a big-endian array of `u8`s.
     #[cfg_attr(all(test, mutate), mutate)]
