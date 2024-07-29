@@ -56,7 +56,7 @@ impl Header {
                     0,
                 )
             } else {
-                (self.bits & 0xFFFFFF, 8 * ((self.bits >> 24) - 3))
+                (self.bits & 0xFFFFFF, 8 * (unshifted_expt - 3))
             }
         };
 
