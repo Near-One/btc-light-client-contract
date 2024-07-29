@@ -369,7 +369,7 @@ impl Contract {
         tx_id: H256,
         tx_block_blockhash: H256,
         tx_index: u64,
-        merkle_proof: Vec<merkle_tools::H256>,
+        merkle_proof: Vec<H256>,
         confirmations: u64,
     ) -> bool {
         let heaviest_block_header = self
@@ -394,26 +394,11 @@ impl Contract {
             .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
 
         // compute merkle tree root and check if it matches block's original merkle tree root
-        if merkle_tools::compute_root_from_merkle_proof(
-            tx_id.0.clone(),
+        merkle_tools::compute_root_from_merkle_proof(
+            tx_id.clone(),
             usize::try_from(tx_index).unwrap(),
-            merkle_proof.clone(),
-        ) == header.block_header.merkle_root.0
-        {
-            log!(
-                "VerityTransaction: Tx {:?} is included in block with height {}",
-                tx_id,
-                target_block_height
-            );
-            true
-        } else {
-            log!(
-                "VerityTransaction: Tx {:?} is NOT included in block with height {}",
-                tx_id,
-                target_block_height
-            );
-            false
-        }
+            &merkle_proof,
+        ) == header.block_header.merkle_root
     }
 
     /// Public call to run GC on a mainchain.

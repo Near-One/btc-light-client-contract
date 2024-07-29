@@ -42,22 +42,6 @@ impl Header {
     // Serialized length of fields (version, prev_blockhash, merkle_root, time, bits, nonce)
     pub const SIZE: usize = 4 + 32 + 32 + 4 + 4 + 4; // 80
 
-    fn double_sha256(data: &[u8]) -> H256 {
-        #[cfg(target_arch = "wasm32")]
-        {
-            H256(
-                near_sdk::env::sha256(&near_sdk::env::sha256(data))
-                    .try_into()
-                    .unwrap(),
-            )
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            use sha2::{Digest, Sha256};
-            H256(Sha256::digest(data).into())
-        }
-    }
-
     /// Computes the target (range [0, T] inclusive) that a blockhash must land in to be valid.
     pub fn target(&self) -> Target {
         // This is a floating-point "compact" encoding originally used by
@@ -100,7 +84,7 @@ impl Header {
         block_header.extend_from_slice(&self.bits.to_be_bytes());
         block_header.extend_from_slice(&self.nonce.to_le_bytes());
 
-        Self::double_sha256(&block_header)
+        double_sha256(&block_header)
     }
 }
 
@@ -117,4 +101,20 @@ pub struct ExtendedHeader {
     pub chain_work: Work,
     /// Block height in the Bitcoin network
     pub block_height: u64,
+}
+
+pub fn double_sha256(input: &[u8]) -> H256 {
+    #[cfg(target_arch = "wasm32")]
+    {
+        H256(
+            near_sdk::env::sha256(&near_sdk::env::sha256(input))
+                .try_into()
+                .unwrap(),
+        )
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use sha2::{Digest, Sha256};
+        H256(Sha256::digest(input).into())
+    }
 }

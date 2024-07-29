@@ -1,4 +1,4 @@
-pub type H256 = [u8; 32];
+use btc_types::{double_sha256, H256};
 
 pub fn merkle_proof_calculator(tx_hashes: Vec<H256>, transaction_position: usize) -> Vec<H256> {
     let mut transaction_position = transaction_position;
@@ -7,9 +7,9 @@ pub fn merkle_proof_calculator(tx_hashes: Vec<H256>, transaction_position: usize
 
     while current_hashes.len() > 1 {
         if transaction_position % 2 == 1 {
-            merkle_proof.push(current_hashes[transaction_position - 1]);
+            merkle_proof.push(current_hashes[transaction_position - 1].clone());
         } else if transaction_position + 1 < current_hashes.len() {
-            merkle_proof.push(current_hashes[transaction_position + 1]);
+            merkle_proof.push(current_hashes[transaction_position + 1].clone());
         }
 
         let mut new_hashes = Vec::new();
@@ -35,12 +35,12 @@ pub fn merkle_proof_calculator(tx_hashes: Vec<H256>, transaction_position: usize
 pub fn compute_root_from_merkle_proof(
     transaction_hash: H256,
     transaction_position: usize,
-    merkle_proof: Vec<H256>,
+    merkle_proof: &Vec<H256>,
 ) -> H256 {
     let mut current_hash = transaction_hash;
     let mut current_position = transaction_position;
 
-    for proof_hash in &merkle_proof {
+    for proof_hash in merkle_proof {
         if current_position % 2 == 0 {
             current_hash = compute_hash(&current_hash, proof_hash);
         } else {
@@ -52,38 +52,15 @@ pub fn compute_root_from_merkle_proof(
     current_hash
 }
 
-#[inline]
-fn double_sha256(input: &[u8]) -> H256 {
-    #[cfg(target_arch = "wasm32")]
-    {
-        use near_sdk::env::sha256;
-
-        sha256(&sha256(input)).try_into().unwrap()
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        use sha2::{Digest, Sha256};
-
-        let mut hasher = Sha256::new();
-        hasher.update(input);
-        let first_hash_inputs = hasher.finalize();
-
-        let mut hasher = Sha256::new();
-        hasher.update(first_hash_inputs);
-        hasher.finalize().to_vec().try_into().unwrap()
-    }
-}
-
 fn compute_hash(first_tx_hash: &H256, second_tx_hash: &H256) -> H256 {
     // Reverse inputs before and after hashing due to big-endian
     let mut concat_inputs = Vec::new();
-    concat_inputs.extend(first_tx_hash.iter().rev());
-    concat_inputs.extend(second_tx_hash.iter().rev());
+    concat_inputs.extend(first_tx_hash.0.iter().rev());
+    concat_inputs.extend(second_tx_hash.0.iter().rev());
 
     // Reverse final hash and hex result
     let mut final_hash_bytes = double_sha256(&concat_inputs);
-    final_hash_bytes.reverse();
+    final_hash_bytes.0.reverse();
     final_hash_bytes
 }
 
@@ -92,7 +69,7 @@ mod tests {
     use super::*;
 
     fn decode_hex(hex: &str) -> H256 {
-        hex::decode(hex).unwrap().try_into().unwrap()
+        H256(hex::decode(hex).unwrap().try_into().unwrap())
     }
 
     // Hash pairs of items recursively until a single value is obtained
