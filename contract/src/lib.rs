@@ -449,11 +449,17 @@ impl Contract {
 mod tests {
     use super::*;
 
+    fn decode_hex(hex: &str) -> H256 {
+        let mut hex_decode = hex::decode(hex).unwrap();
+        hex_decode.reverse();
+        H256(hex_decode.try_into().unwrap())
+    }
+
     fn genesis_block_header() -> Header {
         let json_value = serde_json::json!({
             "version": 1,
-            "prev_blockhash": "0000000000000000000000000000000000000000000000000000000000000000",
-            "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+            "prev_block_hash": decode_hex("0000000000000000000000000000000000000000000000000000000000000000"),
+            "merkle_root": decode_hex("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
             "time": 1_231_006_505,
             "bits": 486_604_799,
             "nonce": 2_083_236_893
@@ -467,8 +473,8 @@ mod tests {
         let json_value = serde_json::json!({
             // block_hash: 62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345
             "version": 1,
-            "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-            "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+            "prev_block_hash": decode_hex("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+            "merkle_root": decode_hex("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
             "time": 1_231_006_506,
             "bits": 486_604_799,
             "nonce": 2_083_236_893
@@ -482,11 +488,11 @@ mod tests {
             // "hash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
             //"chainwork": "0000000000000000000000000000000000000000000000000000000200020002",
             "version": 1,
-            "merkle_root": "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098",
+            "merkle_root": decode_hex("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"),
             "time": 1_231_469_665,
             "nonce": 2_573_394_689_u32,
             "bits": 486_604_799,
-            "prev_blockhash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+            "prev_block_hash": decode_hex("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
         });
 
         serde_json::from_value(json_value).expect("value is invalid")
@@ -497,11 +503,11 @@ mod tests {
             // "hash": "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd",
             // "chainwork": "0000000000000000000000000000000000000000000000000000000300030003",
           "version": 1,
-          "merkle_root": "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5",
+          "merkle_root": decode_hex("9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5"),
           "time": 1_231_469_744,
           "nonce": 1_639_830_024,
           "bits": 486_604_799,
-          "prev_blockhash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
+          "prev_block_hash": decode_hex("00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048"),
         });
 
         serde_json::from_value(json_value).expect("value is invalid")
@@ -512,7 +518,7 @@ mod tests {
     fn test_pow_validator_works_correctly_for_wrong_block() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
         contract.submit_block_header(header);
     }
@@ -520,22 +526,23 @@ mod tests {
     #[test]
     fn test_pow_validator_works_correctly_for_correct_block() {
         let header = fork_block_header_example();
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
 
-        contract.submit_block_header(header);
+        contract.submit_block_header(header.clone());
 
         let received_header = contract.get_last_block_header();
 
         assert_eq!(
             received_header,
-            state::Header::new(
-                header,
-                [
+            ExtendedHeader {
+                block_header: header,
+                current_block_hash: decode_hex("00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048"),
+                chain_work: U256::from_be_bytes(&[
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 2, 0, 2, 0, 2
-                ],
-                1
-            )
+                ]),
+                block_height: 1
+            }
         );
     }
 
@@ -543,22 +550,23 @@ mod tests {
     fn test_saving_mainchain_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
-        contract.submit_block_header(header);
+        contract.submit_block_header(header.clone());
 
         let received_header = contract.get_last_block_header();
 
         assert_eq!(
             received_header,
-            state::Header::new(
-                header,
-                [
+            ExtendedHeader {
+                block_header: header,
+                current_block_hash: decode_hex("62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"),
+                chain_work: U256::from_be_bytes(&[
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 2, 0, 2, 0, 2
-                ],
-                1
-            )
+                ]),
+                block_height: 1
+            }
         );
     }
 
@@ -566,9 +574,9 @@ mod tests {
     fn test_submitting_new_fork_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
-        contract.submit_block_header(header);
+        contract.submit_block_header(header.clone());
 
         contract.submit_block_header(fork_block_header_example());
 
@@ -576,49 +584,50 @@ mod tests {
 
         assert_eq!(
             received_header,
-            state::Header::new(
-                header,
-                [
+            ExtendedHeader {
+                block_header: header,
+                current_block_hash: decode_hex("62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"),
+                chain_work: U256::from_be_bytes(&[
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 2, 0, 2, 0, 2
-                ],
-                1
-            )
+                ]),
+                block_height: 1
+            }
         );
     }
 
     // test we can insert a block and get block back by it's height
     #[test]
     fn test_getting_block_by_height() {
-        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         contract.submit_block_header(block_header_example());
 
         assert_eq!(
             contract.get_blockhash_by_height(0).unwrap(),
-            genesis_block_header().block_hash().to_string()
+            &genesis_block_header().block_hash()
         );
         assert_eq!(
             contract.get_blockhash_by_height(1).unwrap(),
-            block_header_example().block_hash().to_string()
+            &block_header_example().block_hash()
         );
     }
 
     #[test]
     fn test_getting_height_by_block() {
-        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         contract.submit_block_header(block_header_example());
 
         assert_eq!(
             contract
-                .get_height_by_blockhash(genesis_block_header().block_hash().to_string())
+                .get_height_by_blockhash(genesis_block_header().block_hash())
                 .unwrap(),
             0
         );
         assert_eq!(
             contract
-                .get_height_by_blockhash(block_header_example().block_hash().to_string())
+                .get_height_by_blockhash(block_header_example().block_hash())
                 .unwrap(),
             1
         );
@@ -626,7 +635,7 @@ mod tests {
 
     #[test]
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
-        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         contract.submit_block_header(block_header_example());
 
@@ -637,21 +646,22 @@ mod tests {
 
         assert_eq!(
             received_header,
-            state::Header::new(
-                fork_block_header_example_2(),
-                [
+            ExtendedHeader {
+                block_header: fork_block_header_example_2(),
+                current_block_hash: decode_hex("000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd"),
+                chain_work: U256::from_be_bytes(&[
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 3, 0, 3, 0, 3
-                ],
-                2
-            )
+                ]),
+                block_height: 2
+            }
         );
     }
 
     #[test]
     #[should_panic(expected = "PrevBlockNotFound")]
     fn test_getting_an_error_if_submitting_unattached_block() {
-        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
+        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
 
         contract.submit_block_header(fork_block_header_example_2());
     }

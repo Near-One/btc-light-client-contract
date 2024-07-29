@@ -21,7 +21,7 @@ pub type Work = U256;
 )]
 pub struct H256(pub [u8; 32]);
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Header {
     /// Block version, now repurposed for soft fork signalling.
     pub version: i32,
@@ -78,17 +78,17 @@ impl Header {
     pub fn block_hash(&self) -> H256 {
         let mut block_header = Vec::with_capacity(Self::SIZE);
         block_header.extend_from_slice(&self.version.to_le_bytes());
-        block_header.extend(self.prev_block_hash.0.iter().rev());
-        block_header.extend(self.merkle_root.0.iter().rev());
+        block_header.extend(self.prev_block_hash.0);
+        block_header.extend(self.merkle_root.0);
         block_header.extend_from_slice(&self.time.to_le_bytes());
-        block_header.extend_from_slice(&self.bits.to_be_bytes());
+        block_header.extend_from_slice(&self.bits.to_le_bytes());
         block_header.extend_from_slice(&self.nonce.to_le_bytes());
 
         double_sha256(&block_header)
     }
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug)]
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ExtendedHeader {
     pub block_header: Header,
     /// Below, state contains additional fields not presented in the standard blockchain header
@@ -115,6 +115,6 @@ pub fn double_sha256(input: &[u8]) -> H256 {
     #[cfg(not(target_arch = "wasm32"))]
     {
         use sha2::{Digest, Sha256};
-        H256(Sha256::digest(input).into())
+        H256(Sha256::digest(Sha256::digest(input)).into())
     }
 }

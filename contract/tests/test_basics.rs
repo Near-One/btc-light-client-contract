@@ -1,4 +1,4 @@
-use bitcoin::block::Header;
+use btc_types::Header;
 use serde_json::json;
 
 #[tokio::test]
@@ -14,7 +14,7 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
     let outcome = contract
         .call("new")
         .args_json(json!({
-            "genesis_block": serde_json::to_value(block_header).unwrap(),
+            "genesis_block": serde_json::to_value(block_header.clone()).unwrap(),
             "genesis_block_height": 0,
             "enable_check": false,
             "gc_threshold": 5,
@@ -30,7 +30,7 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
         .args_json(json!({}))
         .await?;
 
-    assert_eq!(user_message_outcome.json::<Header>()?, block_header);
+    assert_eq!(user_message_outcome.json::<Header>()?, block_header.clone());
 
     Ok(())
 }
