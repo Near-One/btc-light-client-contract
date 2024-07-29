@@ -1,4 +1,6 @@
+use bitcoincore_rpc::bitcoin::hashes::Hash;
 use log::{debug, error, info};
+use merkle_tools::H256;
 use std::env;
 
 use crate::bitcoin_client::Client as BitcoinClient;
@@ -155,8 +157,8 @@ async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: Nea
     let transactions = block
         .txdata
         .iter()
-        .map(|tx| tx.txid().to_string())
-        .collect::<Vec<String>>();
+        .map(|tx| H256(tx.txid().to_byte_array()))
+        .collect::<Vec<_>>();
 
     // Provide the transaction hash and merkle proof
     let transaction_hash = transactions[transaction_position].clone(); // Provide the transaction hash
@@ -166,7 +168,12 @@ async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: Nea
     let transaction_hash = if force_transaction_hash.is_empty() {
         transaction_hash
     } else {
-        force_transaction_hash
+        H256(
+            hex::decode(force_transaction_hash)
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        )
     };
     let result = near_client
         .verify_transaction_inclusion(

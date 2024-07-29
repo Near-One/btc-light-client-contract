@@ -573,6 +573,7 @@ dependencies = [
  "bitcoin 0.32.0",
  "bitcoincore-rpc",
  "env_logger",
+ "hex",
  "log",
  "merkle-lite",
  "merkle-tools",
