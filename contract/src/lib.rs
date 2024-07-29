@@ -536,7 +536,9 @@ mod tests {
             received_header,
             ExtendedHeader {
                 block_header: header,
-                current_block_hash: decode_hex("00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048"),
+                current_block_hash: decode_hex(
+                    "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048"
+                ),
                 chain_work: U256::from_be_bytes(&[
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 2, 0, 2, 0, 2
@@ -560,7 +562,9 @@ mod tests {
             received_header,
             ExtendedHeader {
                 block_header: header,
-                current_block_hash: decode_hex("62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"),
+                current_block_hash: decode_hex(
+                    "62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"
+                ),
                 chain_work: U256::from_be_bytes(&[
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 2, 0, 2, 0, 2
@@ -586,7 +590,9 @@ mod tests {
             received_header,
             ExtendedHeader {
                 block_header: header,
-                current_block_hash: decode_hex("62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"),
+                current_block_hash: decode_hex(
+                    "62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"
+                ),
                 chain_work: U256::from_be_bytes(&[
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 2, 0, 2, 0, 2
@@ -648,7 +654,9 @@ mod tests {
             received_header,
             ExtendedHeader {
                 block_header: fork_block_header_example_2(),
-                current_block_hash: decode_hex("000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd"),
+                current_block_hash: decode_hex(
+                    "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd"
+                ),
                 chain_work: U256::from_be_bytes(&[
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 3, 0, 3, 0, 3

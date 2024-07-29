@@ -1,4 +1,4 @@
-use btc_types::{H256, Header, ExtendedHeader};
+use btc_types::{ExtendedHeader, Header, H256};
 use serde_json::json;
 
 fn decode_hex(hex: &str) -> H256 {
@@ -35,7 +35,10 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
         .args_json(json!({}))
         .await?;
 
-    assert_eq!(user_message_outcome.json::<ExtendedHeader>()?.block_header, block_header.clone());
+    assert_eq!(
+        user_message_outcome.json::<ExtendedHeader>()?.block_header,
+        block_header.clone()
+    );
 
     Ok(())
 }
