@@ -573,6 +573,7 @@ dependencies = [
  "bitcoin 0.32.0",
  "bitcoincore-rpc",
  "env_logger",
+ "hex",
  "log",
  "merkle-lite",
  "merkle-tools",
@@ -589,6 +590,16 @@ dependencies = [
  "sha3",
  "tokio",
  "toml 0.8.12",
+]
+
+[[package]]
+name = "btc-types"
+version = "0.1.0"
+dependencies = [
+ "borsh 1.5.0",
+ "near-sdk",
+ "serde",
+ "sha2",
 ]
 
 [[package]]
@@ -2074,7 +2085,7 @@ dependencies = [
 name = "merkle-tools"
 version = "0.1.0"
 dependencies = [
- "hex",
+ "btc-types",
  "near-sdk",
  "sha2",
 ]

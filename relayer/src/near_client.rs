@@ -1,3 +1,4 @@
+use merkle_tools::H256;
 use near_jsonrpc_client::{methods, JsonRpcClient};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, TransactionInfo};
@@ -189,10 +190,10 @@ impl Client {
 
     pub async fn verify_transaction_inclusion(
         &self,
-        transaction_hash: String,
+        transaction_hash: H256,
         transaction_position: usize,
         transaction_block_height: usize,
-        merkle_proof: Vec<String>,
+        merkle_proof: Vec<H256>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let node_url = self.config.near.endpoint.clone();
         let contract_id = self.config.near.account_name.clone();
