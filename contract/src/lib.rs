@@ -1,4 +1,7 @@
-use btc_types::{ExtendedHeader, Header, H256, U256};
+use btc_types::contract_args::{InitArgs, ProofArgs};
+use btc_types::hash::H256;
+use btc_types::header::{ExtendedHeader, Header};
+use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
@@ -95,14 +98,7 @@ pub struct Contract {
 impl Contract {
     #[init]
     #[must_use]
-    pub fn new(
-        genesis_block: Header,
-        genesis_block_height: u64,
-        skip_pow_verification: bool,
-        gc_threshold: u64,
-    ) -> Self {
-        log!("Running the initialization!");
-
+    pub fn init(#[serializer(borsh)] args: InitArgs) -> Self {
         let mut contract = Self {
             mainchain_height_to_header: near_sdk::store::LookupMap::new(
                 StorageKey::MainchainHeightToHeader,
@@ -113,8 +109,8 @@ impl Contract {
             headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
             mainchain_initial_blockhash: H256::default(),
             mainchain_tip_blockhash: H256::default(),
-            skip_pow_verification,
-            gc_threshold,
+            skip_pow_verification: args.skip_pow_verification,
+            gc_threshold: args.gc_threshold,
         };
 
         // Make the contract itself super admin. This allows us to grant any role in the
@@ -124,11 +120,135 @@ impl Contract {
             "Failed to initialize super admin",
         );
 
-        contract.init_genesis(genesis_block, genesis_block_height);
+        contract.init_genesis(args.genesis_block, args.genesis_block_height);
 
         contract
     }
 
+    #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
+    pub fn submit_blocks(&mut self, #[serializer(borsh)] headers: Vec<Header>) {
+        for header in headers {
+            self.submit_block_header(header);
+        }
+    }
+
+    pub fn get_last_block_header(&self) -> ExtendedHeader {
+        self.headers_pool[&self.mainchain_tip_blockhash].clone()
+    }
+
+    pub fn get_block_hash_by_height(&self, height: u64) -> Option<&H256> {
+        self.mainchain_height_to_header.get(&height)
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn get_height_by_block_hash(&self, blockhash: H256) -> Option<u64> {
+        self.mainchain_header_to_height.get(&blockhash).copied()
+    }
+
+    /// This method return n last blocks from the mainchain
+    /// # Panics
+    /// Cannot find a tip of main chain in a pool
+    pub fn get_last_n_blocks_hashes(&self, skip: u64, limit: u64) -> Vec<&H256> {
+        let mut block_hashes = vec![];
+        let tip_hash = &self.mainchain_tip_blockhash;
+        let tip = self
+            .headers_pool
+            .get(tip_hash)
+            .unwrap_or_else(|| env::panic_str("heaviest block should be recorded"));
+
+        for height in (tip.block_height - limit)..(tip.block_height - skip) {
+            if let Some(block_hash) = self.mainchain_height_to_header.get(&height) {
+                block_hashes.push(block_hash);
+            }
+        }
+
+        block_hashes
+    }
+
+    /// Verifies that a transaction is included in a block at a given block height
+    ///
+    /// @param txid transaction identifier
+    /// @param txBlockHeight block height at which transacton is supposedly included
+    /// @param txIndex index of transaction in the block's tx merkle tree
+    /// @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
+    /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
+    /// @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
+    ///
+    /// # Panics
+    /// Multiple cases
+    #[allow(clippy::needless_pass_by_value)]
+    #[pause(except(roles(Role::UnrestrictedVerifyTransaction)))]
+    pub fn verify_transaction_inclusion(&self, #[serializer(borsh)] args: ProofArgs) -> bool {
+        let heaviest_block_header = self
+            .headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str("heaviest block must be recorded"));
+        let target_block_height = *self
+            .mainchain_header_to_height
+            .get(&args.tx_block_blockhash)
+            .unwrap_or_else(|| env::panic_str("block does not belong to the current main chain"));
+
+        // Check requested confirmations. No need to compute proof if insufficient confirmations.
+        require!(
+            (heaviest_block_header.block_height).saturating_sub(target_block_height)
+                >= args.confirmations,
+            "Not enough blocks confirmed, cannot process verification"
+        );
+
+        let header = self
+            .headers_pool
+            .get(&args.tx_block_blockhash)
+            .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
+
+        // compute merkle tree root and check if it matches block's original merkle tree root
+        merkle_tools::compute_root_from_merkle_proof(
+            args.tx_id.clone(),
+            usize::try_from(args.tx_index).unwrap(),
+            &args.merkle_proof,
+        ) == header.block_header.merkle_root
+    }
+
+    /// Public call to run GC on a mainchain.
+    /// batch_size is how many block headers should be removed in the execution
+    ///
+    /// # Panics
+    /// If initial blockheader or tip blockheader are not in a header pool
+    pub fn run_mainchain_gc(&mut self, batch_size: u64) {
+        let initial_blockheader = self
+            .headers_pool
+            .get(&self.mainchain_initial_blockhash)
+            .unwrap_or_else(|| env::panic_str("initial blockheader must be in a header pool"));
+
+        let tip_blockheader = self
+            .headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str("tip blockheader must be in a header pool"));
+
+        let amount_of_headers_we_store =
+            tip_blockheader.block_height - initial_blockheader.block_height;
+
+        if amount_of_headers_we_store > self.gc_threshold {
+            let total_amount_to_remove = amount_of_headers_we_store - self.gc_threshold;
+            let selected_amount_to_remove = std::cmp::min(total_amount_to_remove, batch_size);
+
+            let start_removal_height = initial_blockheader.block_height;
+            let end_removal_height = initial_blockheader.block_height + selected_amount_to_remove;
+
+            for height in start_removal_height..end_removal_height {
+                let blockhash = &self.mainchain_height_to_header[&height];
+
+                self.headers_pool.remove(blockhash);
+                self.mainchain_header_to_height.remove(blockhash);
+                self.mainchain_height_to_header.remove(&height);
+            }
+
+            self.mainchain_initial_blockhash
+                .clone_from(&self.mainchain_height_to_header[&end_removal_height]);
+        }
+    }
+}
+
+impl Contract {
     fn init_genesis(&mut self, block_header: Header, block_height: u64) {
         let current_block_hash = block_header.block_hash();
         let chain_work = block_header.work();
@@ -146,26 +266,7 @@ impl Contract {
         self.mainchain_tip_blockhash = current_block_hash;
     }
 
-    pub fn get_last_block_header(&self) -> ExtendedHeader {
-        self.headers_pool[&self.mainchain_tip_blockhash].clone()
-    }
-
-    pub fn get_blockhash_by_height(&self, height: u64) -> Option<&H256> {
-        self.mainchain_height_to_header.get(&height)
-    }
-
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn get_height_by_blockhash(&self, blockhash: H256) -> Option<u64> {
-        self.mainchain_header_to_height.get(&blockhash).copied()
-    }
-
-    /// Saving block header received from a Bitcoin relay service
-    /// This method is private but critically important for the overall execution flow
-    ///
-    /// # Panics
-    /// - Many cases
-    #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
-    pub fn submit_block_header(&mut self, block_header: Header) {
+    fn submit_block_header(&mut self, block_header: Header) {
         // We do not have a previous block in the headers_pool, there is a high probability
         // it means we are starting to receive a new fork,
         // so what we do now is we are returning the error code
@@ -329,115 +430,6 @@ impl Contract {
     /// Stores and handles fork submissions
     fn store_fork_header(&mut self, current_block_hash: H256, header: ExtendedHeader) {
         self.headers_pool.insert(current_block_hash, header);
-    }
-
-    /// This method return n last blocks from the mainchain
-    /// # Panics
-    /// Cannot find a tip of main chain in a pool
-    pub fn receive_last_n_blocks(&self, n: u64, shift_from_the_end: u64) -> Vec<&H256> {
-        let mut block_hashes = vec![];
-        let tip_hash = &self.mainchain_tip_blockhash;
-        let tip = self
-            .headers_pool
-            .get(tip_hash)
-            .unwrap_or_else(|| env::panic_str("heaviest block should be recorded"));
-
-        for height in (tip.block_height - n)..(tip.block_height - shift_from_the_end) {
-            if let Some(block_hash) = self.mainchain_height_to_header.get(&height) {
-                block_hashes.push(block_hash);
-            }
-        }
-
-        block_hashes
-    }
-
-    /// Verifies that a transaction is included in a block at a given block height
-    ///
-    /// @param txid transaction identifier
-    /// @param txBlockHeight block height at which transacton is supposedly included
-    /// @param txIndex index of transaction in the block's tx merkle tree
-    /// @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
-    /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
-    /// @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
-    ///
-    /// # Panics
-    /// Multiple cases
-    #[allow(clippy::needless_pass_by_value)]
-    #[pause(except(roles(Role::UnrestrictedVerifyTransaction)))]
-    pub fn verify_transaction_inclusion(
-        &self,
-        tx_id: H256,
-        tx_block_blockhash: H256,
-        tx_index: u64,
-        merkle_proof: Vec<H256>,
-        confirmations: u64,
-    ) -> bool {
-        let heaviest_block_header = self
-            .headers_pool
-            .get(&self.mainchain_tip_blockhash)
-            .unwrap_or_else(|| env::panic_str("heaviest block must be recorded"));
-        let target_block_height = *self
-            .mainchain_header_to_height
-            .get(&tx_block_blockhash)
-            .unwrap_or_else(|| env::panic_str("block does not belong to the current main chain"));
-
-        // Check requested confirmations. No need to compute proof if insufficient confirmations.
-        assert!(
-            (heaviest_block_header.block_height).saturating_sub(target_block_height)
-                >= confirmations,
-            "Not enough blocks confirmed, cannot process verification"
-        );
-
-        let header = self
-            .headers_pool
-            .get(&tx_block_blockhash)
-            .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
-
-        // compute merkle tree root and check if it matches block's original merkle tree root
-        merkle_tools::compute_root_from_merkle_proof(
-            tx_id.clone(),
-            usize::try_from(tx_index).unwrap(),
-            &merkle_proof,
-        ) == header.block_header.merkle_root
-    }
-
-    /// Public call to run GC on a mainchain.
-    /// batch_size is how many block headers should be removed in the execution
-    ///
-    /// # Panics
-    /// If initial blockheader or tip blockheader are not in a header pool
-    pub fn run_mainchain_gc(&mut self, batch_size: u64) {
-        let initial_blockheader = self
-            .headers_pool
-            .get(&self.mainchain_initial_blockhash)
-            .unwrap_or_else(|| env::panic_str("initial blockheader must be in a header pool"));
-
-        let tip_blockheader = self
-            .headers_pool
-            .get(&self.mainchain_tip_blockhash)
-            .unwrap_or_else(|| env::panic_str("tip blockheader must be in a header pool"));
-
-        let amount_of_headers_we_store =
-            tip_blockheader.block_height - initial_blockheader.block_height;
-
-        if amount_of_headers_we_store > self.gc_threshold {
-            let total_amount_to_remove = amount_of_headers_we_store - self.gc_threshold;
-            let selected_amount_to_remove = std::cmp::min(total_amount_to_remove, batch_size);
-
-            let start_removal_height = initial_blockheader.block_height;
-            let end_removal_height = initial_blockheader.block_height + selected_amount_to_remove;
-
-            for height in start_removal_height..end_removal_height {
-                let blockhash = &self.mainchain_height_to_header[&height];
-
-                self.headers_pool.remove(blockhash);
-                self.mainchain_header_to_height.remove(blockhash);
-                self.mainchain_height_to_header.remove(&height);
-            }
-
-            self.mainchain_initial_blockhash
-                .clone_from(&self.mainchain_height_to_header[&end_removal_height]);
-        }
     }
 }
 
