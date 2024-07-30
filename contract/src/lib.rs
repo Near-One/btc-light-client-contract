@@ -96,8 +96,8 @@ pub struct BtcLightClient {
 #[near]
 impl BtcLightClient {
     #[init]
-    #[must_use]
-    pub fn init(#[serializer(borsh)] args: InitArgs) -> Self {
+    #[private]
+    pub fn init(args: InitArgs) -> Self {
         let mut contract = Self {
             mainchain_height_to_header: near_sdk::store::LookupMap::new(
                 StorageKey::MainchainHeightToHeader,
