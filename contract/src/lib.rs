@@ -72,7 +72,7 @@ enum StorageKey {
     duration_update_stagers(Role::DurationManager, Role::DAO),
     duration_update_appliers(Role::DurationManager, Role::DAO),
 ))]
-pub struct Contract {
+pub struct BtcLightClient {
     // A pair of lookup maps that allows to find header by height and height by header
     mainchain_height_to_header: near_sdk::store::LookupMap<u64, H256>,
     mainchain_header_to_height: near_sdk::store::LookupMap<H256, u64>,
@@ -93,9 +93,8 @@ pub struct Contract {
     gc_threshold: u64,
 }
 
-// Implement the contract structure
 #[near]
-impl Contract {
+impl BtcLightClient {
     #[init]
     #[must_use]
     pub fn init(#[serializer(borsh)] args: InitArgs) -> Self {
@@ -248,7 +247,7 @@ impl Contract {
     }
 }
 
-impl Contract {
+impl BtcLightClient {
     fn init_genesis(&mut self, block_header: Header, block_height: u64) {
         let current_block_hash = block_header.block_hash();
         let chain_work = block_header.work();
