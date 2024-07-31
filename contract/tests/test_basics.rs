@@ -1,4 +1,6 @@
-use btc_types::{ExtendedHeader, Header, H256};
+use btc_types::contract_args::InitArgs;
+use btc_types::hash::H256;
+use btc_types::header::{ExtendedHeader, Header};
 use serde_json::json;
 
 fn decode_hex(hex: &str) -> H256 {
@@ -15,14 +17,17 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
     let contract = sandbox.dev_deploy(&contract_wasm).await?;
 
     let block_header = genesis_block_header();
+    let args = InitArgs {
+        genesis_block: block_header.clone(),
+        genesis_block_height: 0,
+        skip_pow_verification: true,
+        gc_threshold: 5,
+    };
     // Call the init method on the contract
     let outcome = contract
-        .call("new")
+        .call("init")
         .args_json(json!({
-            "genesis_block": serde_json::to_value(block_header.clone()).unwrap(),
-            "genesis_block_height": 0,
-            "skip_pow_verification": true,
-            "gc_threshold": 5,
+            "args": serde_json::to_value(args).unwrap(),
         }))
         .transact()
         .await?;
@@ -52,13 +57,17 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
 
     let block_header = genesis_block_header();
 
+    let args = InitArgs {
+        genesis_block: block_header.clone(),
+        genesis_block_height: 0,
+        skip_pow_verification: true,
+        gc_threshold: 5,
+    };
+    // Call the init method on the contract
     let outcome = contract
-        .call("new")
+        .call("init")
         .args_json(json!({
-            "genesis_block": serde_json::to_value(block_header).unwrap(),
-            "genesis_block_height": 0,
-            "skip_pow_verification": true,
-            "gc_threshold": 5,
+            "args": serde_json::to_value(args).unwrap(),
         }))
         .transact()
         .await?;
@@ -68,33 +77,24 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
 
     // second block
     let outcome = user_account
-        .call(contract.id(), "submit_block_header")
-        .args_json(json!({
-            "block_header": serde_json::to_value(block_header_example()).unwrap(),
-            "block_height": 0
-        }))
+        .call(contract.id(), "submit_blocks")
+        .args_borsh([block_header_example()].to_vec())
         .transact()
         .await?;
     assert!(outcome.is_success());
 
     // first fork block
     let outcome = user_account
-        .call(contract.id(), "submit_block_header")
-        .args_json(json!({
-            "block_header": serde_json::to_value(fork_block_header_example()).unwrap(),
-            "block_height": 0
-        }))
+        .call(contract.id(), "submit_blocks")
+        .args_borsh([fork_block_header_example()].to_vec())
         .transact()
         .await?;
     assert!(outcome.is_success());
 
     // second fork block
     let outcome = user_account
-        .call(contract.id(), "submit_block_header")
-        .args_json(json!({
-            "block_header": serde_json::to_value(fork_block_header_example_2()).unwrap(),
-            "block_height": 0
-        }))
+        .call(contract.id(), "submit_blocks")
+        .args_borsh([fork_block_header_example_2()].to_vec())
         .transact()
         .await?;
     assert!(outcome.is_success());

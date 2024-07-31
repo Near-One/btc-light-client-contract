@@ -504,12 +504,30 @@ mod tests {
         serde_json::from_value(json_value).expect("value is invalid")
     }
 
+    fn get_default_init_args() -> InitArgs {
+        InitArgs {
+            genesis_block: genesis_block_header(),
+            genesis_block_height: 0,
+            skip_pow_verification: false,
+            gc_threshold: 3,
+        }
+    }
+
+    fn get_default_init_args_with_skip_pow() -> InitArgs {
+        InitArgs {
+            genesis_block: genesis_block_header(),
+            genesis_block_height: 0,
+            skip_pow_verification: true,
+            gc_threshold: 3,
+        }
+    }
+
     #[test]
     #[should_panic(expected = "block should have correct pow")]
     fn test_pow_validator_works_correctly_for_wrong_block() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
+        let mut contract = BtcLightClient::init(get_default_init_args());
 
         contract.submit_block_header(header);
     }
@@ -517,7 +535,7 @@ mod tests {
     #[test]
     fn test_pow_validator_works_correctly_for_correct_block() {
         let header = fork_block_header_example();
-        let mut contract = Contract::new(genesis_block_header(), 0, false, 3);
+        let mut contract = BtcLightClient::init(get_default_init_args());
 
         contract.submit_block_header(header.clone());
 
@@ -543,7 +561,7 @@ mod tests {
     fn test_saving_mainchain_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
         contract.submit_block_header(header.clone());
 
@@ -569,7 +587,7 @@ mod tests {
     fn test_submitting_new_fork_block_header() {
         let header = block_header_example();
 
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
         contract.submit_block_header(header.clone());
 
@@ -596,35 +614,35 @@ mod tests {
     // test we can insert a block and get block back by it's height
     #[test]
     fn test_getting_block_by_height() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
         contract.submit_block_header(block_header_example());
 
         assert_eq!(
-            contract.get_blockhash_by_height(0).unwrap(),
+            contract.get_block_hash_by_height(0).unwrap(),
             &genesis_block_header().block_hash()
         );
         assert_eq!(
-            contract.get_blockhash_by_height(1).unwrap(),
+            contract.get_block_hash_by_height(1).unwrap(),
             &block_header_example().block_hash()
         );
     }
 
     #[test]
     fn test_getting_height_by_block() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
         contract.submit_block_header(block_header_example());
 
         assert_eq!(
             contract
-                .get_height_by_blockhash(genesis_block_header().block_hash())
+                .get_height_by_block_hash(genesis_block_header().block_hash())
                 .unwrap(),
             0
         );
         assert_eq!(
             contract
-                .get_height_by_blockhash(block_header_example().block_hash())
+                .get_height_by_block_hash(block_header_example().block_hash())
                 .unwrap(),
             1
         );
@@ -632,7 +650,7 @@ mod tests {
 
     #[test]
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
         contract.submit_block_header(block_header_example());
 
@@ -660,7 +678,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "PrevBlockNotFound")]
     fn test_getting_an_error_if_submitting_unattached_block() {
-        let mut contract = Contract::new(genesis_block_header(), 0, true, 3);
+        let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
         contract.submit_block_header(fork_block_header_example_2());
     }
