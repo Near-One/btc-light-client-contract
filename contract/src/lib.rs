@@ -1,5 +1,5 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
-use btc_types::hash::H256;
+use btc_types::hash::{ReversedH256, H256};
 use btc_types::header::{ExtendedHeader, Header};
 use btc_types::u256::U256;
 use near_plugins::{
@@ -136,8 +136,10 @@ impl BtcLightClient {
         self.headers_pool[&self.mainchain_tip_blockhash].clone()
     }
 
-    pub fn get_block_hash_by_height(&self, height: u64) -> Option<&H256> {
-        self.mainchain_height_to_header.get(&height)
+    pub fn get_block_hash_by_height(&self, height: u64) -> Option<ReversedH256> {
+        self.mainchain_height_to_header
+            .get(&height)
+            .map(|hash| hash.clone().into())
     }
 
     #[allow(clippy::needless_pass_by_value)]
@@ -148,7 +150,7 @@ impl BtcLightClient {
     /// This method return n last blocks from the mainchain
     /// # Panics
     /// Cannot find a tip of main chain in a pool
-    pub fn get_last_n_blocks_hashes(&self, skip: u64, limit: u64) -> Vec<&H256> {
+    pub fn get_last_n_blocks_hashes(&self, skip: u64, limit: u64) -> Vec<ReversedH256> {
         let mut block_hashes = vec![];
         let tip_hash = &self.mainchain_tip_blockhash;
         let tip = self
@@ -158,7 +160,7 @@ impl BtcLightClient {
 
         for height in (tip.block_height - limit)..(tip.block_height - skip) {
             if let Some(block_hash) = self.mainchain_height_to_header.get(&height) {
-                block_hashes.push(block_hash);
+                block_hashes.push(block_hash.clone().into());
             }
         }
 
@@ -450,8 +452,8 @@ mod tests {
     fn genesis_block_header() -> Header {
         let json_value = serde_json::json!({
             "version": 1,
-            "prev_block_hash": decode_hex("0000000000000000000000000000000000000000000000000000000000000000"),
-            "merkle_root": decode_hex("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "prev_block_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
             "time": 1_231_006_505,
             "bits": 486_604_799,
             "nonce": 2_083_236_893
@@ -465,8 +467,8 @@ mod tests {
         let json_value = serde_json::json!({
             // block_hash: 62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345
             "version": 1,
-            "prev_block_hash": decode_hex("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
-            "merkle_root": decode_hex("4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"),
+            "prev_block_hash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+            "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
             "time": 1_231_006_506,
             "bits": 486_604_799,
             "nonce": 2_083_236_893
@@ -480,11 +482,11 @@ mod tests {
             // "hash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
             //"chainwork": "0000000000000000000000000000000000000000000000000000000200020002",
             "version": 1,
-            "merkle_root": decode_hex("0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"),
+            "merkle_root": "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098",
             "time": 1_231_469_665,
             "nonce": 2_573_394_689_u32,
             "bits": 486_604_799,
-            "prev_block_hash": decode_hex("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"),
+            "prev_block_hash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
         });
 
         serde_json::from_value(json_value).expect("value is invalid")
@@ -495,11 +497,11 @@ mod tests {
             // "hash": "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd",
             // "chainwork": "0000000000000000000000000000000000000000000000000000000300030003",
           "version": 1,
-          "merkle_root": decode_hex("9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5"),
+          "merkle_root": "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5",
           "time": 1_231_469_744,
           "nonce": 1_639_830_024,
           "bits": 486_604_799,
-          "prev_block_hash": decode_hex("00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048"),
+          "prev_block_hash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
         });
 
         serde_json::from_value(json_value).expect("value is invalid")
@@ -620,12 +622,12 @@ mod tests {
         contract.submit_block_header(block_header_example());
 
         assert_eq!(
-            contract.get_block_hash_by_height(0).unwrap(),
-            &genesis_block_header().block_hash()
+            contract.get_block_hash_by_height(0).unwrap().hash,
+            genesis_block_header().block_hash(),
         );
         assert_eq!(
-            contract.get_block_hash_by_height(1).unwrap(),
-            &block_header_example().block_hash()
+            contract.get_block_hash_by_height(1).unwrap().hash,
+            block_header_example().block_hash()
         );
     }
 

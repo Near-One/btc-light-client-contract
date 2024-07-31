@@ -69,6 +69,43 @@ impl Serialize for H256 {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct ReversedH256 {
+    #[serde(flatten)]
+    #[serde(with = "serd_reversed_h256")]
+    pub hash: H256,
+}
+
+impl From<H256> for ReversedH256 {
+    fn from(hash: H256) -> Self {
+        ReversedH256 { hash }
+    }
+}
+
+pub mod serd_reversed_h256 {
+    use super::*;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<H256, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        let mut hash: H256 = de::Deserialize::deserialize(deserializer)?;
+        hash.0.reverse();
+        Ok(hash)
+    }
+
+    pub fn serialize<S>(
+        bytes: &H256,
+        serializer: S,
+    ) -> Result<<S as serde::Serializer>::Ok, <S as serde::Serializer>::Error>
+    where
+        S: serde::Serializer,
+    {
+        let reversed: Vec<u8> = bytes.0.into_iter().rev().collect();
+        serializer.serialize_str(&hex::encode(reversed))
+    }
+}
+
 pub fn double_sha256(input: &[u8]) -> H256 {
     #[cfg(target_arch = "wasm32")]
     {
