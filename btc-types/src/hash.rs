@@ -14,12 +14,6 @@ impl From<[u8; 32]> for H256 {
     }
 }
 
-impl Into<[u8; 32]> for H256 {
-    fn into(self) -> [u8; 32] {
-        self.0
-    }
-}
-
 impl TryFrom<Vec<u8>> for H256 {
     type Error = &'static str;
 

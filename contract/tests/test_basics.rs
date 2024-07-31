@@ -74,7 +74,6 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
         .args_borsh([block_header_example()].to_vec())
         .transact()
         .await?;
-    println!("{:?}", outcome);
     assert!(outcome.is_success());
 
     // first fork block
