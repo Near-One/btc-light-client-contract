@@ -6,9 +6,13 @@ pub fn merkle_proof_calculator(tx_hashes: Vec<H256>, transaction_position: usize
     let mut current_hashes = tx_hashes;
 
     while current_hashes.len() > 1 {
+        if current_hashes.len() % 2 == 1 {
+            current_hashes.push(current_hashes[current_hashes.len() - 1].clone())
+        }
+
         if transaction_position % 2 == 1 {
             merkle_proof.push(current_hashes[transaction_position - 1].clone());
-        } else if transaction_position + 1 < current_hashes.len() {
+        } else {
             merkle_proof.push(current_hashes[transaction_position + 1].clone());
         }
 
@@ -16,13 +20,6 @@ pub fn merkle_proof_calculator(tx_hashes: Vec<H256>, transaction_position: usize
 
         for i in (0..current_hashes.len() - 1).step_by(2) {
             new_hashes.push(compute_hash(&current_hashes[i], &current_hashes[i + 1]));
-        }
-
-        if current_hashes.len() % 2 == 1 {
-            new_hashes.push(compute_hash(
-                &current_hashes[current_hashes.len() - 1],
-                &current_hashes[current_hashes.len() - 1],
-            ));
         }
 
         current_hashes = new_hashes;
