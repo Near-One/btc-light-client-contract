@@ -14,6 +14,12 @@ impl From<[u8; 32]> for H256 {
     }
 }
 
+impl fmt::Display for H256 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", hex::encode(self.0))
+    }
+}
+
 impl TryFrom<Vec<u8>> for H256 {
     type Error = &'static str;
 
@@ -73,6 +79,14 @@ pub struct ReversedH256 {
 impl From<H256> for ReversedH256 {
     fn from(hash: H256) -> Self {
         ReversedH256 { hash }
+    }
+}
+
+impl fmt::Display for ReversedH256 {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let reversed: Vec<u8> = self.hash.0.into_iter().rev().collect();
+        let hash_str = hex::encode(reversed);
+        write!(f, "{}", hash_str)
     }
 }
 

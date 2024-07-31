@@ -285,6 +285,10 @@ impl BtcLightClient {
             .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"));
 
         let current_block_hash = block_header.block_hash();
+        log!(
+            "Block hash: {}",
+            ReversedH256::from(current_block_hash.clone())
+        );
 
         require!(
             self.skip_pow_verification
