@@ -155,4 +155,25 @@ mod tests {
         );
         assert_eq!(computed_root_from_merkle_proof, calculated_merkle_root);
     }
+
+    #[test]
+    fn test_merkle_proof_verification_odd() {
+        let tx_hashes = vec![
+            decode_hex("18afbf37d136ff62644b231fcde72f1fb8edd04a798fb00cb06360da635da275"),
+            decode_hex("30b19832a5f4b952e151de77d96139987492becc8b6e1e914c4103cfbb06c01e"),
+            decode_hex("b94ed12902e35b29dd53cf25e665b4d0bc92f22adbc383ad90566584902b061d"),
+            decode_hex("1920e5d8a10018dc65308bb4d1f11d30b5406c6499688443bfcd1ef364206b14"),
+            decode_hex("048f3897c16bdc59ec1187aa080a4b4aa5ec1afcb4b776cf8b8a214b01990a7b"),
+        ];
+
+        let calculated_merkle_root = merkle_root_calculator(&tx_hashes);
+        let calculated_merkle_proof = merkle_proof_calculator(tx_hashes, 4);
+
+        let computed_root_from_merkle_proof = compute_root_from_merkle_proof(
+            decode_hex("048f3897c16bdc59ec1187aa080a4b4aa5ec1afcb4b776cf8b8a214b01990a7b"),
+            4,
+            &calculated_merkle_proof,
+        );
+        assert_eq!(computed_root_from_merkle_proof, calculated_merkle_root);
+    }
 }
