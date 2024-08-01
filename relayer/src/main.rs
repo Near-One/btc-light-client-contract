@@ -182,7 +182,7 @@ async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: Nea
         .verify_transaction_inclusion(
             transaction_hash,
             transaction_position,
-            hex::decode(transaction_block_blockhash.to_string()).unwrap().try_into().unwrap(),
+            transaction_block_blockhash.to_byte_array().into(),
             merkle_proof,
         )
         .await;

@@ -83,7 +83,6 @@ pub struct ExtendedHeader {
     /// and other utility functionality
     ///
     /// Current `block_hash`
-    #[serde(with = "serd_reversed_h256")]
     pub current_block_hash: H256,
     /// Accumulated chainwork at this position for this block
     pub chain_work: Work,

@@ -7,12 +7,12 @@ use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
 
 use bitcoincore_rpc::bitcoin::block::Header;
-use borsh::to_vec;
-use serde_json::{from_slice, json};
-use std::str::FromStr;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
+use borsh::to_vec;
 use btc_types;
 use near_primitives::borsh;
+use serde_json::{from_slice, json};
+use std::str::FromStr;
 use tokio::time;
 
 use crate::config::Config;
@@ -30,8 +30,8 @@ pub struct Client {
 fn get_btc_header(header: Header) -> btc_types::header::Header {
     btc_types::header::Header {
         version: header.version.to_consensus(),
-        prev_block_hash: H256(header.prev_blockhash.to_byte_array()),
-        merkle_root: H256(header.merkle_root.to_byte_array()),
+        prev_block_hash: header.prev_blockhash.to_byte_array().into(),
+        merkle_root: header.merkle_root.to_byte_array().into(),
         time: header.time,
         bits: header.bits.to_consensus(),
         nonce: header.nonce,
@@ -84,7 +84,9 @@ impl Client {
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: SUBMIT_BLOCKS.to_string(),
-                args: to_vec(&args).expect("error on headers serialisation").into(),
+                args: to_vec(&args)
+                    .expect("error on headers serialisation")
+                    .into(),
                 gas: 100_000_000_000_000, // 100 TeraGas
                 deposit: 0,
             }))],
@@ -203,9 +205,9 @@ impl Client {
 
     pub async fn verify_transaction_inclusion(
         &self,
-        mut transaction_hash: H256,
+        transaction_hash: H256,
         transaction_position: usize,
-        mut transaction_block_blockhash: H256,
+        transaction_block_blockhash: H256,
         merkle_proof: Vec<H256>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let node_url = self.config.near.endpoint.clone();
@@ -235,14 +237,11 @@ impl Client {
             _ => Err("failed to extract current nonce")?,
         };
 
-        transaction_block_blockhash.0.reverse();
-        transaction_hash.0.reverse();
-
         let args = btc_types::contract_args::ProofArgs {
-            tx_id: transaction_hash.clone(),
+            tx_id: transaction_hash,
             tx_block_blockhash: transaction_block_blockhash,
-            tx_index: transaction_position as u64,
-            merkle_proof: merkle_proof.clone(),
+            tx_index: transaction_position.try_into().unwrap(),
+            merkle_proof,
             confirmations: 0,
         };
 
@@ -254,7 +253,9 @@ impl Client {
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: VERIFY_TRANSACTION_INCLUSION.to_string(),
-                args:  to_vec(&args).expect("error on ProofArgs serialisation").into(),
+                args: to_vec(&args)
+                    .expect("error on ProofArgs serialisation")
+                    .into(),
                 gas: 100_000_000_000_000, // 100 TeraGas
                 deposit: 0,
             }))],
@@ -273,12 +274,22 @@ impl Client {
                     sender_account_id: signer.account_id.clone(),
                 },
                 wait_until: TxExecutionStatus::Executed,
-            }).await?;
+            })
+            .await?;
 
-        match response.final_execution_outcome.clone().unwrap().into_outcome().status {
+        match response
+            .final_execution_outcome
+            .clone()
+            .unwrap()
+            .into_outcome()
+            .status
+        {
             near_primitives::views::FinalExecutionStatus::SuccessValue(value) => {
                 let parsed_output = String::from_utf8(value.clone()).unwrap();
-                println!("Transaction succeeded with result: {:?}", String::from_utf8(value.clone()));
+                println!(
+                    "Transaction succeeded with result: {:?}",
+                    String::from_utf8(value.clone())
+                );
 
                 if parsed_output == "true" {
                     Ok(true)
@@ -289,9 +300,14 @@ impl Client {
             near_primitives::views::FinalExecutionStatus::Failure(err) => {
                 Err(format!("Transaction failed with error: {:?}", err))?
             }
-            _ => {
-                Err(format!("Transaction status: {:?}", response.final_execution_outcome.unwrap().into_outcome().status))?
-            }
+            _ => Err(format!(
+                "Transaction status: {:?}",
+                response
+                    .final_execution_outcome
+                    .unwrap()
+                    .into_outcome()
+                    .status
+            ))?,
         }
     }
 }
