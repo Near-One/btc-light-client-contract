@@ -572,6 +572,8 @@ version = "0.1.0"
 dependencies = [
  "bitcoin 0.32.0",
  "bitcoincore-rpc",
+ "borsh 1.5.0",
+ "btc-types",
  "env_logger",
  "hex",
  "log",

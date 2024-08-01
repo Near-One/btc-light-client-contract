@@ -7,9 +7,11 @@ use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
 
 use bitcoincore_rpc::bitcoin::block::Header;
+use borsh::to_vec;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
-
+use btc_types;
+use near_primitives::borsh;
 use tokio::time;
 
 use crate::config::Config;
@@ -192,19 +194,19 @@ impl Client {
         &self,
         transaction_hash: H256,
         transaction_position: usize,
-        transaction_block_height: usize,
+        transaction_block_blockhash: H256,
         merkle_proof: Vec<H256>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let node_url = self.config.near.endpoint.clone();
         let contract_id = self.config.near.account_name.clone();
 
-        let args = serde_json::json!({
-            "txid": transaction_hash,
-            "tx_block_height": transaction_block_height,
-            "tx_index": transaction_position,
-            "merkle_proof": merkle_proof,
-            "confirmations": 0,
-        });
+        let args = btc_types::contract_args::ProofArgs {
+            tx_id: transaction_hash,
+            tx_block_blockhash: transaction_block_blockhash,
+            tx_index: transaction_position as u64,
+            merkle_proof: merkle_proof,
+            confirmations: 0,
+        };
 
         let client = near_jsonrpc_client::JsonRpcClient::connect(node_url);
 
@@ -215,7 +217,7 @@ impl Client {
             request: near_primitives::views::QueryRequest::CallFunction {
                 account_id: contract_id.parse().unwrap(),
                 method_name: VERIFY_TRANSACTION_INCLUSION.to_string(),
-                args: args.to_string().into_bytes().into(),
+                args: to_vec(&args).expect("error on ProofArgs serialisation").into(),
             },
         };
         let response = client.call(read_request).await?;

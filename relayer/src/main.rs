@@ -154,6 +154,9 @@ async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: Nea
     let block = bitcoin_client.get_block_by_height(
         u64::try_from(transaction_block_height).expect("correct transaction height"),
     );
+
+    let transaction_block_blockhash = block.header.block_hash();
+
     let transactions = block
         .txdata
         .iter()
@@ -175,11 +178,12 @@ async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: Nea
                 .unwrap(),
         )
     };
+
     let result = near_client
         .verify_transaction_inclusion(
             transaction_hash,
             transaction_position,
-            transaction_block_height,
+            hex::decode(transaction_block_blockhash.to_string()).unwrap().try_into().unwrap(),
             merkle_proof,
         )
         .await;
