@@ -9,7 +9,6 @@ use near_primitives::views::TxExecutionStatus;
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
-use btc_types;
 use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
@@ -84,9 +83,7 @@ impl Client {
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: SUBMIT_BLOCKS.to_string(),
-                args: to_vec(&args)
-                    .expect("error on headers serialisation")
-                    .into(),
+                args: to_vec(&args).expect("error on headers serialisation"),
                 gas: 100_000_000_000_000, // 100 TeraGas
                 deposit: 0,
             }))],
@@ -253,9 +250,7 @@ impl Client {
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: VERIFY_TRANSACTION_INCLUSION.to_string(),
-                args: to_vec(&args)
-                    .expect("error on ProofArgs serialisation")
-                    .into(),
+                args: to_vec(&args).expect("error on ProofArgs serialisation"),
                 gas: 100_000_000_000_000, // 100 TeraGas
                 deposit: 0,
             }))],
@@ -298,7 +293,7 @@ impl Client {
                 }
             }
             near_primitives::views::FinalExecutionStatus::Failure(err) => {
-                Err(format!("Transaction failed with error: {:?}", err))?
+                Err(format!("Transaction failed with error: {err:?}"))?
             }
             _ => Err(format!(
                 "Transaction status: {:?}",
