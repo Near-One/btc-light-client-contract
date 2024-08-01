@@ -10,13 +10,14 @@ use bitcoincore_rpc::bitcoin::block::Header;
 use borsh::to_vec;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
+use bitcoincore_rpc::bitcoin::hashes::Hash;
 use btc_types;
 use near_primitives::borsh;
 use tokio::time;
 
 use crate::config::Config;
 
-const SUBMIT_BLOCK_HEADER: &str = "submit_block_header";
+const SUBMIT_BLOCKS: &str = "submit_blocks";
 const GET_BLOCK_HEADER: &str = "get_block_header";
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
 const RECEIVE_LAST_N_BLOCKS: &str = "receive_last_n_blocks";
@@ -26,6 +27,17 @@ pub struct Client {
     config: Config,
 }
 
+fn get_btc_header(header: Header) -> btc_types::header::Header {
+    btc_types::header::Header {
+        version: header.version.to_consensus(),
+        prev_block_hash: H256(header.prev_blockhash.to_byte_array()),
+        merkle_root: H256(header.merkle_root.to_byte_array()),
+        time: header.time,
+        bits: header.bits.to_consensus(),
+        nonce: header.nonce,
+    }
+}
+
 impl Client {
     pub fn new(config: Config) -> Self {
         Self { config }
@@ -33,7 +45,7 @@ impl Client {
 
     /// Submitting block header to the smart contract.
     /// This method supports retries internally.
-    pub async fn submit_block_header(
+    pub async fn submit_blocks(
         &self,
         header: Header,
     ) -> Result<Result<(), usize>, Box<dyn std::error::Error>> {
@@ -41,9 +53,8 @@ impl Client {
         let signer_account_id = AccountId::from_str(&self.config.near.account_name).unwrap();
         let signer_secret_key =
             near_crypto::SecretKey::from_str(&self.config.near.secret_key).unwrap();
-        let args = json!({
-            "block_header": serde_json::to_value(header).expect("bitcoin should be validate before")
-        });
+
+        let args = vec![get_btc_header(header)];
 
         let signer = near_crypto::InMemorySigner::from_secret_key(
             signer_account_id.clone(),
@@ -72,8 +83,8 @@ impl Client {
             receiver_id: signer_account_id,
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
-                method_name: SUBMIT_BLOCK_HEADER.to_string(),
-                args: args.to_string().into_bytes(),
+                method_name: SUBMIT_BLOCKS.to_string(),
+                args: to_vec(&args).expect("error on headers serialisation").into(),
                 gas: 100_000_000_000_000, // 100 TeraGas
                 deposit: 0,
             }))],

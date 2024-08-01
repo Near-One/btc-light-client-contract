@@ -43,7 +43,7 @@ impl Synchronizer {
             let block_hash = self.bitcoin_client.get_block_hash(current_height);
             let block_header = self.bitcoin_client.get_block_header(&block_hash);
 
-            match self.near_client.submit_block_header(block_header).await {
+            match self.near_client.submit_blocks(block_header).await {
                 Ok(Err(1)) => {
                     // Contract cannot save block, because no previous block found, we are in fork
                     current_height = self.adjust_height_to_the_fork(current_height).await;
