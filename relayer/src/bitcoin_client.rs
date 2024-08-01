@@ -2,6 +2,7 @@ use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::RpcApi;
+use btc_types::hash::H256;
 
 use crate::merkle_tools;
 
@@ -61,11 +62,14 @@ impl Client {
         block: &bitcoincore_rpc::bitcoin::Block,
         transaction_position: usize,
     ) -> Vec<merkle_tools::H256> {
-        let transactions = block
+        let mut transactions: Vec<H256> = block
             .txdata
             .iter()
             .map(|tx| merkle_tools::H256(tx.txid().to_byte_array()))
             .collect();
+        for i in 0..transactions.len() {
+            transactions[i].0.reverse();
+        }
         merkle_tools::merkle_proof_calculator(transactions, transaction_position)
     }
 }

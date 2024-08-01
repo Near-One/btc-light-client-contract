@@ -203,11 +203,15 @@ impl BtcLightClient {
             .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
 
         // compute merkle tree root and check if it matches block's original merkle tree root
-        merkle_tools::compute_root_from_merkle_proof(
+        let mut computed_root =  merkle_tools::compute_root_from_merkle_proof(
             args.tx_id.clone(),
             usize::try_from(args.tx_index).unwrap(),
             &args.merkle_proof,
-        ) == header.block_header.merkle_root
+        );
+
+        computed_root.0.reverse();
+
+        computed_root == header.block_header.merkle_root
     }
 
     /// Public call to run GC on a mainchain.
