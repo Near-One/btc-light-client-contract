@@ -50,8 +50,7 @@ pub fn compute_root_from_merkle_proof(
 }
 
 fn compute_hash(first_tx_hash: &H256, second_tx_hash: &H256) -> H256 {
-    // Reverse inputs before and after hashing due to big-endian
-    let mut concat_inputs = Vec::new();
+    let mut concat_inputs = Vec::with_capacity(64);
     concat_inputs.extend(first_tx_hash.0);
     concat_inputs.extend(second_tx_hash.0);
 
