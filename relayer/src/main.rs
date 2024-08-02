@@ -5,7 +5,7 @@ use std::env;
 
 use crate::bitcoin_client::Client as BitcoinClient;
 use crate::config::Config;
-use crate::near_client::NearClient;
+use crate::near_client::{CustomError, NearClient};
 
 #[allow(clippy::single_component_path_imports)]
 use merkle_tools;
@@ -63,8 +63,7 @@ impl Synchronizer {
             );
 
             match self.near_client.submit_blocks(blocks_to_submit).await {
-                // TODO: fix this
-                Ok(Err(1)) => {
+                Ok(Err(CustomError::PrevBlockNotFound)) => {
                     // Contract cannot save block, because no previous block found, we are in fork
                     current_height = self.adjust_height_to_the_fork(current_height).await + 1;
                 }

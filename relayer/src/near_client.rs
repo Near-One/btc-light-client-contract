@@ -24,6 +24,12 @@ const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
 const RECEIVE_LAST_N_BLOCKS: &str = "get_last_n_blocks_hashes";
 
+#[derive(thiserror::Error, Debug)]
+pub enum CustomError {
+    #[error("Prev Block Not Found")]
+    PrevBlockNotFound,
+}
+
 #[derive(Clone)]
 pub struct NearClient {
     client: JsonRpcClient,
@@ -69,7 +75,7 @@ impl NearClient {
     pub async fn submit_blocks(
         &self,
         headers: Vec<Header>,
-    ) -> Result<Result<RpcTransactionResponse, usize>, Box<dyn std::error::Error>> {
+    ) -> Result<Result<RpcTransactionResponse, CustomError>, Box<dyn std::error::Error>> {
         let args: Vec<_> = headers
             .iter()
             .map(|header| {
@@ -154,13 +160,13 @@ impl NearClient {
 
     pub fn parse_submit_blocks_response(
         response: RpcTransactionResponse,
-    ) -> Result<RpcTransactionResponse, usize> {
+    ) -> Result<RpcTransactionResponse, CustomError> {
         if let Some(final_execution_outcome) = response.final_execution_outcome.clone() {
             if let near_primitives::views::FinalExecutionStatus::Failure(err) =
                 final_execution_outcome.into_outcome().status
             {
                 if format!("{err:?}").contains("PrevBlockNotFound") {
-                    Err(1_usize)?;
+                    Err(CustomError::PrevBlockNotFound)?;
                 }
             }
         }
