@@ -17,13 +17,15 @@ mod near_client;
 struct Synchronizer {
     bitcoin_client: BitcoinClient,
     near_client: NearClient,
+    config: Config,
 }
 
 impl Synchronizer {
-    pub fn new(bitcoin_client: BitcoinClient, near_client: NearClient) -> Self {
+    pub fn new(bitcoin_client: BitcoinClient, near_client: NearClient, config: Config) -> Self {
         Self {
             bitcoin_client,
             near_client,
+            config,
         }
     }
     async fn sync(&mut self) {
@@ -52,6 +54,14 @@ impl Synchronizer {
                 blocks_to_submit.push(block_header);
             }
 
+            let block_to_submit_len = blocks_to_submit.len() as u64;
+
+            info!(
+                "Submit blocks with height: [{} - {}]",
+                current_height,
+                current_height + block_to_submit_len - 1
+            );
+
             match self.near_client.submit_blocks(blocks_to_submit).await {
                 // TODO: fix this
                 Ok(Err(1)) => {
@@ -67,7 +77,7 @@ impl Synchronizer {
                 }
             }
 
-            current_height += 1;
+            current_height += block_to_submit_len;
         }
     }
 
@@ -111,10 +121,12 @@ impl Synchronizer {
     }
 
     async fn get_block_height(&self) -> Result<u64, Box<dyn std::error::Error>> {
-        self.near_client
-            .get_last_block_header()
-            .await
-            .map(|b| b.block_height)
+        Ok(self.config.bitcoin.start_height.unwrap_or(
+            self.near_client
+                .get_last_block_header()
+                .await
+                .map(|b| b.block_height)?,
+        ))
     }
 }
 
@@ -139,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // RUNNING IN BLOCK RELAY MODE
     info!("run block header sync");
-    let mut synchronizer = Synchronizer::new(bitcoin_client, near_client.clone());
+    let mut synchronizer = Synchronizer::new(bitcoin_client, near_client.clone(), config);
     synchronizer.sync().await;
     info!("end block header sync");
 

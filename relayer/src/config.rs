@@ -14,7 +14,7 @@ pub struct BitcoinConfig {
     pub endpoint: String,
     pub node_user: String,
     pub node_password: String,
-    pub start_height: u64,
+    pub start_height: Option<u64>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
