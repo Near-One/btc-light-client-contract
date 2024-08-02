@@ -146,10 +146,23 @@ impl NearClient {
                 },
                 Ok(response) => {
                     println!("Success response gotten after: {delta}s");
-                    return Ok(Ok(response));
+                    return Ok(Self::parse_submit_blocks_response(response));
                 }
             }
         }
+    }
+
+    pub fn parse_submit_blocks_response(response: RpcTransactionResponse)
+                                        -> Result<RpcTransactionResponse, usize> {
+        if let Some(final_execution_outcome) = response.final_execution_outcome.clone() {
+            if let near_primitives::views::FinalExecutionStatus::Failure(err) = final_execution_outcome.into_outcome().status {
+                if format!("{:?}", err).contains("PrevBlockNotFound") {
+                    Err(1 as usize)?
+                }
+            }
+        }
+
+        Ok(response)
     }
 
     pub async fn get_last_block_header(
