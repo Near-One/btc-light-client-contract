@@ -6,5 +6,6 @@ start_height = 0
 
 [near]
 endpoint = "https://rpc.testnet.near.org"
+btc_light_client_account_id = "btc_light_client.testnet"
 account_name = "account.testnet"
 secret_key = "ed25519:4637264364832647328973fh2hfhkfdshfdfkdandsyfdsasdagfdweee"

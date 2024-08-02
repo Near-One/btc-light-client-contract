@@ -87,7 +87,7 @@ impl Client {
             signer_id: signer.account_id.clone(),
             public_key: signer.public_key.clone(),
             nonce: current_nonce + 1,
-            receiver_id: signer_account_id,
+            receiver_id: self.config.near.btc_light_client_account_id.clone().parse().unwrap(),
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: SUBMIT_BLOCKS.to_string(),
@@ -144,7 +144,7 @@ impl Client {
         &self,
     ) -> Result<ExtendedHeader, Box<dyn std::error::Error>> {
         let node_url = self.config.near.endpoint.clone();
-        let contract_id = self.config.near.account_name.clone();
+        let contract_id = self.config.near.btc_light_client_account_id.clone();
 
         let args = json!({});
         let client = near_jsonrpc_client::JsonRpcClient::connect(node_url);
@@ -178,7 +178,7 @@ impl Client {
         shift_from_the_end: usize,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let node_url = self.config.near.endpoint.clone();
-        let contract_id = self.config.near.account_name.clone();
+        let contract_id = self.config.near.btc_light_client_account_id.clone();
 
         let args = json!({
             "n": n,
@@ -215,10 +215,10 @@ impl Client {
         merkle_proof: Vec<H256>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let node_url = self.config.near.endpoint.clone();
-        let contract_id = self.config.near.account_name.clone();
+        let contract_id = self.config.near.btc_light_client_account_id.clone();
 
         let client = JsonRpcClient::connect(&node_url);
-        let signer_account_id = AccountId::from_str(&contract_id).unwrap();
+        let signer_account_id = AccountId::from_str(&self.config.near.account_name).unwrap();
         let signer_secret_key =
             near_crypto::SecretKey::from_str(&self.config.near.secret_key).unwrap();
         let signer = near_crypto::InMemorySigner::from_secret_key(
@@ -253,7 +253,7 @@ impl Client {
             signer_id: signer.account_id.clone(),
             public_key: signer.public_key.clone(),
             nonce: current_nonce + 1,
-            receiver_id: signer_account_id,
+            receiver_id: AccountId::from_str(&contract_id).unwrap(),
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: VERIFY_TRANSACTION_INCLUSION.to_string(),

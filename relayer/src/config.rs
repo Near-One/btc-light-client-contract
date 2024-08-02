@@ -19,6 +19,7 @@ pub struct Bitcoin {
 #[derive(Deserialize, Clone, Debug)]
 pub struct Near {
     pub endpoint: String,
+    pub btc_light_client_account_id: String,
     pub account_name: String,
     pub secret_key: String,
 }
