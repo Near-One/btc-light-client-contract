@@ -66,18 +66,16 @@ impl Synchronizer {
                 // TODO: fix this
                 Ok(Err(1)) => {
                     // Contract cannot save block, because no previous block found, we are in fork
-                    current_height = self.adjust_height_to_the_fork(current_height).await;
+                    current_height = self.adjust_height_to_the_fork(current_height).await + 1;
                 }
                 Ok(_) => {
-                    // Block has been saved
+                    current_height += block_to_submit_len;
                 }
                 _ => {
                     // network error after retries
                     panic!("Off-chain relay panics after multiple attempts to save block");
                 }
             }
-
-            current_height += block_to_submit_len;
         }
     }
 
@@ -93,7 +91,7 @@ impl Synchronizer {
 
             let last_block_hashes_in_relay_contract = self
                 .near_client
-                .receive_last_n_blocks(amount_of_blocks_to_request, 0)
+                .get_last_n_blocks_hashes(amount_of_blocks_to_request, 0)
                 .await
                 .expect("read block header successfully");
 

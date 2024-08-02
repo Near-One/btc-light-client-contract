@@ -22,7 +22,7 @@ use crate::config::NearConfig;
 const SUBMIT_BLOCKS: &str = "submit_blocks";
 const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
-const RECEIVE_LAST_N_BLOCKS: &str = "receive_last_n_blocks";
+const RECEIVE_LAST_N_BLOCKS: &str = "get_last_n_blocks_hashes";
 
 #[derive(Clone)]
 pub struct NearClient {
@@ -193,14 +193,14 @@ impl NearClient {
         }
     }
 
-    pub async fn receive_last_n_blocks(
+    pub async fn get_last_n_blocks_hashes(
         &self,
         n: usize,
         shift_from_the_end: usize,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let args = json!({
-            "n": n,
-            "shift_from_the_end": shift_from_the_end,
+            "skip": shift_from_the_end,
+            "limit": n,
         });
 
         let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
