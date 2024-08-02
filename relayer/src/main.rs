@@ -127,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     debug!("Configuration loaded: {:?}", config);
 
     let bitcoin_client = BitcoinClient::new(&config);
-    let near_client = NearClient::new(config.near.clone());
+    let near_client = NearClient::new(&config.near);
 
     // RUNNING IN VERIFICATION MODE
     let verify_mode = env::var("VERIFY_MODE").unwrap_or_default();

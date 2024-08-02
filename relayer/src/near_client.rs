@@ -11,10 +11,10 @@ use near_primitives::views::TxExecutionStatus;
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
+use near_crypto::InMemorySigner;
 use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
-use near_crypto::InMemorySigner;
 use tokio::time;
 
 use crate::config::NearConfig;
@@ -43,12 +43,11 @@ fn get_btc_header(header: Header) -> btc_types::header::Header {
 }
 
 impl Client {
-    pub fn new(config: NearConfig) -> Self {
+    pub fn new(config: &NearConfig) -> Self {
         let client = JsonRpcClient::connect(&config.endpoint);
 
         let signer_account_id = AccountId::from_str(&config.account_name).unwrap();
-        let signer_secret_key =
-            near_crypto::SecretKey::from_str(&config.secret_key).unwrap();
+        let signer_secret_key = near_crypto::SecretKey::from_str(&config.secret_key).unwrap();
         let signer = near_crypto::InMemorySigner::from_secret_key(
             signer_account_id.clone(),
             signer_secret_key,
@@ -61,7 +60,7 @@ impl Client {
                 .btc_light_client_account_id
                 .clone()
                 .parse()
-                .unwrap()
+                .unwrap(),
         }
     }
 
@@ -79,7 +78,8 @@ impl Client {
             })
             .collect();
 
-        let access_key_query_response = self.client
+        let access_key_query_response = self
+            .client
             .call(methods::query::RpcQueryRequest {
                 block_reference: BlockReference::latest(),
                 request: near_primitives::views::QueryRequest::ViewAccessKey {
@@ -116,7 +116,8 @@ impl Client {
         let tx_hash = self.client.call(request).await?;
 
         loop {
-            let response = self.client
+            let response = self
+                .client
                 .call(methods::tx::RpcTransactionStatusRequest {
                     transaction_info: TransactionInfo::TransactionId {
                         tx_hash,
@@ -217,7 +218,8 @@ impl Client {
         transaction_block_blockhash: H256,
         merkle_proof: Vec<H256>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        let access_key_query_response = self.client
+        let access_key_query_response = self
+            .client
             .call(methods::query::RpcQueryRequest {
                 block_reference: BlockReference::latest(),
                 request: near_primitives::views::QueryRequest::ViewAccessKey {
@@ -260,7 +262,8 @@ impl Client {
 
         let tx_hash = self.client.call(request).await?;
 
-        let response = self.client
+        let response = self
+            .client
             .call(methods::tx::RpcTransactionStatusRequest {
                 transaction_info: TransactionInfo::TransactionId {
                     tx_hash,
