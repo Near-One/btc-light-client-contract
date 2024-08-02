@@ -87,7 +87,13 @@ impl Client {
             signer_id: signer.account_id.clone(),
             public_key: signer.public_key.clone(),
             nonce: current_nonce + 1,
-            receiver_id: self.config.near.btc_light_client_account_id.clone().parse().unwrap(),
+            receiver_id: self
+                .config
+                .near
+                .btc_light_client_account_id
+                .clone()
+                .parse()
+                .unwrap(),
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: SUBMIT_BLOCKS.to_string(),
