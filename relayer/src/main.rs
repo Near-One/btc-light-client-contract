@@ -5,7 +5,7 @@ use std::env;
 
 use crate::bitcoin_client::Client as BitcoinClient;
 use crate::config::Config;
-use crate::near_client::Client as NearClient;
+use crate::near_client::NearClient as NearClient;
 
 #[allow(clippy::single_component_path_imports)]
 use merkle_tools;

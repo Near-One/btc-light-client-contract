@@ -25,7 +25,7 @@ const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
 const RECEIVE_LAST_N_BLOCKS: &str = "receive_last_n_blocks";
 
 #[derive(Clone)]
-pub struct Client {
+pub struct NearClient {
     client: JsonRpcClient,
     signer: InMemorySigner,
     btc_light_client_account_id: AccountId,
@@ -42,7 +42,7 @@ fn get_btc_header(header: Header) -> btc_types::header::Header {
     }
 }
 
-impl Client {
+impl NearClient {
     pub fn new(config: &NearConfig) -> Self {
         let client = JsonRpcClient::connect(&config.endpoint);
 
