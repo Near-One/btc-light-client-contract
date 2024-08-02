@@ -14,6 +14,7 @@ use borsh::to_vec;
 use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
+use near_crypto::InMemorySigner;
 use tokio::time;
 
 use crate::config::NearConfig;
@@ -23,9 +24,11 @@ const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
 const RECEIVE_LAST_N_BLOCKS: &str = "receive_last_n_blocks";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Client {
-    config: NearConfig,
+    client: JsonRpcClient,
+    signer: InMemorySigner,
+    btc_light_client_account_id: AccountId,
 }
 
 fn get_btc_header(header: Header) -> btc_types::header::Header {
@@ -41,7 +44,25 @@ fn get_btc_header(header: Header) -> btc_types::header::Header {
 
 impl Client {
     pub fn new(config: NearConfig) -> Self {
-        Self { config }
+        let client = JsonRpcClient::connect(&config.endpoint);
+
+        let signer_account_id = AccountId::from_str(&config.account_name).unwrap();
+        let signer_secret_key =
+            near_crypto::SecretKey::from_str(&config.secret_key).unwrap();
+        let signer = near_crypto::InMemorySigner::from_secret_key(
+            signer_account_id.clone(),
+            signer_secret_key,
+        );
+
+        Self {
+            client,
+            signer,
+            btc_light_client_account_id: config
+                .btc_light_client_account_id
+                .clone()
+                .parse()
+                .unwrap()
+        }
     }
 
     /// Submitting block header to the smart contract.
@@ -50,11 +71,6 @@ impl Client {
         &self,
         headers: Vec<Header>,
     ) -> Result<Result<RpcTransactionResponse, usize>, Box<dyn std::error::Error>> {
-        let client = JsonRpcClient::connect(&self.config.endpoint);
-        let signer_account_id = AccountId::from_str(&self.config.account_name).unwrap();
-        let signer_secret_key =
-            near_crypto::SecretKey::from_str(&self.config.secret_key).unwrap();
-
         let args: Vec<_> = headers
             .iter()
             .map(|header| {
@@ -63,17 +79,12 @@ impl Client {
             })
             .collect();
 
-        let signer = near_crypto::InMemorySigner::from_secret_key(
-            signer_account_id.clone(),
-            signer_secret_key,
-        );
-
-        let access_key_query_response = client
+        let access_key_query_response = self.client
             .call(methods::query::RpcQueryRequest {
                 block_reference: BlockReference::latest(),
                 request: near_primitives::views::QueryRequest::ViewAccessKey {
-                    account_id: signer.account_id.clone(),
-                    public_key: signer.public_key.clone(),
+                    account_id: self.signer.account_id.clone(),
+                    public_key: self.signer.public_key.clone(),
                 },
             })
             .await?;
@@ -84,15 +95,10 @@ impl Client {
         };
 
         let transaction = Transaction {
-            signer_id: signer.account_id.clone(),
-            public_key: signer.public_key.clone(),
+            signer_id: self.signer.account_id.clone(),
+            public_key: self.signer.public_key.clone(),
             nonce: current_nonce + 1,
-            receiver_id: self
-                .config
-                .btc_light_client_account_id
-                .clone()
-                .parse()
-                .unwrap(),
+            receiver_id: self.btc_light_client_account_id.clone(),
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: SUBMIT_BLOCKS.to_string(),
@@ -103,18 +109,18 @@ impl Client {
         };
 
         let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
-            signed_transaction: transaction.sign(&signer),
+            signed_transaction: transaction.sign(&self.signer),
         };
 
         let sent_at = time::Instant::now();
-        let tx_hash = client.call(request).await?;
+        let tx_hash = self.client.call(request).await?;
 
         loop {
-            let response = client
+            let response = self.client
                 .call(methods::tx::RpcTransactionStatusRequest {
                     transaction_info: TransactionInfo::TransactionId {
                         tx_hash,
-                        sender_account_id: signer.account_id.clone(),
+                        sender_account_id: self.signer.account_id.clone(),
                     },
                     wait_until: TxExecutionStatus::Executed,
                 })
@@ -148,23 +154,19 @@ impl Client {
     pub async fn get_last_block_header(
         &self,
     ) -> Result<ExtendedHeader, Box<dyn std::error::Error>> {
-        let node_url = self.config.endpoint.clone();
-        let contract_id = self.config.btc_light_client_account_id.clone();
-
         let args = json!({});
-        let client = near_jsonrpc_client::JsonRpcClient::connect(node_url);
 
         let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
             block_reference: near_primitives::types::BlockReference::Finality(
                 near_primitives::types::Finality::Final,
             ),
             request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: contract_id.parse().unwrap(),
+                account_id: self.btc_light_client_account_id.clone(),
                 method_name: GET_LAST_BLOCK_HEADER.to_string(),
                 args: args.to_string().into_bytes().into(),
             },
         };
-        let response = client.call(read_request).await?;
+        let response = self.client.call(read_request).await?;
 
         if let QueryResponseKind::CallResult(result) = response.kind {
             let header = from_slice::<ExtendedHeader>(&result.result)?;
@@ -182,26 +184,22 @@ impl Client {
         n: usize,
         shift_from_the_end: usize,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        let node_url = self.config.endpoint.clone();
-        let contract_id = self.config.btc_light_client_account_id.clone();
-
         let args = json!({
             "n": n,
             "shift_from_the_end": shift_from_the_end,
         });
-        let client = near_jsonrpc_client::JsonRpcClient::connect(node_url);
 
         let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
             block_reference: near_primitives::types::BlockReference::Finality(
                 near_primitives::types::Finality::Final,
             ),
             request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: contract_id.parse().unwrap(),
+                account_id: self.btc_light_client_account_id.clone(),
                 method_name: RECEIVE_LAST_N_BLOCKS.to_string(),
                 args: args.to_string().into_bytes().into(),
             },
         };
-        let response = client.call(read_request).await?;
+        let response = self.client.call(read_request).await?;
 
         if let QueryResponseKind::CallResult(result) = response.kind {
             let block_hashes = from_slice::<Vec<String>>(&result.result)?;
@@ -219,24 +217,12 @@ impl Client {
         transaction_block_blockhash: H256,
         merkle_proof: Vec<H256>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        let node_url = self.config.endpoint.clone();
-        let contract_id = self.config.btc_light_client_account_id.clone();
-
-        let client = JsonRpcClient::connect(&node_url);
-        let signer_account_id = AccountId::from_str(&self.config.account_name).unwrap();
-        let signer_secret_key =
-            near_crypto::SecretKey::from_str(&self.config.secret_key).unwrap();
-        let signer = near_crypto::InMemorySigner::from_secret_key(
-            signer_account_id.clone(),
-            signer_secret_key,
-        );
-
-        let access_key_query_response = client
+        let access_key_query_response = self.client
             .call(methods::query::RpcQueryRequest {
                 block_reference: BlockReference::latest(),
                 request: near_primitives::views::QueryRequest::ViewAccessKey {
-                    account_id: signer.account_id.clone(),
-                    public_key: signer.public_key.clone(),
+                    account_id: self.signer.account_id.clone(),
+                    public_key: self.signer.public_key.clone(),
                 },
             })
             .await?;
@@ -255,10 +241,10 @@ impl Client {
         };
 
         let transaction = Transaction {
-            signer_id: signer.account_id.clone(),
-            public_key: signer.public_key.clone(),
+            signer_id: self.signer.account_id.clone(),
+            public_key: self.signer.public_key.clone(),
             nonce: current_nonce + 1,
-            receiver_id: AccountId::from_str(&contract_id).unwrap(),
+            receiver_id: self.btc_light_client_account_id.clone(),
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: VERIFY_TRANSACTION_INCLUSION.to_string(),
@@ -269,16 +255,16 @@ impl Client {
         };
 
         let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
-            signed_transaction: transaction.sign(&signer),
+            signed_transaction: transaction.sign(&self.signer),
         };
 
-        let tx_hash = client.call(request).await?;
+        let tx_hash = self.client.call(request).await?;
 
-        let response = client
+        let response = self.client
             .call(methods::tx::RpcTransactionStatusRequest {
                 transaction_info: TransactionInfo::TransactionId {
                     tx_hash,
-                    sender_account_id: signer.account_id.clone(),
+                    sender_account_id: self.signer.account_id.clone(),
                 },
                 wait_until: TxExecutionStatus::Executed,
             })
