@@ -16,7 +16,7 @@ use serde_json::{from_slice, json};
 use std::str::FromStr;
 use tokio::time;
 
-use crate::config::Config;
+use crate::config::NearConfig;
 
 const SUBMIT_BLOCKS: &str = "submit_blocks";
 const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
@@ -25,7 +25,7 @@ const RECEIVE_LAST_N_BLOCKS: &str = "receive_last_n_blocks";
 
 #[derive(Debug, Clone)]
 pub struct Client {
-    config: Config,
+    config: NearConfig,
 }
 
 fn get_btc_header(header: Header) -> btc_types::header::Header {
@@ -40,7 +40,7 @@ fn get_btc_header(header: Header) -> btc_types::header::Header {
 }
 
 impl Client {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: NearConfig) -> Self {
         Self { config }
     }
 
@@ -50,10 +50,10 @@ impl Client {
         &self,
         headers: Vec<Header>,
     ) -> Result<Result<RpcTransactionResponse, usize>, Box<dyn std::error::Error>> {
-        let client = JsonRpcClient::connect(&self.config.near.endpoint);
-        let signer_account_id = AccountId::from_str(&self.config.near.account_name).unwrap();
+        let client = JsonRpcClient::connect(&self.config.endpoint);
+        let signer_account_id = AccountId::from_str(&self.config.account_name).unwrap();
         let signer_secret_key =
-            near_crypto::SecretKey::from_str(&self.config.near.secret_key).unwrap();
+            near_crypto::SecretKey::from_str(&self.config.secret_key).unwrap();
 
         let args: Vec<_> = headers
             .iter()
@@ -89,7 +89,6 @@ impl Client {
             nonce: current_nonce + 1,
             receiver_id: self
                 .config
-                .near
                 .btc_light_client_account_id
                 .clone()
                 .parse()
@@ -149,8 +148,8 @@ impl Client {
     pub async fn get_last_block_header(
         &self,
     ) -> Result<ExtendedHeader, Box<dyn std::error::Error>> {
-        let node_url = self.config.near.endpoint.clone();
-        let contract_id = self.config.near.btc_light_client_account_id.clone();
+        let node_url = self.config.endpoint.clone();
+        let contract_id = self.config.btc_light_client_account_id.clone();
 
         let args = json!({});
         let client = near_jsonrpc_client::JsonRpcClient::connect(node_url);
@@ -183,8 +182,8 @@ impl Client {
         n: usize,
         shift_from_the_end: usize,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-        let node_url = self.config.near.endpoint.clone();
-        let contract_id = self.config.near.btc_light_client_account_id.clone();
+        let node_url = self.config.endpoint.clone();
+        let contract_id = self.config.btc_light_client_account_id.clone();
 
         let args = json!({
             "n": n,
@@ -220,13 +219,13 @@ impl Client {
         transaction_block_blockhash: H256,
         merkle_proof: Vec<H256>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        let node_url = self.config.near.endpoint.clone();
-        let contract_id = self.config.near.btc_light_client_account_id.clone();
+        let node_url = self.config.endpoint.clone();
+        let contract_id = self.config.btc_light_client_account_id.clone();
 
         let client = JsonRpcClient::connect(&node_url);
-        let signer_account_id = AccountId::from_str(&self.config.near.account_name).unwrap();
+        let signer_account_id = AccountId::from_str(&self.config.account_name).unwrap();
         let signer_secret_key =
-            near_crypto::SecretKey::from_str(&self.config.near.secret_key).unwrap();
+            near_crypto::SecretKey::from_str(&self.config.secret_key).unwrap();
         let signer = near_crypto::InMemorySigner::from_secret_key(
             signer_account_id.clone(),
             signer_secret_key,
