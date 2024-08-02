@@ -40,10 +40,20 @@ impl Synchronizer {
                 continue;
             }
 
-            let block_hash = self.bitcoin_client.get_block_hash(current_height);
-            let block_header = self.bitcoin_client.get_block_header(&block_hash);
+            let mut blocks_to_submit = vec![];
+            let batch_size = 15;
+            for (i, current_height) in (current_height..latest_height).enumerate() {
+                if i > batch_size {
+                    break;
+                }
 
-            match self.near_client.submit_blocks(block_header).await {
+                let block_hash = self.bitcoin_client.get_block_hash(current_height);
+                let block_header = self.bitcoin_client.get_block_header(&block_hash);
+                blocks_to_submit.push(block_header);
+            }
+
+            match self.near_client.submit_blocks(blocks_to_submit).await {
+                // TODO: fix this
                 Ok(Err(1)) => {
                     // Contract cannot save block, because no previous block found, we are in fork
                     current_height = self.adjust_height_to_the_fork(current_height).await;

@@ -48,15 +48,20 @@ impl Client {
     /// This method supports retries internally.
     pub async fn submit_blocks(
         &self,
-        header: Header,
+        headers: Vec<Header>,
     ) -> Result<Result<RpcTransactionResponse, usize>, Box<dyn std::error::Error>> {
-        println!("Submit block {}", header.block_hash());
         let client = JsonRpcClient::connect(&self.config.near.endpoint);
         let signer_account_id = AccountId::from_str(&self.config.near.account_name).unwrap();
         let signer_secret_key =
             near_crypto::SecretKey::from_str(&self.config.near.secret_key).unwrap();
 
-        let args = vec![get_btc_header(header)];
+        let args: Vec<_> = headers
+            .iter()
+            .map(|header| {
+                println!("Submit block {}", header.block_hash());
+                get_btc_header(*header)
+            })
+            .collect();
 
         let signer = near_crypto::InMemorySigner::from_secret_key(
             signer_account_id.clone(),
