@@ -9,6 +9,7 @@ pub struct Config {
 
 #[allow(dead_code)]
 #[derive(Deserialize, Clone, Debug)]
+#[allow(clippy::module_name_repetitions)]
 pub struct BitcoinConfig {
     pub endpoint: String,
     pub node_user: String,
@@ -17,6 +18,7 @@ pub struct BitcoinConfig {
 }
 
 #[derive(Deserialize, Clone, Debug)]
+#[allow(clippy::module_name_repetitions)]
 pub struct NearConfig {
     pub endpoint: String,
     pub btc_light_client_account_id: String,
