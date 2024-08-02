@@ -27,7 +27,7 @@ impl Synchronizer {
         }
     }
     async fn sync(&mut self) {
-        let mut current_height = Synchronizer::get_block_height();
+        let mut current_height = self.get_block_height().await.unwrap() + 1;
 
         loop {
             // Get the latest block height from the Bitcoin client
@@ -100,8 +100,11 @@ impl Synchronizer {
         0
     }
 
-    fn get_block_height() -> u64 {
-        277_136
+    async fn get_block_height(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        self.near_client
+            .get_last_block_header()
+            .await
+            .map(|b| b.block_height)
     }
 }
 
@@ -159,7 +162,7 @@ async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: Nea
     let transactions = block
         .txdata
         .iter()
-        .map(|tx| H256(tx.txid().to_byte_array()))
+        .map(|tx| H256(tx.compute_txid().to_byte_array()))
         .collect::<Vec<_>>();
 
     // Provide the transaction hash and merkle proof

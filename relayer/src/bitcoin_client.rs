@@ -2,7 +2,7 @@ use crate::merkle_tools;
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
-use bitcoincore_rpc::RpcApi;
+use bitcoincore_rpc::{jsonrpc, RpcApi};
 
 use crate::config::Config;
 
@@ -13,14 +13,15 @@ pub struct Client {
 
 impl Client {
     pub fn new(config: &Config) -> Self {
-        let inner = bitcoincore_rpc::Client::new(
-            &config.bitcoin.endpoint,
-            bitcoincore_rpc::Auth::UserPass(
-                config.bitcoin.node_user.clone(),
-                config.bitcoin.node_password.clone(),
-            ),
-        )
-        .expect("failed to create a bitcoin client");
+        let mut builder = jsonrpc::minreq_http::Builder::new()
+            .url(&config.bitcoin.endpoint)
+            .unwrap();
+        builder = builder.basic_auth(
+            config.bitcoin.node_user.clone(),
+            Some(config.bitcoin.node_password.clone()),
+        );
+
+        let inner = bitcoincore_rpc::Client::from_jsonrpc(builder.build().into());
 
         Self { inner }
     }
@@ -63,7 +64,7 @@ impl Client {
         let transactions = block
             .txdata
             .iter()
-            .map(|tx| tx.txid().to_byte_array().into())
+            .map(|tx| tx.compute_txid().to_byte_array().into())
             .collect();
 
         merkle_tools::merkle_proof_calculator(transactions, transaction_position)

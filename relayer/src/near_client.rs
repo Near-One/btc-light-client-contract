@@ -1,3 +1,4 @@
+use btc_types::header::ExtendedHeader;
 use merkle_tools::H256;
 use near_jsonrpc_client::{methods, JsonRpcClient};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
@@ -17,7 +18,7 @@ use tokio::time;
 use crate::config::Config;
 
 const SUBMIT_BLOCKS: &str = "submit_blocks";
-const GET_BLOCK_HEADER: &str = "get_block_header";
+const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
 const RECEIVE_LAST_N_BLOCKS: &str = "receive_last_n_blocks";
 
@@ -48,6 +49,7 @@ impl Client {
         &self,
         header: Header,
     ) -> Result<Result<(), usize>, Box<dyn std::error::Error>> {
+        println!("Submit block {}", header.block_hash());
         let client = JsonRpcClient::connect(&self.config.near.endpoint);
         let signer_account_id = AccountId::from_str(&self.config.near.account_name).unwrap();
         let signer_secret_key =
@@ -124,17 +126,17 @@ impl Client {
                     }
                     _ => Err(err)?,
                 },
-                Ok(response) => {
-                    println!("response gotten after: {delta}s");
-                    println!("response: {response:#?}");
+                Ok(_) => {
+                    println!("Success response gotten after: {delta}s");
                     return Ok(Ok(()));
                 }
             }
         }
     }
 
-    #[allow(dead_code)]
-    pub async fn read_last_block_header(&self) -> Result<Header, Box<dyn std::error::Error>> {
+    pub async fn get_last_block_header(
+        &self,
+    ) -> Result<ExtendedHeader, Box<dyn std::error::Error>> {
         let node_url = self.config.near.endpoint.clone();
         let contract_id = self.config.near.account_name.clone();
 
@@ -147,15 +149,14 @@ impl Client {
             ),
             request: near_primitives::views::QueryRequest::CallFunction {
                 account_id: contract_id.parse().unwrap(),
-                method_name: GET_BLOCK_HEADER.to_string(),
+                method_name: GET_LAST_BLOCK_HEADER.to_string(),
                 args: args.to_string().into_bytes().into(),
             },
         };
         let response = client.call(read_request).await?;
 
         if let QueryResponseKind::CallResult(result) = response.kind {
-            let header = from_slice::<Header>(&result.result)?;
-            println!("{header:#?}");
+            let header = from_slice::<ExtendedHeader>(&result.result)?;
             println!("Block Height: {}", response.block_height);
             println!("Block Hash: {}", response.block_hash);
 
