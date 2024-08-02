@@ -152,10 +152,13 @@ impl NearClient {
         }
     }
 
-    pub fn parse_submit_blocks_response(response: RpcTransactionResponse)
-                                        -> Result<RpcTransactionResponse, usize> {
+    pub fn parse_submit_blocks_response(
+        response: RpcTransactionResponse,
+    ) -> Result<RpcTransactionResponse, usize> {
         if let Some(final_execution_outcome) = response.final_execution_outcome.clone() {
-            if let near_primitives::views::FinalExecutionStatus::Failure(err) = final_execution_outcome.into_outcome().status {
+            if let near_primitives::views::FinalExecutionStatus::Failure(err) =
+                final_execution_outcome.into_outcome().status
+            {
                 if format!("{:?}", err).contains("PrevBlockNotFound") {
                     Err(1 as usize)?
                 }
