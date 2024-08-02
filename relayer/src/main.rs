@@ -54,7 +54,7 @@ impl Synchronizer {
                 blocks_to_submit.push(block_header);
             }
 
-            let block_to_submit_len = blocks_to_submit.len() as u64;
+            let block_to_submit_len: u64 = blocks_to_submit.len().try_into().unwrap();
 
             info!(
                 "Submit blocks with height: [{} - {}]",

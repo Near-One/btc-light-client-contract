@@ -159,8 +159,8 @@ impl NearClient {
             if let near_primitives::views::FinalExecutionStatus::Failure(err) =
                 final_execution_outcome.into_outcome().status
             {
-                if format!("{:?}", err).contains("PrevBlockNotFound") {
-                    Err(1 as usize)?
+                if format!("{err:?}").contains("PrevBlockNotFound") {
+                    Err(1_usize)?;
                 }
             }
         }
