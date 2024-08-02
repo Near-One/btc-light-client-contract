@@ -1,5 +1,6 @@
 use btc_types::header::ExtendedHeader;
 use merkle_tools::H256;
+use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_jsonrpc_client::{methods, JsonRpcClient};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, TransactionInfo};
@@ -48,7 +49,7 @@ impl Client {
     pub async fn submit_blocks(
         &self,
         header: Header,
-    ) -> Result<Result<(), usize>, Box<dyn std::error::Error>> {
+    ) -> Result<Result<RpcTransactionResponse, usize>, Box<dyn std::error::Error>> {
         println!("Submit block {}", header.block_hash());
         let client = JsonRpcClient::connect(&self.config.near.endpoint);
         let signer_account_id = AccountId::from_str(&self.config.near.account_name).unwrap();
@@ -126,9 +127,9 @@ impl Client {
                     }
                     _ => Err(err)?,
                 },
-                Ok(_) => {
+                Ok(response) => {
                     println!("Success response gotten after: {delta}s");
-                    return Ok(Ok(()));
+                    return Ok(Ok(response));
                 }
             }
         }
