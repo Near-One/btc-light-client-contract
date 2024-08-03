@@ -7,7 +7,7 @@ use near_plugins::{
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::{env, log, near, require, PanicOnDefault};
+use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise};
 
 // use bitcoin::block::Header;
 // mod types;
@@ -125,10 +125,26 @@ impl BtcLightClient {
         contract
     }
 
+    #[payable]
     #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
     pub fn submit_blocks(&mut self, #[serializer(borsh)] headers: Vec<Header>) {
+        let amount = env::attached_deposit();
+        let initial_storage = env::storage_usage();
+
         for header in headers {
             self.submit_block_header(header);
+        }
+
+        let diff_storage_usage = env::storage_usage() - initial_storage;
+        let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
+        require!(
+            amount < required_deposit,
+            "The attached deposit is less than the minimum required storage"
+        );
+
+        let refund = amount.saturating_sub(required_deposit);
+        if refund > NearToken::from_near(0) {
+            Promise::new(env::predecessor_account_id()).transfer(refund);
         }
     }
 
