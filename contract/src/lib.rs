@@ -138,8 +138,8 @@ impl BtcLightClient {
         let diff_storage_usage = env::storage_usage() - initial_storage;
         let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
         require!(
-            amount < required_deposit,
-            "The attached deposit is less than the minimum required storage"
+            amount >= required_deposit,
+            format!("Required deposit {}", required_deposit)
         );
 
         let refund = amount.saturating_sub(required_deposit);
