@@ -256,7 +256,7 @@ impl BtcLightClient {
         let header = ExtendedHeader {
             block_header,
             block_height,
-            current_block_hash: current_block_hash.clone(),
+            block_hash: current_block_hash.clone(),
             chain_work,
         };
 
@@ -298,13 +298,13 @@ impl BtcLightClient {
 
         let current_header = ExtendedHeader {
             block_header,
-            current_block_hash,
+            block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
         };
 
         // Main chain submission
-        if prev_block_header.current_block_hash == self.mainchain_tip_blockhash {
+        if prev_block_header.block_hash == self.mainchain_tip_blockhash {
             // Probably we should check if it is not in a mainchain?
             // chainwork > highScore
             log!("Saving to mainchain");
@@ -314,7 +314,7 @@ impl BtcLightClient {
                 current_header.block_header.prev_block_hash
             );
 
-            self.mainchain_tip_blockhash = current_header.current_block_hash.clone();
+            self.mainchain_tip_blockhash = current_header.block_hash.clone();
             self.store_block_header(current_header);
         } else {
             // Fork submission
@@ -380,10 +380,10 @@ impl BtcLightClient {
 
         while !self
             .mainchain_header_to_height
-            .contains_key(&fork_header_cursor.current_block_hash)
+            .contains_key(&fork_header_cursor.block_hash)
         {
             let prev_block_hash = fork_header_cursor.block_header.prev_block_hash.clone();
-            let current_block_hash = fork_header_cursor.current_block_hash.clone();
+            let current_block_hash = fork_header_cursor.block_hash.clone();
             let current_height = fork_header_cursor.block_height;
 
             // Inserting the fork block into the main chain, if some mainchain block is occupying
@@ -410,23 +410,21 @@ impl BtcLightClient {
         }
 
         // Updating tip of the new main chain
-        self.mainchain_tip_blockhash = fork_tip_header.current_block_hash;
+        self.mainchain_tip_blockhash = fork_tip_header.block_hash;
     }
 
     /// Stores parsed block header and meta information
     fn store_block_header(&mut self, header: ExtendedHeader) {
         self.mainchain_height_to_header
-            .insert(header.block_height, header.current_block_hash.clone());
+            .insert(header.block_height, header.block_hash.clone());
         self.mainchain_header_to_height
-            .insert(header.current_block_hash.clone(), header.block_height);
-        self.headers_pool
-            .insert(header.current_block_hash.clone(), header);
+            .insert(header.block_hash.clone(), header.block_height);
+        self.headers_pool.insert(header.block_hash.clone(), header);
     }
 
     /// Stores and handles fork submissions
     fn store_fork_header(&mut self, header: ExtendedHeader) {
-        self.headers_pool
-            .insert(header.current_block_hash.clone(), header);
+        self.headers_pool.insert(header.block_hash.clone(), header);
     }
 }
 
@@ -541,7 +539,7 @@ mod tests {
             received_header,
             ExtendedHeader {
                 block_header: header,
-                current_block_hash: decode_hex(
+                block_hash: decode_hex(
                     "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048"
                 ),
                 chain_work: U256::from_be_bytes(&[
@@ -567,7 +565,7 @@ mod tests {
             received_header,
             ExtendedHeader {
                 block_header: header,
-                current_block_hash: decode_hex(
+                block_hash: decode_hex(
                     "62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"
                 ),
                 chain_work: U256::from_be_bytes(&[
@@ -595,7 +593,7 @@ mod tests {
             received_header,
             ExtendedHeader {
                 block_header: header,
-                current_block_hash: decode_hex(
+                block_hash: decode_hex(
                     "62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"
                 ),
                 chain_work: U256::from_be_bytes(&[
@@ -659,7 +657,7 @@ mod tests {
             received_header,
             ExtendedHeader {
                 block_header: fork_block_header_example_2(),
-                current_block_hash: decode_hex(
+                block_hash: decode_hex(
                     "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd"
                 ),
                 chain_work: U256::from_be_bytes(&[
