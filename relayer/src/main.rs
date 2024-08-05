@@ -108,7 +108,6 @@ impl Synchronizer {
             height -= 1;
         }
 
-
         Err("The block Height not found".into())
     }
 
