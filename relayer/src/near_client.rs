@@ -204,8 +204,8 @@ impl NearClient {
 
     pub async fn get_last_n_blocks_hashes(
         &self,
-        n: usize,
-        shift_from_the_end: usize,
+        n: u64,
+        shift_from_the_end: u64,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
         let args = json!({
             "skip": shift_from_the_end,

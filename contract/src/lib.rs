@@ -156,7 +156,7 @@ impl BtcLightClient {
             .get(tip_hash)
             .unwrap_or_else(|| env::panic_str("heaviest block should be recorded"));
 
-        for height in (tip.block_height - limit)..(tip.block_height - skip) {
+        for height in (tip.block_height - limit + 1)..=(tip.block_height - skip) {
             if let Some(block_hash) = self.mainchain_height_to_header.get(&height) {
                 block_hashes.push(block_hash);
             }

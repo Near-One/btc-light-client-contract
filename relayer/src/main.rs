@@ -29,7 +29,7 @@ impl Synchronizer {
         }
     }
     async fn sync(&mut self) {
-        let mut current_height = self.get_block_height().await.unwrap() + 1;
+        let mut current_height = self.get_last_correct_block_height().await.unwrap() + 1;
 
         loop {
             // Get the latest block height from the Bitcoin client
@@ -65,7 +65,7 @@ impl Synchronizer {
             match self.near_client.submit_blocks(blocks_to_submit).await {
                 Ok(Err(CustomError::PrevBlockNotFound)) => {
                     // Contract cannot save block, because no previous block found, we are in fork
-                    current_height = self.adjust_height_to_the_fork(current_height).await + 1;
+                    current_height = self.get_last_correct_block_height().await.unwrap() + 1;
                 }
                 Ok(_) => {
                     current_height += block_to_submit_len;
@@ -78,15 +78,17 @@ impl Synchronizer {
         }
     }
 
-    // Adjust height of the block to start submitting new fork, which might become a new main
-    async fn adjust_height_to_the_fork(&self, current_height: u64) -> u64 {
-        let mut amount_of_blocks_to_request = 25;
+    async fn get_last_correct_block_height(&self) -> Result<u64, Box<dyn std::error::Error>> {
+        let last_block_header = self.near_client
+            .get_last_block_header()
+            .await?;
+        let last_block_height = last_block_header.block_height;
 
-        // If we inspected 10_000 bitcoin blocks and still cannot find
-        // the point where fork happened something is very wrong
-        // it means it happened 10_000 * 10 minutes = 69 days ago (relayer was down for 69 days?)
-        while amount_of_blocks_to_request < 10_000 {
-            amount_of_blocks_to_request *= 2;
+        if self.get_bitcoin_block_hash_by_height(last_block_height)
+            == last_block_header.current_block_hash.to_string() {
+            return Ok(last_block_height);
+        } else {
+            let amount_of_blocks_to_request = 500_u64;
 
             let last_block_hashes_in_relay_contract = self
                 .near_client
@@ -94,36 +96,28 @@ impl Synchronizer {
                 .await
                 .expect("read block header successfully");
 
-            // Starting to look for diverge point from previous block
-            let mut height = current_height - 1;
+            let last_block_hashes_count = last_block_hashes_in_relay_contract.len();
 
-            for _i in 0..amount_of_blocks_to_request {
-                let block_from_bitcoin_node =
-                    self.bitcoin_client.get_block_header_by_height(height);
+            let mut height: u64 = last_block_height - 1;
 
-                let hash = block_from_bitcoin_node.block_hash().to_string();
-
-                // We found that this is the first block in current bitcoin node state that we also have
-                // in our main chain in smart contract state.
-                // This is a diverge point. We will start submitting new fork from this point.
-                if last_block_hashes_in_relay_contract.contains(&hash) {
-                    return height;
+            for i in 1..last_block_hashes_count {
+                if last_block_hashes_in_relay_contract[last_block_hashes_count - i - 1] ==
+                    self.get_bitcoin_block_hash_by_height(height) {
+                    return Ok(height);
                 }
 
                 height -= 1;
             }
         }
 
-        0
+        return Err("The block Height not found".into());
     }
 
-    async fn get_block_height(&self) -> Result<u64, Box<dyn std::error::Error>> {
-        Ok(self.config.bitcoin.start_height.unwrap_or(
-            self.near_client
-                .get_last_block_header()
-                .await
-                .map(|b| b.block_height)?,
-        ))
+    fn get_bitcoin_block_hash_by_height(&self, height: u64) -> String {
+        let block_from_bitcoin_node =
+            self.bitcoin_client.get_block_header_by_height(height);
+
+        block_from_bitcoin_node.block_hash().to_string()
     }
 }
 
