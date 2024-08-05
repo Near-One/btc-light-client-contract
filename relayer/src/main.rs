@@ -90,7 +90,7 @@ impl Synchronizer {
 
         let last_block_hashes_in_relay_contract = self
             .near_client
-            .get_last_n_blocks_hashes(self.config.max_fork_len, 0)
+            .get_last_n_blocks_hashes(self.config.max_fork_len, 1)
             .await
             .expect("read block header successfully");
 
@@ -98,7 +98,7 @@ impl Synchronizer {
 
         let mut height: u64 = last_block_height - 1;
 
-        for i in 1..last_block_hashes_count {
+        for i in 0..last_block_hashes_count {
             if last_block_hashes_in_relay_contract[last_block_hashes_count - i - 1]
                 == self.get_bitcoin_block_hash_by_height(height)
             {
