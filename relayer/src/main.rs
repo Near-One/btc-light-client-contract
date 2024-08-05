@@ -83,7 +83,7 @@ impl Synchronizer {
         let last_block_height = last_block_header.block_height;
 
         if self.get_bitcoin_block_hash_by_height(last_block_height)
-            == last_block_header.current_block_hash.to_string()
+            == last_block_header.block_hash.to_string()
         {
             return Ok(last_block_height);
         }
