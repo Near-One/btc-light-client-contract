@@ -86,29 +86,30 @@ impl Synchronizer {
             == last_block_header.current_block_hash.to_string()
         {
             return Ok(last_block_height);
-        } else {
-            let last_block_hashes_in_relay_contract = self
-                .near_client
-                .get_last_n_blocks_hashes(self.config.max_fork_len, 0)
-                .await
-                .expect("read block header successfully");
-
-            let last_block_hashes_count = last_block_hashes_in_relay_contract.len();
-
-            let mut height: u64 = last_block_height - 1;
-
-            for i in 1..last_block_hashes_count {
-                if last_block_hashes_in_relay_contract[last_block_hashes_count - i - 1]
-                    == self.get_bitcoin_block_hash_by_height(height)
-                {
-                    return Ok(height);
-                }
-
-                height -= 1;
-            }
         }
 
-        return Err("The block Height not found".into());
+        let last_block_hashes_in_relay_contract = self
+            .near_client
+            .get_last_n_blocks_hashes(self.config.max_fork_len, 0)
+            .await
+            .expect("read block header successfully");
+
+        let last_block_hashes_count = last_block_hashes_in_relay_contract.len();
+
+        let mut height: u64 = last_block_height - 1;
+
+        for i in 1..last_block_hashes_count {
+            if last_block_hashes_in_relay_contract[last_block_hashes_count - i - 1]
+                == self.get_bitcoin_block_hash_by_height(height)
+            {
+                return Ok(height);
+            }
+
+            height -= 1;
+        }
+
+
+        Err("The block Height not found".into())
     }
 
     fn get_bitcoin_block_hash_by_height(&self, height: u64) -> String {
