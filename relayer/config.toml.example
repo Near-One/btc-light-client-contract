@@ -1,3 +1,5 @@
+max_fork_len = 500
+
 [bitcoin]
 endpoint = "http://127.0.0.1:8332"
 node_user = "user"

@@ -5,6 +5,7 @@ use std::fs;
 pub struct Config {
     pub bitcoin: BitcoinConfig,
     pub near: NearConfig,
+    pub max_fork_len: u64,
 }
 
 #[allow(dead_code)]
@@ -13,7 +14,7 @@ pub struct Config {
 pub struct BitcoinConfig {
     pub endpoint: String,
     pub node_user: String,
-    pub node_password: String
+    pub node_password: String,
 }
 
 #[derive(Deserialize, Clone, Debug)]

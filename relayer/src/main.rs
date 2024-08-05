@@ -79,20 +79,17 @@ impl Synchronizer {
     }
 
     async fn get_last_correct_block_height(&self) -> Result<u64, Box<dyn std::error::Error>> {
-        let last_block_header = self.near_client
-            .get_last_block_header()
-            .await?;
+        let last_block_header = self.near_client.get_last_block_header().await?;
         let last_block_height = last_block_header.block_height;
 
         if self.get_bitcoin_block_hash_by_height(last_block_height)
-            == last_block_header.current_block_hash.to_string() {
+            == last_block_header.current_block_hash.to_string()
+        {
             return Ok(last_block_height);
         } else {
-            let amount_of_blocks_to_request = 500_u64;
-
             let last_block_hashes_in_relay_contract = self
                 .near_client
-                .get_last_n_blocks_hashes(amount_of_blocks_to_request, 0)
+                .get_last_n_blocks_hashes(self.config.max_fork_len, 0)
                 .await
                 .expect("read block header successfully");
 
@@ -101,8 +98,9 @@ impl Synchronizer {
             let mut height: u64 = last_block_height - 1;
 
             for i in 1..last_block_hashes_count {
-                if last_block_hashes_in_relay_contract[last_block_hashes_count - i - 1] ==
-                    self.get_bitcoin_block_hash_by_height(height) {
+                if last_block_hashes_in_relay_contract[last_block_hashes_count - i - 1]
+                    == self.get_bitcoin_block_hash_by_height(height)
+                {
                     return Ok(height);
                 }
 
@@ -114,8 +112,7 @@ impl Synchronizer {
     }
 
     fn get_bitcoin_block_hash_by_height(&self, height: u64) -> String {
-        let block_from_bitcoin_node =
-            self.bitcoin_client.get_block_header_by_height(height);
+        let block_from_bitcoin_node = self.bitcoin_client.get_block_header_by_height(height);
 
         block_from_bitcoin_node.block_hash().to_string()
     }
