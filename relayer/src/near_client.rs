@@ -35,6 +35,7 @@ pub struct NearClient {
     client: JsonRpcClient,
     signer: InMemorySigner,
     btc_light_client_account_id: AccountId,
+    transaction_timeout_sec: u64,
 }
 
 fn get_btc_header(header: Header) -> btc_types::header::Header {
@@ -67,6 +68,7 @@ impl NearClient {
                 .clone()
                 .parse()
                 .unwrap(),
+            transaction_timeout_sec: config.transaction_timeout_sec,
         }
     }
 
@@ -135,7 +137,7 @@ impl NearClient {
             let received_at = time::Instant::now();
             let delta = (received_at - sent_at).as_secs();
 
-            if delta > 120 {
+            if delta > self.transaction_timeout_sec {
                 Err("time limit exceeded for the transaction to be recognized")?;
             }
 
