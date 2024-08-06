@@ -105,8 +105,7 @@ impl Synchronizer {
         let last_block_hashes_in_relay_contract = self
             .near_client
             .get_last_n_blocks_hashes(self.config.max_fork_len, 1)
-            .await
-            .expect("read block header successfully");
+            .await?;
 
         let last_block_hashes_count = last_block_hashes_in_relay_contract.len();
 
