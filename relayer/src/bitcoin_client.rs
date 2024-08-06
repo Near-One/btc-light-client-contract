@@ -31,7 +31,7 @@ impl Client {
         self.inner.get_best_block_hash().unwrap()
     }
 
-    pub fn get_block_count(&self) -> Result<u64, bitcoincore_rpc::Error>  {
+    pub fn get_block_count(&self) -> Result<u64, bitcoincore_rpc::Error> {
         self.inner.get_block_count()
     }
 
@@ -39,20 +39,32 @@ impl Client {
         self.inner.get_block_hash(height)
     }
 
-    pub fn get_block_header(&self, block_hash: &BlockHash) -> Result<Header, bitcoincore_rpc::Error>  {
+    pub fn get_block_header(
+        &self,
+        block_hash: &BlockHash,
+    ) -> Result<Header, bitcoincore_rpc::Error> {
         self.inner.get_block_header(block_hash)
     }
 
-    pub fn get_block_header_by_height(&self, height: u64) -> Result<Header, bitcoincore_rpc::Error>  {
+    pub fn get_block_header_by_height(
+        &self,
+        height: u64,
+    ) -> Result<Header, bitcoincore_rpc::Error> {
         let block_hash = self.get_block_hash(height)?;
         self.get_block_header(&block_hash)
     }
 
-    pub fn get_block(&self, block_hash: &BlockHash) -> Result<bitcoincore_rpc::bitcoin::Block, bitcoincore_rpc::Error> {
+    pub fn get_block(
+        &self,
+        block_hash: &BlockHash,
+    ) -> Result<bitcoincore_rpc::bitcoin::Block, bitcoincore_rpc::Error> {
         self.inner.get_block(block_hash)
     }
 
-    pub fn get_block_by_height(&self, height: u64) -> Result<bitcoincore_rpc::bitcoin::Block, bitcoincore_rpc::Error> {
+    pub fn get_block_by_height(
+        &self,
+        height: u64,
+    ) -> Result<bitcoincore_rpc::bitcoin::Block, bitcoincore_rpc::Error> {
         let block_hash = self.get_block_hash(height)?;
         self.get_block(&block_hash)
     }

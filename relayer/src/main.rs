@@ -1,5 +1,5 @@
 use bitcoincore_rpc::bitcoin::hashes::Hash;
-use log::{debug, error, info, warn, trace};
+use log::{debug, error, info, trace, warn};
 use merkle_tools::H256;
 use std::env;
 
@@ -79,14 +79,15 @@ impl Synchronizer {
             match self.near_client.submit_blocks(blocks_to_submit).await {
                 Ok(Err(CustomError::PrevBlockNotFound)) => {
                     // Contract cannot save block, because no previous block found, we are in fork
-                    current_height = continue_on_fail!(self.get_last_correct_block_height().await, "Error on get_last_correct_block_height", 30,  'main_loop) + 1;
+                    current_height = continue_on_fail!(self.get_last_correct_block_height().await, "Error on get_last_correct_block_height", 30,  'main_loop)
+                        + 1;
                 }
                 Ok(_) => {
                     current_height += block_to_submit_len;
                 }
                 err => {
                     // network error after retries
-                    continue_on_fail!(err, "Off-chain relay panics after multiple attempts to submit blocks", 30,  'main_loop);
+                    let _ = continue_on_fail!(err, "Off-chain relay panics after multiple attempts to submit blocks", 30,  'main_loop);
                 }
             }
         }
@@ -124,7 +125,10 @@ impl Synchronizer {
         Err("The block Height not found".into())
     }
 
-    fn get_bitcoin_block_hash_by_height(&self, height: u64) -> Result<String, bitcoincore_rpc::Error> {
+    fn get_bitcoin_block_hash_by_height(
+        &self,
+        height: u64,
+    ) -> Result<String, bitcoincore_rpc::Error> {
         let block_from_bitcoin_node = self.bitcoin_client.get_block_header_by_height(height)?;
 
         Ok(block_from_bitcoin_node.block_hash().to_string())
@@ -177,9 +181,11 @@ async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: Nea
         .map(|hash| hash.parse::<String>().unwrap_or_default())
         .unwrap_or_default();
 
-    let block = bitcoin_client.get_block_by_height(
-        u64::try_from(transaction_block_height).expect("correct transaction height"),
-    ).unwrap();
+    let block = bitcoin_client
+        .get_block_by_height(
+            u64::try_from(transaction_block_height).expect("correct transaction height"),
+        )
+        .unwrap();
     let transaction_block_blockhash = block.header.block_hash();
 
     let transactions = block
