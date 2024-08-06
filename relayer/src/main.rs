@@ -44,15 +44,19 @@ impl Synchronizer {
     }
     async fn sync(&mut self) {
         let mut current_height = self.get_last_correct_block_height().await.unwrap() + 1;
+        let sleep_time_on_fail_sec = self.config.sleep_time_on_fail_sec;
 
         'main_loop: loop {
             // Get the latest block height from the Bitcoin client
-            let latest_height = continue_on_fail!(self.bitcoin_client.get_block_count(), "Bitcoin Client: Error on get_block_count", 30, 'main_loop);
+            let latest_height = continue_on_fail!(self.bitcoin_client.get_block_count(), "Bitcoin Client: Error on get_block_count", sleep_time_on_fail_sec, 'main_loop);
 
             // Check if we have reached the latest block height
             if current_height >= latest_height {
                 // Wait for a certain duration before checking for a new block
-                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(
+                    self.config.sleep_time_on_reach_last_block_sec,
+                ))
+                .await;
                 continue;
             }
 
@@ -63,8 +67,8 @@ impl Synchronizer {
                     break;
                 }
 
-                let block_hash = continue_on_fail!(self.bitcoin_client.get_block_hash(current_height), "Bitcoin Client: Error on get_block_hash", 30,  'main_loop);
-                let block_header = continue_on_fail!(self.bitcoin_client.get_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", 30,  'main_loop);
+                let block_hash = continue_on_fail!(self.bitcoin_client.get_block_hash(current_height), "Bitcoin Client: Error on get_block_hash", sleep_time_on_fail_sec,  'main_loop);
+                let block_header = continue_on_fail!(self.bitcoin_client.get_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop);
                 blocks_to_submit.push(block_header);
             }
 
@@ -79,7 +83,7 @@ impl Synchronizer {
             match self.near_client.submit_blocks(blocks_to_submit).await {
                 Ok(Err(CustomError::PrevBlockNotFound)) => {
                     // Contract cannot save block, because no previous block found, we are in fork
-                    current_height = continue_on_fail!(self.get_last_correct_block_height().await, "Error on get_last_correct_block_height", 30,  'main_loop)
+                    current_height = continue_on_fail!(self.get_last_correct_block_height().await, "Error on get_last_correct_block_height", sleep_time_on_fail_sec,  'main_loop)
                         + 1;
                 }
                 Ok(_) => {
@@ -87,7 +91,7 @@ impl Synchronizer {
                 }
                 err => {
                     // network error after retries
-                    let _ = continue_on_fail!(err, "Off-chain relay panics after multiple attempts to submit blocks", 30,  'main_loop);
+                    let _ = continue_on_fail!(err, "Off-chain relay panics after multiple attempts to submit blocks", sleep_time_on_fail_sec,  'main_loop);
                 }
             }
         }
