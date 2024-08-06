@@ -1,5 +1,5 @@
 use bitcoincore_rpc::bitcoin::hashes::Hash;
-use log::{debug, error, info};
+use log::{debug, error, info, warn, trace};
 use merkle_tools::H256;
 use std::env;
 
@@ -20,6 +20,20 @@ struct Synchronizer {
     config: Config,
 }
 
+macro_rules! continue_on_fail {
+    ($res:expr, $msg:expr, $sleep_time:expr) => {
+        match $res {
+            Ok(val) => val,
+            Err(e) => {
+                warn!(target: "relay", "{}. Error: {}", $msg, e);
+                trace!(target: "relay", "Sleep {} secs before next loop", $sleep_time);
+                tokio::time::sleep(std::time::Duration::from_secs($sleep_time)).await;
+                continue;
+            }
+        }
+    };
+}
+
 impl Synchronizer {
     pub fn new(bitcoin_client: BitcoinClient, near_client: NearClient, config: Config) -> Self {
         Self {
@@ -33,7 +47,7 @@ impl Synchronizer {
 
         loop {
             // Get the latest block height from the Bitcoin client
-            let latest_height = self.bitcoin_client.get_block_count();
+            let latest_height = continue_on_fail!(self.bitcoin_client.get_block_count(), "Bitcoin Client: Error on get_block_count", 30);
 
             // Check if we have reached the latest block height
             if current_height >= latest_height {

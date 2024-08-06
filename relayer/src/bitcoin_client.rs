@@ -31,8 +31,8 @@ impl Client {
         self.inner.get_best_block_hash().unwrap()
     }
 
-    pub fn get_block_count(&self) -> u64 {
-        self.inner.get_block_count().unwrap()
+    pub fn get_block_count(&self) -> Result<u64, bitcoincore_rpc::Error>  {
+        self.inner.get_block_count()
     }
 
     pub fn get_block_hash(&self, height: u64) -> BlockHash {
