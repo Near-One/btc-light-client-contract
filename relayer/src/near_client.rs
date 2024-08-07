@@ -160,7 +160,7 @@ impl NearClient {
         }
     }
 
-    pub fn parse_submit_blocks_response(
+    fn parse_submit_blocks_response(
         response: RpcTransactionResponse,
     ) -> Result<RpcTransactionResponse, CustomError> {
         if let Some(final_execution_outcome) = response.final_execution_outcome.clone() {
