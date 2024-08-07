@@ -43,51 +43,58 @@ impl Synchronizer {
         }
     }
     async fn sync(&mut self) {
-        let mut current_height = self.get_last_correct_block_height().await.unwrap() + 1;
+        let mut first_block_height_to_submit = self.get_last_correct_block_height().await.unwrap() + 1;
         let sleep_time_on_fail_sec = self.config.sleep_time_on_fail_sec;
 
         'main_loop: loop {
             // Get the latest block height from the Bitcoin client
             let latest_height = continue_on_fail!(self.bitcoin_client.get_block_count(), "Bitcoin Client: Error on get_block_count", sleep_time_on_fail_sec, 'main_loop);
 
-            // Check if we have reached the latest block height
-            if current_height >= latest_height {
-                // Wait for a certain duration before checking for a new block
-                tokio::time::sleep(std::time::Duration::from_secs(
-                    self.config.sleep_time_on_reach_last_block_sec,
-                ))
-                .await;
-                continue;
-            }
-
             let mut blocks_to_submit = vec![];
             let batch_size = 15;
-            for (i, current_height) in (current_height..latest_height).enumerate() {
-                if i > batch_size {
+            let mut skip_blocks_count = 0;
+            for current_height in first_block_height_to_submit..=latest_height {
+                if blocks_to_submit.len() > batch_size {
                     break;
                 }
 
                 let block_hash = continue_on_fail!(self.bitcoin_client.get_block_hash(current_height), "Bitcoin Client: Error on get_block_hash", sleep_time_on_fail_sec,  'main_loop);
+                let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(block_hash).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
+                if block_already_submitted {
+                    skip_blocks_count += 1;
+                    continue;
+                }
                 let block_header = continue_on_fail!(self.bitcoin_client.get_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop);
                 blocks_to_submit.push(block_header);
             }
 
-            let block_to_submit_len: u64 = blocks_to_submit.len().try_into().unwrap();
+            first_block_height_to_submit += skip_blocks_count;
+            let number_of_blocks_to_submit: u64 = blocks_to_submit.len().try_into().unwrap();
+
+            // Check if we have reached the latest block height
+            if number_of_blocks_to_submit == 0 {
+                // Wait for a certain duration before checking for a new block
+                tokio::time::sleep(std::time::Duration::from_secs(
+                    self.config.sleep_time_on_reach_last_block_sec,
+                ))
+                    .await;
+                continue;
+            }
 
             info!(
                 "Submit blocks with height: [{} - {}]",
-                current_height,
-                current_height + block_to_submit_len - 1
+                first_block_height_to_submit,
+                first_block_height_to_submit + number_of_blocks_to_submit - 1
             );
 
             match self.near_client.submit_blocks(blocks_to_submit).await {
                 Ok(Err(CustomError::PrevBlockNotFound)) => {
                     // Contract cannot save block, because no previous block found, we are in fork
-                    current_height = continue_on_fail!(self.get_last_correct_block_height().await, "Error on get_last_correct_block_height", sleep_time_on_fail_sec,  'main_loop)
+                    first_block_height_to_submit = continue_on_fail!(self.get_last_correct_block_height().await, "Error on get_last_correct_block_height", sleep_time_on_fail_sec,  'main_loop)
                         + 1;
                 }
                 Ok(_) => {
-                    current_height += block_to_submit_len;
+                    first_block_height_to_submit += number_of_blocks_to_submit;
                 }
                 err => {
                     // network error after retries
