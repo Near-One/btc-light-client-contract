@@ -3,24 +3,30 @@ use std::fs;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Config {
-    pub bitcoin: Bitcoin,
-    pub near: Near,
+    pub max_fork_len: u64,
+    pub sleep_time_on_fail_sec: u64,
+    pub sleep_time_on_reach_last_block_sec: u64,
+    pub bitcoin: BitcoinConfig,
+    pub near: NearConfig,
 }
 
 #[allow(dead_code)]
 #[derive(Deserialize, Clone, Debug)]
-pub struct Bitcoin {
+#[allow(clippy::module_name_repetitions)]
+pub struct BitcoinConfig {
     pub endpoint: String,
     pub node_user: String,
     pub node_password: String,
-    pub start_height: u64,
 }
 
 #[derive(Deserialize, Clone, Debug)]
-pub struct Near {
+#[allow(clippy::module_name_repetitions)]
+pub struct NearConfig {
     pub endpoint: String,
+    pub btc_light_client_account_id: String,
     pub account_name: String,
     pub secret_key: String,
+    pub transaction_timeout_sec: u64,
 }
 
 /// Launching configuration file from a ./config.toml

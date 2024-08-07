@@ -49,6 +49,7 @@ To check if the relayer is working correctly you can run the verification flow. 
 
 We will use block 277136 as an example.
 
+0. Set up Rust Logger `export RUST_LOG=info`
 1. Run the server with `cargo run --release` in realease mode. Or you can just run with `cargo run` in debug mode and wait for some time.
 2. Run the verification flow with `VERIFY_MODE="true" TRANSACTION_POSITION=0 TRANSACTION_BLOCK_HEIGHT=277136 cargo run`. This will run the verification flow for block 277136 and transaction 0. You can change block height and make sure transaction is not inlcuded in it.
 3. You can also check, that wrong transaction number is not verifiable by the system. For this you can use additional env variable `FORCE_TRANSACTION_HASH=6471267463` to make sure this transaction does not exist.

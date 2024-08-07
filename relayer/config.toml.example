@@ -1,10 +1,15 @@
+max_fork_len = 500
+sleep_time_on_fail_sec = 30
+sleep_time_on_reach_last_block_sec = 60
+
 [bitcoin]
 endpoint = "http://127.0.0.1:8332"
 node_user = "user"
 node_password = "password"
-start_height = 0
 
 [near]
 endpoint = "https://rpc.testnet.near.org"
+btc_light_client_account_id = "btc_light_client.testnet"
 account_name = "account.testnet"
 secret_key = "ed25519:4637264364832647328973fh2hfhkfdshfdfkdandsyfdsasdagfdweee"
+transaction_timeout_sec = 120
