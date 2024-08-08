@@ -51,10 +51,9 @@ impl Synchronizer {
             let latest_height = continue_on_fail!(self.bitcoin_client.get_block_count(), "Bitcoin Client: Error on get_block_count", sleep_time_on_fail_sec, 'main_loop);
 
             let mut blocks_to_submit = vec![];
-            let batch_size = 15;
             let mut skip_blocks_count = 0;
             for current_height in first_block_height_to_submit..=latest_height {
-                if blocks_to_submit.len() > batch_size {
+                if blocks_to_submit.len() > self.config.batch_size {
                     break;
                 }
 
@@ -102,6 +101,11 @@ impl Synchronizer {
                     let _ = continue_on_fail!(err, "Off-chain relay panics after multiple attempts to submit blocks", sleep_time_on_fail_sec,  'main_loop);
                 }
             }
+
+            tokio::time::sleep(std::time::Duration::from_secs(
+                self.config.sleep_time_after_iteration_sec,
+            ))
+                .await;
         }
     }
 
