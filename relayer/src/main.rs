@@ -51,23 +51,16 @@ impl Synchronizer {
             let latest_height = continue_on_fail!(self.bitcoin_client.get_block_count(), "Bitcoin Client: Error on get_block_count", sleep_time_on_fail_sec, 'main_loop);
 
             let mut blocks_to_submit = vec![];
-            let mut skip_blocks_count = 0;
             for current_height in first_block_height_to_submit..=latest_height {
                 if blocks_to_submit.len() > self.config.batch_size {
                     break;
                 }
 
                 let block_hash = continue_on_fail!(self.bitcoin_client.get_block_hash(current_height), "Bitcoin Client: Error on get_block_hash", sleep_time_on_fail_sec,  'main_loop);
-                let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(block_hash).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
-                if block_already_submitted {
-                    skip_blocks_count += 1;
-                    continue;
-                }
                 let block_header = continue_on_fail!(self.bitcoin_client.get_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop);
                 blocks_to_submit.push(block_header);
             }
 
-            first_block_height_to_submit += skip_blocks_count;
             let number_of_blocks_to_submit: u64 = blocks_to_submit.len().try_into().unwrap();
 
             // Check if we have reached the latest block height
@@ -78,6 +71,15 @@ impl Synchronizer {
                 ))
                     .await;
                 continue;
+            }
+
+            let last_block_hash = blocks_to_submit[blocks_to_submit.len() - 1].block_hash();
+
+            let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(last_block_hash).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
+            if block_already_submitted {
+                info!(target: "relay", "Skip block submission: blocks [{} - {}] already on chain", first_block_height_to_submit, first_block_height_to_submit + number_of_blocks_to_submit - 1);
+                first_block_height_to_submit += number_of_blocks_to_submit;
+                continue 'main_loop;
             }
 
             info!(
