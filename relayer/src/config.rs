@@ -26,8 +26,9 @@ pub struct BitcoinConfig {
 pub struct NearConfig {
     pub endpoint: String,
     pub btc_light_client_account_id: String,
-    pub account_name: String,
-    pub secret_key: String,
+    pub account_name: Option<String>,
+    pub secret_key: Option<String>,
+    pub near_credentials_path: Option<String>,
     pub transaction_timeout_sec: u64,
 }
 

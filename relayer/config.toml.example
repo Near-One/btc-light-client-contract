@@ -12,6 +12,5 @@ node_password = "password"
 [near]
 endpoint = "https://rpc.testnet.near.org"
 btc_light_client_account_id = "btc_light_client.testnet"
-account_name = "account.testnet"
-secret_key = "ed25519:4637264364832647328973fh2hfhkfdshfdfkdandsyfdsasdagfdweee"
+near_credentials_path = "~/.near-credentials/testnet/account.testnet.json"
 transaction_timeout_sec = 120

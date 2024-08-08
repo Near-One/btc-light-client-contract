@@ -60,8 +60,21 @@ impl NearClient {
     pub fn new(config: &NearConfig) -> Self {
         let client = JsonRpcClient::connect(&config.endpoint);
 
-        let signer_account_id = AccountId::from_str(&config.account_name).unwrap();
-        let signer_secret_key = near_crypto::SecretKey::from_str(&config.secret_key).unwrap();
+        let (signer_account_id, signer_secret_key) = if let Some(near_credentials_path) = config.near_credentials_path.clone() {
+            let data = std::fs::read_to_string(near_credentials_path).unwrap();
+            let res: serde_json::Value = serde_json::from_str(&data).unwrap();
+
+            let private_key = res["private_key"].to_string().replace('\"', "");
+            let private_key = near_crypto::SecretKey::from_str(private_key.as_str()).unwrap();
+
+            let account_id = res["account_id"].to_string().replace('\"', "");
+            let account_id = AccountId::from_str(account_id.as_str()).unwrap();
+            (account_id, private_key)
+        } else {
+            (AccountId::from_str(&config.account_name.clone().unwrap()).unwrap(),
+             near_crypto::SecretKey::from_str(&config.secret_key.clone().unwrap()).unwrap())
+        };
+
         let signer = near_crypto::InMemorySigner::from_secret_key(
             signer_account_id.clone(),
             signer_secret_key,
