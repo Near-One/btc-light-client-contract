@@ -16,6 +16,7 @@ use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
 use bitcoin::BlockHash;
+use log::info;
 use tokio::time;
 
 use crate::config::NearConfig;
@@ -30,6 +31,8 @@ const GET_HEIGHT_BY_BLOCK_HASH: &str = "get_height_by_block_hash";
 pub enum CustomError {
     #[error("Prev Block Not Found")]
     PrevBlockNotFound,
+    #[error("Tx execution Error: {0:?}")]
+    TxExecutionError(String),
 }
 
 #[derive(Clone)]
@@ -125,6 +128,8 @@ impl NearClient {
         let sent_at = time::Instant::now();
         let tx_hash = self.client.call(request).await?;
 
+        info!("Blocks submitted: tx_hash = {:?}", tx_hash);
+
         loop {
             let response = self
                 .client
@@ -171,6 +176,8 @@ impl NearClient {
             {
                 if format!("{err:?}").contains("PrevBlockNotFound") {
                     Err(CustomError::PrevBlockNotFound)?;
+                } else {
+                    Err(CustomError::TxExecutionError(format!("{err:?}")))?;
                 }
             }
         }
