@@ -2,7 +2,7 @@ use btc_types::header::ExtendedHeader;
 use merkle_tools::H256;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_jsonrpc_client::{methods, JsonRpcClient, MethodCallResult};
-use near_jsonrpc_primitives::types::query::{QueryResponseKind, RpcQueryResponse};
+use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, TransactionInfo};
 use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
@@ -152,19 +152,15 @@ impl NearClient {
         &self,
     ) -> Result<ExtendedHeader, Box<dyn std::error::Error>> {
         let args = json!({});
-        let response = self
+        let result = self
             .submit_view_tx(GET_LAST_BLOCK_HEADER, args.to_string().into_bytes())
             .await?;
 
-        if let QueryResponseKind::CallResult(result) = response.kind {
-            let header = from_slice::<ExtendedHeader>(&result.result)?;
-            println!("Block Height: {}", response.block_height);
-            println!("Block Hash: {}", response.block_hash);
+        let header = from_slice::<ExtendedHeader>(&result)?;
+        println!("Block Height: {}", header.block_height);
+        println!("Block Hash: {}", header.block_hash);
 
-            Ok(header)
-        } else {
-            Err("failed to read block header")?
-        }
+        Ok(header)
     }
 
     pub async fn is_block_hash_exists(
@@ -175,16 +171,12 @@ impl NearClient {
             "blockhash": block_hash,
         });
 
-        let response = self
+        let result = self
             .submit_view_tx(GET_HEIGHT_BY_BLOCK_HASH, args.to_string().into_bytes())
             .await?;
 
-        if let QueryResponseKind::CallResult(result) = response.kind {
-            let block_height = from_slice::<Option<u64>>(&result.result)?;
-            Ok(block_height.is_some())
-        } else {
-            Err("failed to get block height by hash")?
-        }
+        let block_height = from_slice::<Option<u64>>(&result)?;
+        Ok(block_height.is_some())
     }
 
     pub async fn get_last_n_blocks_hashes(
@@ -197,17 +189,13 @@ impl NearClient {
             "limit": n,
         });
 
-        let response = self
+        let result = self
             .submit_view_tx(RECEIVE_LAST_N_BLOCKS, args.to_string().into_bytes())
             .await?;
 
-        if let QueryResponseKind::CallResult(result) = response.kind {
-            let block_hashes = from_slice::<Vec<String>>(&result.result)?;
-            println!("{block_hashes:#?}");
-            Ok(block_hashes)
-        } else {
-            Err("failed to read block header")?
-        }
+        let block_hashes = from_slice::<Vec<String>>(&result)?;
+        println!("{block_hashes:#?}");
+        Ok(block_hashes)
     }
 
     pub async fn verify_transaction_inclusion(
@@ -328,7 +316,7 @@ impl NearClient {
         &self,
         method_name: &str,
         args: Vec<u8>,
-    ) -> Result<RpcQueryResponse, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
             block_reference: near_primitives::types::BlockReference::Finality(
                 near_primitives::types::Finality::Final,
@@ -339,6 +327,11 @@ impl NearClient {
                 args: args.into(),
             },
         };
-        Ok(self.client.call(read_request).await?)
+        let response = self.client.call(read_request).await?;
+        if let QueryResponseKind::CallResult(result) = response.kind {
+            Ok(result.result)
+        } else {
+            Err("the view tx fail")?
+        }
     }
 }
