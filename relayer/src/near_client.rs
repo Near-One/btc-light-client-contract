@@ -2,7 +2,7 @@ use btc_types::header::ExtendedHeader;
 use merkle_tools::H256;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_jsonrpc_client::{methods, JsonRpcClient, MethodCallResult};
-use near_jsonrpc_primitives::types::query::QueryResponseKind;
+use near_jsonrpc_primitives::types::query::{QueryResponseKind, RpcQueryResponse};
 use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, TransactionInfo};
 use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
@@ -14,10 +14,10 @@ use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
 use log::info;
 use near_crypto::InMemorySigner;
+use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncResponse;
 use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
-use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncResponse;
 
 use tokio::time;
 
@@ -94,7 +94,12 @@ impl NearClient {
             .collect();
 
         let sent_at = time::Instant::now();
-        let tx_hash = self.submit_tx(SUBMIT_BLOCKS, to_vec(&args).expect("error on headers serialisation")).await?;
+        let tx_hash = self
+            .submit_tx(
+                SUBMIT_BLOCKS,
+                to_vec(&args).expect("error on headers serialisation"),
+            )
+            .await?;
         info!("Blocks submitted: tx_hash = {:?}", tx_hash);
 
         loop {
@@ -147,18 +152,9 @@ impl NearClient {
         &self,
     ) -> Result<ExtendedHeader, Box<dyn std::error::Error>> {
         let args = json!({});
-
-        let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
-            block_reference: near_primitives::types::BlockReference::Finality(
-                near_primitives::types::Finality::Final,
-            ),
-            request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: self.btc_light_client_account_id.clone(),
-                method_name: GET_LAST_BLOCK_HEADER.to_string(),
-                args: args.to_string().into_bytes().into(),
-            },
-        };
-        let response = self.client.call(read_request).await?;
+        let response = self
+            .submit_view_tx(GET_LAST_BLOCK_HEADER, args.to_string().into_bytes())
+            .await?;
 
         if let QueryResponseKind::CallResult(result) = response.kind {
             let header = from_slice::<ExtendedHeader>(&result.result)?;
@@ -179,15 +175,9 @@ impl NearClient {
             "blockhash": block_hash,
         });
 
-        let read_request = methods::query::RpcQueryRequest {
-            block_reference: BlockReference::Finality(near_primitives::types::Finality::Final),
-            request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: self.btc_light_client_account_id.clone(),
-                method_name: GET_HEIGHT_BY_BLOCK_HASH.to_string(),
-                args: args.to_string().into_bytes().into(),
-            },
-        };
-        let response = self.client.call(read_request).await?;
+        let response = self
+            .submit_view_tx(GET_HEIGHT_BY_BLOCK_HASH, args.to_string().into_bytes())
+            .await?;
 
         if let QueryResponseKind::CallResult(result) = response.kind {
             let block_height = from_slice::<Option<u64>>(&result.result)?;
@@ -207,17 +197,9 @@ impl NearClient {
             "limit": n,
         });
 
-        let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
-            block_reference: near_primitives::types::BlockReference::Finality(
-                near_primitives::types::Finality::Final,
-            ),
-            request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: self.btc_light_client_account_id.clone(),
-                method_name: RECEIVE_LAST_N_BLOCKS.to_string(),
-                args: args.to_string().into_bytes().into(),
-            },
-        };
-        let response = self.client.call(read_request).await?;
+        let response = self
+            .submit_view_tx(RECEIVE_LAST_N_BLOCKS, args.to_string().into_bytes())
+            .await?;
 
         if let QueryResponseKind::CallResult(result) = response.kind {
             let block_hashes = from_slice::<Vec<String>>(&result.result)?;
@@ -243,7 +225,12 @@ impl NearClient {
             confirmations: 0,
         };
 
-        let tx_hash = self.submit_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args).expect("error on ProofArgs serialisation")).await?;
+        let tx_hash = self
+            .submit_tx(
+                VERIFY_TRANSACTION_INCLUSION,
+                to_vec(&args).expect("error on ProofArgs serialisation"),
+            )
+            .await?;
         let response = self.get_tx_status(tx_hash).await?;
 
         match response
@@ -280,7 +267,11 @@ impl NearClient {
         }
     }
 
-    async fn submit_tx(&self, method_name: &str, args: Vec<u8>) -> Result<RpcBroadcastTxAsyncResponse,  Box<dyn std::error::Error>> {
+    async fn submit_tx(
+        &self,
+        method_name: &str,
+        args: Vec<u8>,
+    ) -> Result<RpcBroadcastTxAsyncResponse, Box<dyn std::error::Error>> {
         let access_key_query_response = self
             .client
             .call(methods::query::RpcQueryRequest {
@@ -318,9 +309,11 @@ impl NearClient {
         Ok(self.client.call(request).await?)
     }
 
-    async fn get_tx_status(&self, tx_hash: RpcBroadcastTxAsyncResponse) -> MethodCallResult<RpcTransactionResponse, RpcTransactionError> {
-        self
-            .client
+    async fn get_tx_status(
+        &self,
+        tx_hash: RpcBroadcastTxAsyncResponse,
+    ) -> MethodCallResult<RpcTransactionResponse, RpcTransactionError> {
+        self.client
             .call(methods::tx::RpcTransactionStatusRequest {
                 transaction_info: TransactionInfo::TransactionId {
                     tx_hash,
@@ -329,5 +322,23 @@ impl NearClient {
                 wait_until: TxExecutionStatus::Executed,
             })
             .await
+    }
+
+    async fn submit_view_tx(
+        &self,
+        method_name: &str,
+        args: Vec<u8>,
+    ) -> Result<RpcQueryResponse, Box<dyn std::error::Error>> {
+        let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
+            block_reference: near_primitives::types::BlockReference::Finality(
+                near_primitives::types::Finality::Final,
+            ),
+            request: near_primitives::views::QueryRequest::CallFunction {
+                account_id: self.btc_light_client_account_id.clone(),
+                method_name: method_name.to_string(),
+                args: args.into(),
+            },
+        };
+        Ok(self.client.call(read_request).await?)
     }
 }
