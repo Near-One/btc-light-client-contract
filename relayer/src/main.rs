@@ -43,7 +43,7 @@ impl Synchronizer {
         }
     }
     async fn sync(&mut self) {
-        let mut first_block_height_to_submit = self.get_last_correct_block_height().await.unwrap() - 100;
+        let mut first_block_height_to_submit = self.get_last_correct_block_height().await.unwrap() + 1;
         let sleep_time_on_fail_sec = self.config.sleep_time_on_fail_sec;
 
         'main_loop: loop {
