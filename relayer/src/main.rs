@@ -43,7 +43,8 @@ impl Synchronizer {
         }
     }
     async fn sync(&mut self) {
-        let mut first_block_height_to_submit = self.get_last_correct_block_height().await.unwrap() + 1;
+        let mut first_block_height_to_submit =
+            self.get_last_correct_block_height().await.unwrap() + 1;
         let sleep_time_on_fail_sec = self.config.sleep_time_on_fail_sec;
 
         'main_loop: loop {
@@ -69,7 +70,7 @@ impl Synchronizer {
                 tokio::time::sleep(std::time::Duration::from_secs(
                     self.config.sleep_time_on_reach_last_block_sec,
                 ))
-                    .await;
+                .await;
                 continue;
             }
 
@@ -93,11 +94,11 @@ impl Synchronizer {
                     // Contract cannot save block, because no previous block found, we are in fork
                     first_block_height_to_submit = continue_on_fail!(self.get_last_correct_block_height().await, "Error on get_last_correct_block_height", sleep_time_on_fail_sec,  'main_loop)
                         + 1;
-                },
+                }
                 Ok(val) => {
                     let _ = continue_on_fail!(val, "Error on block submission.", sleep_time_on_fail_sec,  'main_loop);
                     first_block_height_to_submit += number_of_blocks_to_submit;
-                },
+                }
                 err => {
                     // network error after retries
                     let _ = continue_on_fail!(err, "Off-chain relay panics after multiple attempts to submit blocks", sleep_time_on_fail_sec,  'main_loop);
@@ -107,7 +108,7 @@ impl Synchronizer {
             tokio::time::sleep(std::time::Duration::from_secs(
                 self.config.sleep_time_after_iteration_sec,
             ))
-                .await;
+            .await;
         }
     }
 

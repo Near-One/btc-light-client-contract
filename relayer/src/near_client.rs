@@ -8,15 +8,15 @@ use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
 
+use bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
+use log::info;
 use near_crypto::InMemorySigner;
 use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
-use bitcoin::BlockHash;
-use log::info;
 
 use tokio::time;
 
@@ -213,15 +213,16 @@ impl NearClient {
         }
     }
 
-    pub async fn is_block_hash_exists(&self, block_hash: BlockHash) -> Result<bool, Box<dyn std::error::Error>> {
+    pub async fn is_block_hash_exists(
+        &self,
+        block_hash: BlockHash,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         let args = json!({
             "blockhash": block_hash,
         });
 
         let read_request = methods::query::RpcQueryRequest {
-            block_reference: BlockReference::Finality(
-                near_primitives::types::Finality::Final,
-            ),
+            block_reference: BlockReference::Finality(near_primitives::types::Finality::Final),
             request: near_primitives::views::QueryRequest::CallFunction {
                 account_id: self.btc_light_client_account_id.clone(),
                 method_name: GET_HEIGHT_BY_BLOCK_HASH.to_string(),
