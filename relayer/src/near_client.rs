@@ -17,6 +17,7 @@ use serde_json::{from_slice, json};
 use std::str::FromStr;
 use bitcoin::BlockHash;
 use log::info;
+
 use tokio::time;
 
 use crate::config::NearConfig;
@@ -127,7 +128,6 @@ impl NearClient {
 
         let sent_at = time::Instant::now();
         let tx_hash = self.client.call(request).await?;
-
         info!("Blocks submitted: tx_hash = {:?}", tx_hash);
 
         loop {
