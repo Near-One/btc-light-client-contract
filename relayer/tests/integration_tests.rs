@@ -32,8 +32,8 @@ async fn verify_correct_transaction_test() {
     let near_client = NearClient::new(&config.near);
 
     let transaction_position = 0usize;
-    let transaction_block_height = 277136usize;
-    let force_transaction_hash = "".to_string();
+    let transaction_block_height = 277_136usize;
+    let force_transaction_hash = String::new();
 
     // RUNNING IN VERIFICATION MODE
     info!("running transaction verification");
@@ -60,7 +60,7 @@ async fn verify_incorrect_transaction_test() {
     let near_client = NearClient::new(&config.near);
 
     let transaction_position = 0usize;
-    let transaction_block_height = 277136usize;
+    let transaction_block_height = 277_136usize;
     let force_transaction_hash =
         "75a25d63da6063b00cb08f794ad0edb81f2fe7cd1f234b6462ff36d137bfaf19".to_string();
 

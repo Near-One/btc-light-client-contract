@@ -35,6 +35,11 @@ pub struct NearConfig {
 /// Launching configuration file from a ./config.toml
 /// Expects configuration to be in the same directory as an executable file
 impl Config {
+    /// Parse config
+    ///
+    /// # Errors
+    /// * config file not exists
+    /// * incorrect config
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let config_toml = fs::read_to_string("./config.toml")?;
         let config: Config = toml::from_str(&config_toml)?;

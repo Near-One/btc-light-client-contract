@@ -58,6 +58,13 @@ fn get_btc_header(header: Header) -> btc_types::header::Header {
 }
 
 impl NearClient {
+    /// Create new Near client
+    ///
+    /// # Panics
+    /// * incorrect near endpoint
+    /// * incorrect `private_key` or `account_id`
+    /// * incorrect `btc_light_client_account_id`
+    #[must_use]
     pub fn new(config: &NearConfig) -> Self {
         let client = JsonRpcClient::connect(&config.endpoint);
 
@@ -98,6 +105,10 @@ impl NearClient {
 
     /// Submitting block header to the smart contract.
     /// This method supports retries internally.
+    ///
+    /// # Errors
+    /// * Transaction fails
+    /// * Connection issue
     pub async fn submit_blocks(
         &self,
         headers: Vec<Header>,
@@ -111,12 +122,7 @@ impl NearClient {
             .collect();
 
         let sent_at = time::Instant::now();
-        let tx_hash = self
-            .submit_tx(
-                SUBMIT_BLOCKS,
-                to_vec(&args).expect("error on headers serialisation"),
-            )
-            .await?;
+        let tx_hash = self.submit_tx(SUBMIT_BLOCKS, to_vec(&args)?).await?;
         info!("Blocks submitted: tx_hash = {:?}", tx_hash);
 
         loop {
@@ -165,6 +171,10 @@ impl NearClient {
         Ok(response)
     }
 
+    /// Get last Bitcoin Block Header on Near
+    ///
+    /// # Errors
+    /// * Connection issue
     pub async fn get_last_block_header(
         &self,
     ) -> Result<ExtendedHeader, Box<dyn std::error::Error>> {
@@ -180,6 +190,12 @@ impl NearClient {
         Ok(header)
     }
 
+    /// Check that block already submitted to Near
+    /// If the block is on Near but from fork
+    /// the function return false
+    ///
+    /// # Errors
+    /// * Connection issue
     pub async fn is_block_hash_exists(
         &self,
         block_hash: BlockHash,
@@ -196,6 +212,10 @@ impl NearClient {
         Ok(block_height.is_some())
     }
 
+    /// Get last n Bitcoin block hashes from Near
+    ///
+    /// # Errors
+    /// * Connection issue
     pub async fn get_last_n_blocks_hashes(
         &self,
         n: u64,
@@ -215,6 +235,11 @@ impl NearClient {
         Ok(block_hashes)
     }
 
+    /// Verify transaction inclusion
+    ///
+    /// # Errors
+    /// * Connection issue
+    /// * Transaction fails
     #[allow(dead_code)]
     pub async fn verify_transaction_inclusion(
         &self,
@@ -226,28 +251,25 @@ impl NearClient {
         let args = btc_types::contract_args::ProofArgs {
             tx_id: transaction_hash,
             tx_block_blockhash: transaction_block_blockhash,
-            tx_index: transaction_position.try_into().unwrap(),
+            tx_index: transaction_position.try_into()?,
             merkle_proof,
             confirmations: 0,
         };
 
         let tx_hash = self
-            .submit_tx(
-                VERIFY_TRANSACTION_INCLUSION,
-                to_vec(&args).expect("error on ProofArgs serialisation"),
-            )
+            .submit_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args)?)
             .await?;
         let response = self.get_tx_status(tx_hash).await?;
 
         match response
             .final_execution_outcome
             .clone()
-            .unwrap()
+            .ok_or("No final execution outcome")?
             .into_outcome()
             .status
         {
             near_primitives::views::FinalExecutionStatus::SuccessValue(value) => {
-                let parsed_output = String::from_utf8(value.clone()).unwrap();
+                let parsed_output = String::from_utf8(value.clone())?;
                 println!(
                     "Transaction succeeded with result: {:?}",
                     String::from_utf8(value.clone())
@@ -266,7 +288,7 @@ impl NearClient {
                 "Transaction status: {:?}",
                 response
                     .final_execution_outcome
-                    .unwrap()
+                    .ok_or("No final execution outcome")?
                     .into_outcome()
                     .status
             ))?,
