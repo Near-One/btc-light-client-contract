@@ -39,6 +39,7 @@ minreq = { version = "2.12.0", features = ["https"] }
 
 [dev-dependencies]
 lazy_static = "1.4"
+serial_test = "0.5"
 
 [[test]]
 name = "integration_tests"

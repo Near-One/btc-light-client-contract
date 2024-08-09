@@ -1,10 +1,11 @@
 use bitcoincore_rpc::bitcoin::hashes::Hash;
-use log::{info, error, debug};
+use log::{debug, error, info};
 use merkle_tools::H256;
 
 use btc_relayer_lib::bitcoin_client::Client as BitcoinClient;
 use btc_relayer_lib::config::Config;
 use btc_relayer_lib::near_client::NearClient;
+use serial_test::serial;
 
 #[macro_use]
 extern crate lazy_static;
@@ -20,6 +21,7 @@ fn setup() {
 }
 
 #[tokio::test]
+#[serial]
 async fn verify_correct_transaction_test() {
     setup();
     let config = Config::new().expect("we expect config.toml to be next to executable in `./`");
@@ -35,10 +37,19 @@ async fn verify_correct_transaction_test() {
 
     // RUNNING IN VERIFICATION MODE
     info!("running transaction verification");
-    verify_transaction_flow(bitcoin_client, near_client, transaction_position, transaction_block_height, force_transaction_hash, true).await;
+    verify_transaction_flow(
+        bitcoin_client,
+        near_client,
+        transaction_position,
+        transaction_block_height,
+        force_transaction_hash,
+        true,
+    )
+    .await;
 }
 
 #[tokio::test]
+#[serial]
 async fn verify_incorrect_transaction_test() {
     setup();
     let config = Config::new().expect("we expect config.toml to be next to executable in `./`");
@@ -50,14 +61,30 @@ async fn verify_incorrect_transaction_test() {
 
     let transaction_position = 0usize;
     let transaction_block_height = 277136usize;
-    let force_transaction_hash = "75a25d63da6063b00cb08f794ad0edb81f2fe7cd1f234b6462ff36d137bfaf19".to_string();
+    let force_transaction_hash =
+        "75a25d63da6063b00cb08f794ad0edb81f2fe7cd1f234b6462ff36d137bfaf19".to_string();
 
     // RUNNING IN VERIFICATION MODE
     info!("running transaction verification");
-    verify_transaction_flow(bitcoin_client, near_client, transaction_position, transaction_block_height, force_transaction_hash, false).await;
+    verify_transaction_flow(
+        bitcoin_client,
+        near_client,
+        transaction_position,
+        transaction_block_height,
+        force_transaction_hash,
+        false,
+    )
+    .await;
 }
 
-async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: NearClient, transaction_position: usize, transaction_block_height: usize, force_transaction_hash: String, expected_value: bool) {
+async fn verify_transaction_flow(
+    bitcoin_client: BitcoinClient,
+    near_client: NearClient,
+    transaction_position: usize,
+    transaction_block_height: usize,
+    force_transaction_hash: String,
+    expected_value: bool,
+) {
     let block = bitcoin_client
         .get_block_by_height(
             u64::try_from(transaction_block_height).expect("correct transaction height"),

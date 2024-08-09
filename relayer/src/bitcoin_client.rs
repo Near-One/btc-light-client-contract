@@ -1,8 +1,8 @@
-use merkle_tools;
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::{jsonrpc, RpcApi};
+use merkle_tools;
 
 use crate::config::Config;
 
