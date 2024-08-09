@@ -541,6 +541,7 @@ dependencies = [
  "btc-types",
  "env_logger",
  "hex",
+ "lazy_static",
  "log",
  "merkle-lite",
  "merkle-tools",

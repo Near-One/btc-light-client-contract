@@ -1,14 +1,8 @@
-use bitcoincore_rpc::bitcoin::hashes::Hash;
-use log::{debug, error, info, trace, warn};
-use merkle_tools::H256;
-use std::env;
+use log::{debug, info, trace, warn};
 
 use crate::bitcoin_client::Client as BitcoinClient;
 use crate::config::Config;
 use crate::near_client::{CustomError, NearClient};
-
-#[allow(clippy::single_component_path_imports)]
-use merkle_tools;
 
 mod bitcoin_client;
 mod config;
@@ -165,14 +159,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bitcoin_client = BitcoinClient::new(&config);
     let near_client = NearClient::new(&config.near);
 
-    // RUNNING IN VERIFICATION MODE
-    let verify_mode = env::var("VERIFY_MODE").unwrap_or_default();
-    if verify_mode == "true" {
-        info!("running transaction verification");
-        verify_transaction_flow(bitcoin_client, near_client).await;
-        return Ok(());
-    }
-
     // RUNNING IN BLOCK RELAY MODE
     info!("run block header sync");
     let mut synchronizer = Synchronizer::new(bitcoin_client, near_client.clone(), config);
@@ -182,65 +168,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //near_client.read_last_block_header().await.expect("read block header successfully");
 
     Ok(())
-}
-
-async fn verify_transaction_flow(bitcoin_client: BitcoinClient, near_client: NearClient) {
-    // Read the transaction_position from the environment variable
-    let transaction_position = env::var("TRANSACTION_POSITION")
-        .map(|pos| pos.parse::<usize>().unwrap_or_default())
-        .unwrap_or_default();
-
-    // Read the transaction_block_height from the environment variable
-    let transaction_block_height = env::var("TRANSACTION_BLOCK_HEIGHT")
-        .map(|height| height.parse::<usize>().unwrap_or_default())
-        .unwrap_or_default();
-
-    // Read the transaction_block_height from the environment variable
-    let force_transaction_hash = env::var("FORCE_TRANSACTION_HASH")
-        .map(|hash| hash.parse::<String>().unwrap_or_default())
-        .unwrap_or_default();
-
-    let block = bitcoin_client
-        .get_block_by_height(
-            u64::try_from(transaction_block_height).expect("correct transaction height"),
-        )
-        .unwrap();
-    let transaction_block_blockhash = block.header.block_hash();
-
-    let transactions = block
-        .txdata
-        .iter()
-        .map(|tx| H256(tx.compute_txid().to_byte_array()))
-        .collect::<Vec<_>>();
-
-    // Provide the transaction hash and merkle proof
-    let transaction_hash = transactions[transaction_position].clone(); // Provide the transaction hash
-    let merkle_proof = bitcoin_client::Client::compute_merkle_proof(&block, transaction_position); // Provide the merkle proof
-
-    // If we need to force some specific transaction hash
-    let transaction_hash = if force_transaction_hash.is_empty() {
-        transaction_hash
-    } else {
-        H256(
-            hex::decode(force_transaction_hash)
-                .unwrap()
-                .try_into()
-                .unwrap(),
-        )
-    };
-
-    let result = near_client
-        .verify_transaction_inclusion(
-            transaction_hash,
-            transaction_position,
-            transaction_block_blockhash.to_byte_array().into(),
-            merkle_proof,
-        )
-        .await;
-
-    match result {
-        Ok(true) => info!("Transaction is found in the provided block"),
-        Ok(false) => info!("Transaction is NOT found in the provided block"),
-        Err(e) => error!("Error: {:?}", e),
-    }
 }
