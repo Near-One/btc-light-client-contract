@@ -44,3 +44,7 @@ serial_test = "0.5"
 [[test]]
 name = "integration_tests"
 path = "tests/integration_tests.rs"
+required-features = ["integration_tests"]
+
+[features]
+integration_tests = []
