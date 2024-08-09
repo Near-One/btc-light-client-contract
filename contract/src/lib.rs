@@ -305,7 +305,7 @@ impl BtcLightClient {
 
         let current_header = ExtendedHeader {
             block_header,
-            block_hash: current_block_hash.clone(),
+            block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
         };
@@ -314,7 +314,7 @@ impl BtcLightClient {
         if prev_block_header.block_hash == self.mainchain_tip_blockhash {
             // Probably we should check if it is not in a mainchain?
             // chainwork > highScore
-            log!("Block {}: saving to mainchain", current_block_hash);
+            log!("Block {}: saving to mainchain", current_header.block_hash);
             // Validate chain
             assert_eq!(
                 self.mainchain_tip_blockhash,
@@ -324,7 +324,7 @@ impl BtcLightClient {
             self.mainchain_tip_blockhash = current_header.block_hash.clone();
             self.store_block_header(current_header);
         } else {
-            log!("Block {}: saving to fork", current_block_hash);
+            log!("Block {}: saving to fork", current_header.block_hash);
             // Fork submission
             let main_chain_tip_header = self
                 .headers_pool
