@@ -3,6 +3,14 @@ name = "btc-relayer"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "btc_relayer_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "btc-relayer"
+path = "src/main.rs"
+
 [dependencies]
 bitcoin = "0.32.0"
 bitcoincore-rpc = "0.19.0"
@@ -28,3 +36,15 @@ sha2 = "0.10"
 merkle-tools = { path = "../merkle-tools" }
 hex = "0.4"
 minreq = { version = "2.12.0", features = ["https"] }
+
+[dev-dependencies]
+lazy_static = "1.4"
+serial_test = "0.5"
+
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"
+required-features = ["integration_tests"]
+
+[features]
+integration_tests = []

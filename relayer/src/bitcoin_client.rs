@@ -1,4 +1,3 @@
-use crate::merkle_tools;
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
@@ -12,6 +11,11 @@ pub struct Client {
 }
 
 impl Client {
+    /// Create new Bitcoin client
+    ///
+    /// # Panics
+    /// * incorrect bitcoin endpoint
+    #[must_use]
     pub fn new(config: &Config) -> Self {
         let mut builder = jsonrpc::minreq_http::Builder::new()
             .url(&config.bitcoin.endpoint)
@@ -26,19 +30,26 @@ impl Client {
         Self { inner }
     }
 
-    #[allow(dead_code)]
-    pub fn get_best_block_hash(&self) -> BlockHash {
-        self.inner.get_best_block_hash().unwrap()
-    }
-
+    /// Get the height of the last Bitcoin block
+    ///
+    /// # Errors
+    /// * issue with connection to the Bitcoin Node
     pub fn get_block_count(&self) -> Result<u64, bitcoincore_rpc::Error> {
         self.inner.get_block_count()
     }
 
+    /// Get block hash
+    ///
+    /// # Errors
+    /// * issue with connection to the Bitcoin Node
     pub fn get_block_hash(&self, height: u64) -> Result<BlockHash, bitcoincore_rpc::Error> {
         self.inner.get_block_hash(height)
     }
 
+    /// Get block header
+    ///
+    /// # Errors
+    /// * issue with connection to the Bitcoin Node
     pub fn get_block_header(
         &self,
         block_hash: &BlockHash,
@@ -46,6 +57,10 @@ impl Client {
         self.inner.get_block_header(block_hash)
     }
 
+    /// Get block header by bock height
+    ///
+    /// # Errors
+    /// * issue with connection to the Bitcoin Node
     pub fn get_block_header_by_height(
         &self,
         height: u64,
@@ -54,6 +69,11 @@ impl Client {
         self.get_block_header(&block_hash)
     }
 
+    /// Get block by block hash
+    ///
+    /// # Errors
+    /// * issue with connection to the Bitcoin Node
+    #[allow(dead_code)]
     pub fn get_block(
         &self,
         block_hash: &BlockHash,
@@ -61,6 +81,11 @@ impl Client {
         self.inner.get_block(block_hash)
     }
 
+    /// Get block by block height
+    ///
+    /// # Errors
+    /// * issue with connection to the Bitcoin Node
+    #[allow(dead_code)]
     pub fn get_block_by_height(
         &self,
         height: u64,
@@ -69,6 +94,8 @@ impl Client {
         self.get_block(&block_hash)
     }
 
+    #[must_use]
+    #[allow(dead_code)]
     pub fn compute_merkle_proof(
         block: &bitcoincore_rpc::bitcoin::Block,
         transaction_position: usize,

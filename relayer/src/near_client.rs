@@ -1,7 +1,7 @@
 use btc_types::header::ExtendedHeader;
 use merkle_tools::H256;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
-use near_jsonrpc_client::{methods, JsonRpcClient};
+use near_jsonrpc_client::{methods, JsonRpcClient, MethodCallResult};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, TransactionInfo};
 use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
@@ -14,6 +14,7 @@ use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
 use log::info;
 use near_crypto::InMemorySigner;
+use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncResponse;
 use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
@@ -24,6 +25,7 @@ use crate::config::NearConfig;
 
 const SUBMIT_BLOCKS: &str = "submit_blocks";
 const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
+#[allow(dead_code)]
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
 const RECEIVE_LAST_N_BLOCKS: &str = "get_last_n_blocks_hashes";
 const GET_HEIGHT_BY_BLOCK_HASH: &str = "get_height_by_block_hash";
@@ -56,11 +58,34 @@ fn get_btc_header(header: Header) -> btc_types::header::Header {
 }
 
 impl NearClient {
+    /// Create new Near client
+    ///
+    /// # Panics
+    /// * incorrect near endpoint
+    /// * incorrect `private_key` or `account_id`
+    /// * incorrect `btc_light_client_account_id`
+    #[must_use]
     pub fn new(config: &NearConfig) -> Self {
         let client = JsonRpcClient::connect(&config.endpoint);
 
-        let signer_account_id = AccountId::from_str(&config.account_name).unwrap();
-        let signer_secret_key = near_crypto::SecretKey::from_str(&config.secret_key).unwrap();
+        let (signer_account_id, signer_secret_key) =
+            if let Some(near_credentials_path) = config.near_credentials_path.clone() {
+                let data = std::fs::read_to_string(near_credentials_path).unwrap();
+                let res: serde_json::Value = serde_json::from_str(&data).unwrap();
+
+                let private_key = res["private_key"].to_string().replace('\"', "");
+                let private_key = near_crypto::SecretKey::from_str(private_key.as_str()).unwrap();
+
+                let account_id = res["account_id"].to_string().replace('\"', "");
+                let account_id = AccountId::from_str(account_id.as_str()).unwrap();
+                (account_id, private_key)
+            } else {
+                (
+                    AccountId::from_str(&config.account_name.clone().unwrap()).unwrap(),
+                    near_crypto::SecretKey::from_str(&config.secret_key.clone().unwrap()).unwrap(),
+                )
+            };
+
         let signer = near_crypto::InMemorySigner::from_secret_key(
             signer_account_id.clone(),
             signer_secret_key,
@@ -80,6 +105,10 @@ impl NearClient {
 
     /// Submitting block header to the smart contract.
     /// This method supports retries internally.
+    ///
+    /// # Errors
+    /// * Transaction fails
+    /// * Connection issue
     pub async fn submit_blocks(
         &self,
         headers: Vec<Header>,
@@ -92,55 +121,12 @@ impl NearClient {
             })
             .collect();
 
-        let access_key_query_response = self
-            .client
-            .call(methods::query::RpcQueryRequest {
-                block_reference: BlockReference::latest(),
-                request: near_primitives::views::QueryRequest::ViewAccessKey {
-                    account_id: self.signer.account_id.clone(),
-                    public_key: self.signer.public_key.clone(),
-                },
-            })
-            .await?;
-
-        let current_nonce = match access_key_query_response.kind {
-            QueryResponseKind::AccessKey(access_key) => access_key.nonce,
-            _ => Err("failed to extract current nonce")?,
-        };
-
-        let transaction = Transaction {
-            signer_id: self.signer.account_id.clone(),
-            public_key: self.signer.public_key.clone(),
-            nonce: current_nonce + 1,
-            receiver_id: self.btc_light_client_account_id.clone(),
-            block_hash: access_key_query_response.block_hash,
-            actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
-                method_name: SUBMIT_BLOCKS.to_string(),
-                args: to_vec(&args).expect("error on headers serialisation"),
-                gas: 100_000_000_000_000, // 100 TeraGas
-                deposit: 0,
-            }))],
-        };
-
-        let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
-            signed_transaction: transaction.sign(&self.signer),
-        };
-
         let sent_at = time::Instant::now();
-        let tx_hash = self.client.call(request).await?;
+        let tx_hash = self.submit_tx(SUBMIT_BLOCKS, to_vec(&args)?).await?;
         info!("Blocks submitted: tx_hash = {:?}", tx_hash);
 
         loop {
-            let response = self
-                .client
-                .call(methods::tx::RpcTransactionStatusRequest {
-                    transaction_info: TransactionInfo::TransactionId {
-                        tx_hash,
-                        sender_account_id: self.signer.account_id.clone(),
-                    },
-                    wait_until: TxExecutionStatus::Executed,
-                })
-                .await;
+            let response = self.get_tx_status(tx_hash).await;
             let received_at = time::Instant::now();
             let delta = (received_at - sent_at).as_secs();
 
@@ -185,34 +171,31 @@ impl NearClient {
         Ok(response)
     }
 
+    /// Get last Bitcoin Block Header on Near
+    ///
+    /// # Errors
+    /// * Connection issue
     pub async fn get_last_block_header(
         &self,
     ) -> Result<ExtendedHeader, Box<dyn std::error::Error>> {
         let args = json!({});
+        let result = self
+            .submit_view_tx(GET_LAST_BLOCK_HEADER, args.to_string().into_bytes())
+            .await?;
 
-        let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
-            block_reference: near_primitives::types::BlockReference::Finality(
-                near_primitives::types::Finality::Final,
-            ),
-            request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: self.btc_light_client_account_id.clone(),
-                method_name: GET_LAST_BLOCK_HEADER.to_string(),
-                args: args.to_string().into_bytes().into(),
-            },
-        };
-        let response = self.client.call(read_request).await?;
+        let header = from_slice::<ExtendedHeader>(&result)?;
+        println!("Block Height: {}", header.block_height);
+        println!("Block Hash: {}", header.block_hash);
 
-        if let QueryResponseKind::CallResult(result) = response.kind {
-            let header = from_slice::<ExtendedHeader>(&result.result)?;
-            println!("Block Height: {}", response.block_height);
-            println!("Block Hash: {}", response.block_hash);
-
-            Ok(header)
-        } else {
-            Err("failed to read block header")?
-        }
+        Ok(header)
     }
 
+    /// Check that block already submitted to Near
+    /// If the block is on Near but from fork
+    /// the function return false
+    ///
+    /// # Errors
+    /// * Connection issue
     pub async fn is_block_hash_exists(
         &self,
         block_hash: BlockHash,
@@ -221,24 +204,18 @@ impl NearClient {
             "blockhash": block_hash,
         });
 
-        let read_request = methods::query::RpcQueryRequest {
-            block_reference: BlockReference::Finality(near_primitives::types::Finality::Final),
-            request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: self.btc_light_client_account_id.clone(),
-                method_name: GET_HEIGHT_BY_BLOCK_HASH.to_string(),
-                args: args.to_string().into_bytes().into(),
-            },
-        };
-        let response = self.client.call(read_request).await?;
+        let result = self
+            .submit_view_tx(GET_HEIGHT_BY_BLOCK_HASH, args.to_string().into_bytes())
+            .await?;
 
-        if let QueryResponseKind::CallResult(result) = response.kind {
-            let block_height = from_slice::<Option<u64>>(&result.result)?;
-            Ok(block_height.is_some())
-        } else {
-            Err("failed to get block height by hash")?
-        }
+        let block_height = from_slice::<Option<u64>>(&result)?;
+        Ok(block_height.is_some())
     }
 
+    /// Get last n Bitcoin block hashes from Near
+    ///
+    /// # Errors
+    /// * Connection issue
     pub async fn get_last_n_blocks_hashes(
         &self,
         n: u64,
@@ -249,27 +226,21 @@ impl NearClient {
             "limit": n,
         });
 
-        let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
-            block_reference: near_primitives::types::BlockReference::Finality(
-                near_primitives::types::Finality::Final,
-            ),
-            request: near_primitives::views::QueryRequest::CallFunction {
-                account_id: self.btc_light_client_account_id.clone(),
-                method_name: RECEIVE_LAST_N_BLOCKS.to_string(),
-                args: args.to_string().into_bytes().into(),
-            },
-        };
-        let response = self.client.call(read_request).await?;
+        let result = self
+            .submit_view_tx(RECEIVE_LAST_N_BLOCKS, args.to_string().into_bytes())
+            .await?;
 
-        if let QueryResponseKind::CallResult(result) = response.kind {
-            let block_hashes = from_slice::<Vec<String>>(&result.result)?;
-            println!("{block_hashes:#?}");
-            Ok(block_hashes)
-        } else {
-            Err("failed to read block header")?
-        }
+        let block_hashes = from_slice::<Vec<String>>(&result)?;
+        println!("{block_hashes:#?}");
+        Ok(block_hashes)
     }
 
+    /// Verify transaction inclusion
+    ///
+    /// # Errors
+    /// * Connection issue
+    /// * Transaction fails
+    #[allow(dead_code)]
     pub async fn verify_transaction_inclusion(
         &self,
         transaction_hash: H256,
@@ -277,70 +248,28 @@ impl NearClient {
         transaction_block_blockhash: H256,
         merkle_proof: Vec<H256>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        let access_key_query_response = self
-            .client
-            .call(methods::query::RpcQueryRequest {
-                block_reference: BlockReference::latest(),
-                request: near_primitives::views::QueryRequest::ViewAccessKey {
-                    account_id: self.signer.account_id.clone(),
-                    public_key: self.signer.public_key.clone(),
-                },
-            })
-            .await?;
-
-        let current_nonce = match access_key_query_response.kind {
-            QueryResponseKind::AccessKey(access_key) => access_key.nonce,
-            _ => Err("failed to extract current nonce")?,
-        };
-
         let args = btc_types::contract_args::ProofArgs {
             tx_id: transaction_hash,
             tx_block_blockhash: transaction_block_blockhash,
-            tx_index: transaction_position.try_into().unwrap(),
+            tx_index: transaction_position.try_into()?,
             merkle_proof,
             confirmations: 0,
         };
 
-        let transaction = Transaction {
-            signer_id: self.signer.account_id.clone(),
-            public_key: self.signer.public_key.clone(),
-            nonce: current_nonce + 1,
-            receiver_id: self.btc_light_client_account_id.clone(),
-            block_hash: access_key_query_response.block_hash,
-            actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
-                method_name: VERIFY_TRANSACTION_INCLUSION.to_string(),
-                args: to_vec(&args).expect("error on ProofArgs serialisation"),
-                gas: 100_000_000_000_000, // 100 TeraGas
-                deposit: 0,
-            }))],
-        };
-
-        let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
-            signed_transaction: transaction.sign(&self.signer),
-        };
-
-        let tx_hash = self.client.call(request).await?;
-
-        let response = self
-            .client
-            .call(methods::tx::RpcTransactionStatusRequest {
-                transaction_info: TransactionInfo::TransactionId {
-                    tx_hash,
-                    sender_account_id: self.signer.account_id.clone(),
-                },
-                wait_until: TxExecutionStatus::Executed,
-            })
+        let tx_hash = self
+            .submit_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args)?)
             .await?;
+        let response = self.get_tx_status(tx_hash).await?;
 
         match response
             .final_execution_outcome
             .clone()
-            .unwrap()
+            .ok_or("No final execution outcome")?
             .into_outcome()
             .status
         {
             near_primitives::views::FinalExecutionStatus::SuccessValue(value) => {
-                let parsed_output = String::from_utf8(value.clone()).unwrap();
+                let parsed_output = String::from_utf8(value.clone())?;
                 println!(
                     "Transaction succeeded with result: {:?}",
                     String::from_utf8(value.clone())
@@ -359,10 +288,90 @@ impl NearClient {
                 "Transaction status: {:?}",
                 response
                     .final_execution_outcome
-                    .unwrap()
+                    .ok_or("No final execution outcome")?
                     .into_outcome()
                     .status
             ))?,
+        }
+    }
+
+    async fn submit_tx(
+        &self,
+        method_name: &str,
+        args: Vec<u8>,
+    ) -> Result<RpcBroadcastTxAsyncResponse, Box<dyn std::error::Error>> {
+        let access_key_query_response = self
+            .client
+            .call(methods::query::RpcQueryRequest {
+                block_reference: BlockReference::latest(),
+                request: near_primitives::views::QueryRequest::ViewAccessKey {
+                    account_id: self.signer.account_id.clone(),
+                    public_key: self.signer.public_key.clone(),
+                },
+            })
+            .await?;
+
+        let current_nonce = match access_key_query_response.kind {
+            QueryResponseKind::AccessKey(access_key) => access_key.nonce,
+            _ => Err("failed to extract current nonce")?,
+        };
+
+        let transaction = Transaction {
+            signer_id: self.signer.account_id.clone(),
+            public_key: self.signer.public_key.clone(),
+            nonce: current_nonce + 1,
+            receiver_id: self.btc_light_client_account_id.clone(),
+            block_hash: access_key_query_response.block_hash,
+            actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
+                method_name: method_name.to_string(),
+                args,
+                gas: 100_000_000_000_000, // 100 TeraGas
+                deposit: 0,
+            }))],
+        };
+
+        let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
+            signed_transaction: transaction.sign(&self.signer),
+        };
+
+        Ok(self.client.call(request).await?)
+    }
+
+    async fn get_tx_status(
+        &self,
+        tx_hash: RpcBroadcastTxAsyncResponse,
+    ) -> MethodCallResult<RpcTransactionResponse, RpcTransactionError> {
+        self.client
+            .call(methods::tx::RpcTransactionStatusRequest {
+                transaction_info: TransactionInfo::TransactionId {
+                    tx_hash,
+                    sender_account_id: self.signer.account_id.clone(),
+                },
+                wait_until: TxExecutionStatus::Executed,
+            })
+            .await
+    }
+
+    async fn submit_view_tx(
+        &self,
+        method_name: &str,
+        args: Vec<u8>,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
+            block_reference: near_primitives::types::BlockReference::Finality(
+                near_primitives::types::Finality::Final,
+            ),
+            request: near_primitives::views::QueryRequest::CallFunction {
+                account_id: self.btc_light_client_account_id.clone(),
+                method_name: method_name.to_string(),
+                args: args.into(),
+            },
+        };
+        let response = self.client.call(read_request).await?;
+        if let QueryResponseKind::CallResult(result) = response.kind {
+            Ok(result.result)
+        } else {
+            Err("the view tx fail")?
         }
     }
 }
