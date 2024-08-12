@@ -8,13 +8,16 @@ use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
 
+use bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
+use log::info;
 use near_crypto::InMemorySigner;
 use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
+
 use tokio::time;
 
 use crate::config::NearConfig;
@@ -23,11 +26,14 @@ const SUBMIT_BLOCKS: &str = "submit_blocks";
 const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
 const RECEIVE_LAST_N_BLOCKS: &str = "get_last_n_blocks_hashes";
+const GET_HEIGHT_BY_BLOCK_HASH: &str = "get_height_by_block_hash";
 
 #[derive(thiserror::Error, Debug)]
 pub enum CustomError {
     #[error("Prev Block Not Found")]
     PrevBlockNotFound,
+    #[error("Tx execution Error: {0:?}")]
+    TxExecutionError(String),
 }
 
 #[derive(Clone)]
@@ -122,6 +128,7 @@ impl NearClient {
 
         let sent_at = time::Instant::now();
         let tx_hash = self.client.call(request).await?;
+        info!("Blocks submitted: tx_hash = {:?}", tx_hash);
 
         loop {
             let response = self
@@ -169,6 +176,8 @@ impl NearClient {
             {
                 if format!("{err:?}").contains("PrevBlockNotFound") {
                     Err(CustomError::PrevBlockNotFound)?;
+                } else {
+                    Err(CustomError::TxExecutionError(format!("{err:?}")))?;
                 }
             }
         }
@@ -201,6 +210,32 @@ impl NearClient {
             Ok(header)
         } else {
             Err("failed to read block header")?
+        }
+    }
+
+    pub async fn is_block_hash_exists(
+        &self,
+        block_hash: BlockHash,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
+        let args = json!({
+            "blockhash": block_hash,
+        });
+
+        let read_request = methods::query::RpcQueryRequest {
+            block_reference: BlockReference::Finality(near_primitives::types::Finality::Final),
+            request: near_primitives::views::QueryRequest::CallFunction {
+                account_id: self.btc_light_client_account_id.clone(),
+                method_name: GET_HEIGHT_BY_BLOCK_HASH.to_string(),
+                args: args.to_string().into_bytes().into(),
+            },
+        };
+        let response = self.client.call(read_request).await?;
+
+        if let QueryResponseKind::CallResult(result) = response.kind {
+            let block_height = from_slice::<Option<u64>>(&result.result)?;
+            Ok(block_height.is_some())
+        } else {
+            Err("failed to get block height by hash")?
         }
     }
 
