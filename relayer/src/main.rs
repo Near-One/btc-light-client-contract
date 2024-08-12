@@ -100,7 +100,7 @@ impl Synchronizer {
             }
 
             tokio::time::sleep(std::time::Duration::from_secs(
-                self.config.sleep_time_after_iteration_sec,
+                self.config.sleep_time_after_sync_iteration_sec,
             ))
             .await;
         }

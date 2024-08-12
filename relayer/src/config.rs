@@ -6,7 +6,7 @@ pub struct Config {
     pub max_fork_len: u64,
     pub sleep_time_on_fail_sec: u64,
     pub sleep_time_on_reach_last_block_sec: u64,
-    pub sleep_time_after_iteration_sec: u64,
+    pub sleep_time_after_sync_iteration_sec: u64,
     pub batch_size: usize,
     pub bitcoin: BitcoinConfig,
     pub near: NearConfig,
