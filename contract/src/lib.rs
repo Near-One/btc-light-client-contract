@@ -188,6 +188,11 @@ impl BtcLightClient {
     #[allow(clippy::needless_pass_by_value)]
     #[pause(except(roles(Role::UnrestrictedVerifyTransaction)))]
     pub fn verify_transaction_inclusion(&self, #[serializer(borsh)] args: ProofArgs) -> bool {
+        require!(
+            args.confirmations <= self.gc_threshold,
+            "The required number of confirmations exceeds the number of blocks stored in memory"
+        );
+
         let heaviest_block_header = self
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
