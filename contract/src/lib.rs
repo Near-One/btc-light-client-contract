@@ -178,12 +178,12 @@ impl BtcLightClient {
 
     /// Verifies that a transaction is included in a block at a given block height
     ///
-    /// @param txid transaction identifier
-    /// @param txBlockHeight block height at which transacton is supposedly included
-    /// @param txIndex index of transaction in the block's tx merkle tree
-    /// @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
+    /// @param tx_id transaction identifier
+    /// @param tx_block_blockhash block hash at which transacton is supposedly included
+    /// @param tx_index index of transaction in the block's tx merkle tree
+    /// @param merkle_proof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
     /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
-    /// @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
+    /// @return True if tx_id is at the claimed position in the block at the given blockhash, False otherwise
     ///
     /// # Panics
     /// Multiple cases
