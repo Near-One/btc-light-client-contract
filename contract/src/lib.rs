@@ -242,7 +242,7 @@ impl BtcLightClient {
             .unwrap_or_else(|| env::panic_str("tip blockheader must be in a header pool"));
 
         let amount_of_headers_we_store =
-            tip_blockheader.block_height - initial_blockheader.block_height;
+            tip_blockheader.block_height - initial_blockheader.block_height + 1;
 
         if amount_of_headers_we_store > self.gc_threshold {
             let total_amount_to_remove = amount_of_headers_we_store - self.gc_threshold;
