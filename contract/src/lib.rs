@@ -23,6 +23,8 @@ pub enum Role {
     UnrestrictedSubmitBlocks,
     /// Allows to use `verify_transaction` API on a paused contract
     UnrestrictedVerifyTransaction,
+    // Allows to use `run_mainchain_gc` API on a paused contract
+    UnrestrictedRunGC,
     /// May successfully call any of the protected `Upgradable` methods since below it is passed to
     /// every attribute of `access_control_roles`.
     ///
@@ -227,6 +229,7 @@ impl BtcLightClient {
     ///
     /// # Panics
     /// If initial blockheader or tip blockheader are not in a header pool
+    #[pause(except(roles(Role::UnrestrictedRunGC)))]
     pub fn run_mainchain_gc(&mut self, batch_size: u64) {
         let initial_blockheader = self
             .headers_pool
