@@ -423,10 +423,9 @@ impl BtcLightClient {
             match self.headers_pool.get_mut(&prev_block_hash) {
                 Some(prev_block_header) => fork_header_cursor = prev_block_header,
                 None => {
-                    if self
+                    if !self
                         .mainchain_header_to_height
-                        .get(&self.mainchain_initial_blockhash)
-                        .is_none()
+                        .contains_key(&self.mainchain_initial_blockhash)
                     {
                         self.mainchain_initial_blockhash = current_block_hash;
                         break;
