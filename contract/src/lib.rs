@@ -409,7 +409,7 @@ impl BtcLightClient {
                 .mainchain_height_to_header
                 .insert(current_height, current_block_hash.clone());
             self.mainchain_header_to_height
-                .insert(current_block_hash, current_height);
+                .insert(current_block_hash.clone(), current_height);
 
             // If we found a mainchain block at the current height than remove this block from the
             // header pool and from the header -> height map
@@ -420,10 +420,21 @@ impl BtcLightClient {
             }
 
             // Switch iterator cursor to the previous block in fork
-            fork_header_cursor = self
-                .headers_pool
-                .get_mut(&prev_block_hash)
-                .unwrap_or_else(|| env::panic_str("previous fork block should be there"));
+            match self.headers_pool.get_mut(&prev_block_hash) {
+                Some(prev_block_header) => fork_header_cursor = prev_block_header,
+                None => {
+                    if self
+                        .mainchain_header_to_height
+                        .get(&self.mainchain_initial_blockhash)
+                        .is_none()
+                    {
+                        self.mainchain_initial_blockhash = current_block_hash;
+                        break;
+                    } else {
+                        env::panic_str("previous fork block should be there");
+                    }
+                }
+            }
         }
 
         // Updating tip of the new main chain
