@@ -247,7 +247,7 @@ impl NearClient {
         transaction_position: usize,
         transaction_block_blockhash: H256,
         merkle_proof: Vec<H256>,
-        confirmations: u64
+        confirmations: u64,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let args = btc_types::contract_args::ProofArgs {
             tx_id: transaction_hash,
