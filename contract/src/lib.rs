@@ -1,6 +1,6 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{DIFFICULTY_ADJUSTMENT_BLOCKS, ExtendedHeader, Header};
+use btc_types::header::{ExtendedHeader, Header, DIFFICULTY_ADJUSTMENT_BLOCKS};
 use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
@@ -267,7 +267,7 @@ impl BtcLightClient {
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
-            last_target_update: 0,
+            last_target_update: DIFFICULTY_ADJUSTMENT_BLOCKS,
         };
 
         self.store_block_header(header);
@@ -353,13 +353,25 @@ impl BtcLightClient {
             return prev_block_header.last_target_update + 1;
         }
 
-        require!(prev_block_header.last_target_update >= DIFFICULTY_ADJUSTMENT_BLOCKS, "Error: Incorrect target. The target was recently adjusted.");
+        require!(
+            prev_block_header.last_target_update >= DIFFICULTY_ADJUSTMENT_BLOCKS,
+            format!(
+                "Error: Incorrect target. The target was adjusted {} blocks ago.",
+                prev_block_header.last_target_update
+            )
+        );
 
         let prev_difficulty = prev_block_header.block_header.work();
         let current_difficulty = block_header.work();
 
-        require!(prev_difficulty/current_difficulty < U256::from(5u128), "Error: The difficulty change exceeds 4 times.");
-        require!(current_difficulty/prev_difficulty < U256::from(5u128), "Error: The difficulty change exceeds 4 times.");
+        require!(
+            prev_difficulty / current_difficulty < U256::from(5u128),
+            "Error: The difficulty change exceeds 4 times."
+        );
+        require!(
+            current_difficulty / prev_difficulty < U256::from(5u128),
+            "Error: The difficulty change exceeds 4 times."
+        );
 
         return 0;
     }
