@@ -214,7 +214,9 @@ impl BtcLightClient {
             &args.tx,
             usize::try_from(args.tx_index).unwrap(),
             &args.merkle_proof,
-        ) == header.block_header.merkle_root
+        )
+        .unwrap_or_else(|err| env::panic_str(&err))
+            == header.block_header.merkle_root
     }
 
     /// Public call to run GC on a mainchain.

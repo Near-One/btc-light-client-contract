@@ -35,8 +35,20 @@ pub fn compute_root_from_merkle_proof(
     transaction: &[u8],
     transaction_position: usize,
     merkle_proof: &Vec<H256>,
+) -> Result<H256, String> {
+    if is_internal_node(transaction) {
+        return Err("Error: The provided data is not a valid transaction, but rather a concatenation of two node hashes.".to_string());
+    }
+
+    Ok(compute_root_from_merkle_proof_inner(btc_types::hash::double_sha256(transaction), transaction_position, merkle_proof))
+}
+
+fn compute_root_from_merkle_proof_inner(
+    transaction_hash: H256,
+    transaction_position: usize,
+    merkle_proof: &Vec<H256>,
 ) -> H256 {
-    let mut current_hash = btc_types::hash::double_sha256(transaction);
+    let mut current_hash = transaction_hash;
     let mut current_position = transaction_position;
 
     for proof_hash in merkle_proof {
@@ -49,6 +61,24 @@ pub fn compute_root_from_merkle_proof(
     }
 
     current_hash
+}
+
+fn is_internal_node(data: &[u8]) -> bool {
+    if data.len() != 64 {
+        return false;
+    }
+
+    let version = u32::from_le_bytes(data[0..4].try_into().unwrap());
+    if version > 10 {
+        return true;
+    }
+
+    let input_len = data[4];
+    if input_len > 1 {
+        return true;
+    }
+
+    return false;
 }
 
 fn compute_hash(first_tx_hash: &H256, second_tx_hash: &H256) -> H256 {
@@ -143,7 +173,7 @@ mod tests {
         let calculated_merkle_root = merkle_root_calculator(&tx_hashes);
         let calculated_merkle_proof = merkle_proof_calculator(tx_hashes, 0);
 
-        let computed_root_from_merkle_proof = compute_root_from_merkle_proof(
+        let computed_root_from_merkle_proof = compute_root_from_merkle_proof_inner(
             decode_hex("18afbf37d136ff62644b231fcde72f1fb8edd04a798fb00cb06360da635da275"),
             0,
             &calculated_merkle_proof,
@@ -164,7 +194,7 @@ mod tests {
         let calculated_merkle_root = merkle_root_calculator(&tx_hashes);
         let calculated_merkle_proof = merkle_proof_calculator(tx_hashes, 4);
 
-        let computed_root_from_merkle_proof = compute_root_from_merkle_proof(
+        let computed_root_from_merkle_proof = compute_root_from_merkle_proof_inner(
             decode_hex("048f3897c16bdc59ec1187aa080a4b4aa5ec1afcb4b776cf8b8a214b01990a7b"),
             4,
             &calculated_merkle_proof,
