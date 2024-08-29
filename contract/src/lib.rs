@@ -211,7 +211,7 @@ impl BtcLightClient {
 
         // compute merkle tree root and check if it matches block's original merkle tree root
         merkle_tools::compute_root_from_merkle_proof(
-            args.tx_id.clone(),
+            &args.tx,
             usize::try_from(args.tx_index).unwrap(),
             &args.merkle_proof,
         ) == header.block_header.merkle_root

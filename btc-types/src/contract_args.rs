@@ -13,7 +13,7 @@ pub struct InitArgs {
 
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct ProofArgs {
-    pub tx_id: H256,
+    pub tx: Vec<u8>,
     pub tx_block_blockhash: H256,
     pub tx_index: u64,
     pub merkle_proof: Vec<H256>,

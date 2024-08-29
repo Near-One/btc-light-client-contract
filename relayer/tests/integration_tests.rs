@@ -1,6 +1,6 @@
+use bitcoin::consensus::Encodable;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use log::{debug, error, info};
-use merkle_tools::H256;
 
 use btc_relayer_lib::bitcoin_client::Client as BitcoinClient;
 use btc_relayer_lib::config::Config;
@@ -33,7 +33,7 @@ async fn verify_correct_transaction_test() {
 
     let transaction_position = 0usize;
     let transaction_block_height = 277_136usize;
-    let force_transaction_hash = String::new();
+    let force_transaction: Vec<u8> = vec![];
 
     // RUNNING IN VERIFICATION MODE
     info!("running transaction verification");
@@ -42,7 +42,7 @@ async fn verify_correct_transaction_test() {
         near_client,
         transaction_position,
         transaction_block_height,
-        force_transaction_hash,
+        force_transaction,
         true,
     )
     .await;
@@ -61,8 +61,16 @@ async fn verify_incorrect_transaction_test() {
 
     let transaction_position = 0usize;
     let transaction_block_height = 277_136usize;
-    let force_transaction_hash =
-        "75a25d63da6063b00cb08f794ad0edb81f2fe7cd1f234b6462ff36d137bfaf19".to_string();
+    let force_transaction: Vec<u8> = vec![
+        1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 83, 3, 144, 58, 4, 4, 0, 1, 32, 43, 73, 18, 77,
+        105, 110, 101, 100, 32, 98, 121, 32, 66, 84, 67, 32, 71, 117, 105, 108, 100, 44, 250, 190,
+        109, 109, 55, 2, 141, 84, 72, 228, 111, 116, 208, 231, 59, 139, 194, 117, 97, 237, 245,
+        119, 59, 120, 148, 186, 203, 119, 109, 140, 41, 55, 249, 130, 57, 121, 1, 0, 0, 0, 0, 0, 0,
+        0, 8, 0, 0, 18, 253, 14, 11, 0, 0, 255, 255, 255, 255, 1, 111, 223, 45, 149, 0, 0, 0, 0,
+        25, 118, 169, 20, 39, 161, 241, 39, 113, 222, 92, 195, 183, 57, 65, 102, 75, 37, 55, 193,
+        83, 22, 190, 67, 136, 172, 0, 0, 0, 1,
+    ];
 
     // RUNNING IN VERIFICATION MODE
     info!("running transaction verification");
@@ -71,7 +79,7 @@ async fn verify_incorrect_transaction_test() {
         near_client,
         transaction_position,
         transaction_block_height,
-        force_transaction_hash,
+        force_transaction,
         false,
     )
     .await;
@@ -82,7 +90,7 @@ async fn verify_transaction_flow(
     near_client: NearClient,
     transaction_position: usize,
     transaction_block_height: usize,
-    force_transaction_hash: String,
+    force_transaction: Vec<u8>,
     expected_value: bool,
 ) {
     let block = bitcoin_client
@@ -92,31 +100,22 @@ async fn verify_transaction_flow(
         .unwrap();
     let transaction_block_blockhash = block.header.block_hash();
 
-    let transactions = block
-        .txdata
-        .iter()
-        .map(|tx| H256(tx.compute_txid().to_byte_array()))
-        .collect::<Vec<_>>();
-
     // Provide the transaction hash and merkle proof
-    let transaction_hash = transactions[transaction_position].clone(); // Provide the transaction hash
+    let mut transaction: Vec<u8> = vec![];
+    block.txdata[transaction_position]
+        .consensus_encode(&mut transaction)
+        .expect("error on tx serialization");
     let merkle_proof = BitcoinClient::compute_merkle_proof(&block, transaction_position); // Provide the merkle proof
 
-    // If we need to force some specific transaction hash
-    let transaction_hash = if force_transaction_hash.is_empty() {
-        transaction_hash
+    transaction = if force_transaction.len() != 0 {
+        force_transaction
     } else {
-        H256(
-            hex::decode(force_transaction_hash)
-                .unwrap()
-                .try_into()
-                .unwrap(),
-        )
+        transaction
     };
 
     let result = near_client
         .verify_transaction_inclusion(
-            transaction_hash,
+            transaction,
             transaction_position,
             transaction_block_blockhash.to_byte_array().into(),
             merkle_proof,

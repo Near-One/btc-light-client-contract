@@ -32,11 +32,11 @@ pub fn merkle_proof_calculator(tx_hashes: Vec<H256>, transaction_position: usize
 
 #[must_use]
 pub fn compute_root_from_merkle_proof(
-    transaction_hash: H256,
+    transaction: &[u8],
     transaction_position: usize,
     merkle_proof: &Vec<H256>,
 ) -> H256 {
-    let mut current_hash = transaction_hash;
+    let mut current_hash =  btc_types::hash::double_sha256(transaction);
     let mut current_position = transaction_position;
 
     for proof_hash in merkle_proof {

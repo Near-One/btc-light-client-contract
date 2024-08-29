@@ -243,13 +243,13 @@ impl NearClient {
     #[allow(dead_code)]
     pub async fn verify_transaction_inclusion(
         &self,
-        transaction_hash: H256,
+        transaction: Vec<u8>,
         transaction_position: usize,
         transaction_block_blockhash: H256,
         merkle_proof: Vec<H256>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let args = btc_types::contract_args::ProofArgs {
-            tx_id: transaction_hash,
+            tx: transaction,
             tx_block_blockhash: transaction_block_blockhash,
             tx_index: transaction_position.try_into()?,
             merkle_proof,
