@@ -1,6 +1,6 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{ExtendedHeader, Header};
+use btc_types::header::{DIFFICULTY_ADJUSTMENT_BLOCKS, ExtendedHeader, Header};
 use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
@@ -267,6 +267,7 @@ impl BtcLightClient {
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
+            last_target_update: 0,
         };
 
         self.store_block_header(header);
@@ -291,6 +292,8 @@ impl BtcLightClient {
             .get(&block_header.prev_block_hash)
             .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"));
 
+        let last_target_update = self.last_target_update(&block_header, prev_block_header);
+
         let current_block_hash = block_header.block_hash();
         require!(
             self.skip_pow_verification
@@ -308,6 +311,7 @@ impl BtcLightClient {
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
+            last_target_update,
         };
 
         // Main chain submission
@@ -342,6 +346,22 @@ impl BtcLightClient {
                 self.reorg_chain(current_header, last_main_chain_block_height);
             }
         }
+    }
+
+    fn last_target_update(&self, block_header: &Header, prev_block_header: &ExtendedHeader) -> u64 {
+        if block_header.bits == prev_block_header.block_header.bits {
+            return prev_block_header.last_target_update + 1;
+        }
+
+        require!(prev_block_header.last_target_update >= DIFFICULTY_ADJUSTMENT_BLOCKS, "Error: Incorrect target. The target was recently adjusted.");
+
+        let prev_difficulty = prev_block_header.block_header.work();
+        let current_difficulty = block_header.work();
+
+        require!(prev_difficulty/current_difficulty < U256::from(5u128), "Error: The difficulty change exceeds 4 times.");
+        require!(current_difficulty/prev_difficulty < U256::from(5u128), "Error: The difficulty change exceeds 4 times.");
+
+        return 0;
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight

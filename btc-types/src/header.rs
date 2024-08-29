@@ -8,6 +8,8 @@ use crate::{
 pub type Target = U256;
 pub type Work = U256;
 
+pub const DIFFICULTY_ADJUSTMENT_BLOCKS: u64 = 2016;
+
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Header {
     /// Block version, now repurposed for soft fork signalling.
@@ -89,4 +91,6 @@ pub struct ExtendedHeader {
     pub chain_work: Work,
     /// Block height in the Bitcoin network
     pub block_height: u64,
+    /// How many blocks ago was the target updated
+    pub last_target_update: u64,
 }
