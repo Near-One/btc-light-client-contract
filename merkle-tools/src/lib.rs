@@ -40,7 +40,11 @@ pub fn compute_root_from_merkle_proof(
         return Err("Error: The provided data is not a valid transaction, but rather a concatenation of two node hashes.".to_string());
     }
 
-    Ok(compute_root_from_merkle_proof_inner(btc_types::hash::double_sha256(transaction), transaction_position, merkle_proof))
+    Ok(compute_root_from_merkle_proof_inner(
+        btc_types::hash::double_sha256(transaction),
+        transaction_position,
+        merkle_proof,
+    ))
 }
 
 fn compute_root_from_merkle_proof_inner(
