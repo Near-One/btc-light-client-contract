@@ -91,6 +91,12 @@ pub struct BtcLightClient {
 
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
     gc_threshold: u64,
+
+    // If more than max_gc_threshold will be stored in memory, the GC will be called automatically
+    max_gc_threshold: u64,
+
+    // The batch size for calling GC
+    gc_batch_size: u64,
 }
 
 #[near]
@@ -111,6 +117,8 @@ impl BtcLightClient {
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
+            max_gc_threshold: args.max_gc_threshold,
+            gc_batch_size: args.gc_batch_size,
         };
 
         // Make the contract itself super admin. This allows us to grant any role in the
@@ -252,16 +260,34 @@ impl BtcLightClient {
                 "Num of blocks to remove {selected_amount_to_remove}"
             ));
 
+            let end_removal_block_hash =
+                self.mainchain_height_to_header[&end_removal_height].clone();
+            let mut current_block = self
+                .headers_pool
+                .get(&self.mainchain_initial_blockhash)
+                .unwrap_or_else(|| env::panic_str("block not found"))
+                .clone();
+
+            while current_block.block_hash != end_removal_block_hash {
+                let next_block_hash = current_block.next_block_hash.clone();
+                self.headers_pool.remove(&current_block.block_hash);
+
+                current_block = self
+                    .headers_pool
+                    .get(&next_block_hash.unwrap_or_else(|| env::panic_str("next block not found")))
+                    .unwrap_or_else(|| env::panic_str("block not found"))
+                    .clone();
+            }
+
             for height in start_removal_height..end_removal_height {
                 let blockhash = &self.mainchain_height_to_header[&height];
 
-                self.headers_pool.remove(blockhash);
                 self.mainchain_header_to_height.remove(blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
 
             self.mainchain_initial_blockhash
-                .clone_from(&self.mainchain_height_to_header[&end_removal_height]);
+                .clone_from(&end_removal_block_hash);
         }
     }
 }
@@ -271,14 +297,15 @@ impl BtcLightClient {
         let current_block_hash = block_header.block_hash();
         let chain_work = block_header.work();
 
-        let header = ExtendedHeader {
+        let mut header = ExtendedHeader {
             block_header,
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
+            next_block_hash: None,
         };
 
-        self.store_block_header(header);
+        self.store_block_header(&mut header);
         self.mainchain_initial_blockhash
             .clone_from(&current_block_hash);
         self.mainchain_tip_blockhash = current_block_hash;
@@ -312,11 +339,12 @@ impl BtcLightClient {
             .overflowing_add(block_header.work());
         require!(!overflow, "Addition of U256 values overflowed");
 
-        let current_header = ExtendedHeader {
+        let mut current_header = ExtendedHeader {
             block_header,
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
+            next_block_hash: None,
         };
 
         // Main chain submission
@@ -331,7 +359,7 @@ impl BtcLightClient {
             );
 
             self.mainchain_tip_blockhash = current_header.block_hash.clone();
-            self.store_block_header(current_header);
+            self.store_block_header(&mut current_header);
         } else {
             log!("Block {}: saving to fork", current_header.block_hash);
             // Fork submission
@@ -343,13 +371,17 @@ impl BtcLightClient {
             let last_main_chain_block_height = main_chain_tip_header.block_height;
             let total_main_chain_chainwork = main_chain_tip_header.chain_work;
 
-            self.store_fork_header(current_header.clone());
+            self.store_fork_header(&mut current_header);
 
             // Current chainwork is higher than on a current mainchain, let's promote the fork
             if current_block_computed_chain_work > total_main_chain_chainwork {
                 log!("Chain reorg");
                 self.reorg_chain(current_header, last_main_chain_block_height);
             }
+        }
+
+        if self.get_mainchain_size() > self.max_gc_threshold {
+            self.run_mainchain_gc(self.gc_batch_size);
         }
     }
 
@@ -372,7 +404,6 @@ impl BtcLightClient {
                     .unwrap_or_else(|| env::panic_str("cannot get a block"));
                 self.mainchain_header_to_height
                     .remove(current_main_chain_blockhash);
-                self.headers_pool.remove(current_main_chain_blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
         }
@@ -417,7 +448,6 @@ impl BtcLightClient {
             if let Some(current_main_chain_blockhash) = main_chain_block {
                 self.mainchain_header_to_height
                     .remove(&current_main_chain_blockhash);
-                self.headers_pool.remove(&current_main_chain_blockhash);
             }
 
             // Switch iterator cursor to the previous block in fork
@@ -432,17 +462,57 @@ impl BtcLightClient {
     }
 
     /// Stores parsed block header and meta information
-    fn store_block_header(&mut self, header: ExtendedHeader) {
+    fn store_block_header(&mut self, header: &mut ExtendedHeader) {
         self.mainchain_height_to_header
-            .insert(header.block_height, header.block_hash.clone());
+            .insert(header.block_height.clone(), header.block_hash.clone());
         self.mainchain_header_to_height
-            .insert(header.block_hash.clone(), header.block_height);
-        self.headers_pool.insert(header.block_hash.clone(), header);
+            .insert(header.block_hash.clone(), header.block_height.clone());
+        self.insert_block_to_list(header);
+        self.headers_pool
+            .insert(header.block_hash.clone(), header.clone());
     }
 
     /// Stores and handles fork submissions
-    fn store_fork_header(&mut self, header: ExtendedHeader) {
-        self.headers_pool.insert(header.block_hash.clone(), header);
+    fn store_fork_header(&mut self, header: &mut ExtendedHeader) {
+        self.insert_block_to_list(header);
+        self.headers_pool
+            .insert(header.block_hash.clone(), header.clone());
+    }
+
+    fn insert_block_to_list(&mut self, header: &mut ExtendedHeader) {
+        if !self
+            .headers_pool
+            .contains_key(&header.block_header.prev_block_hash)
+        {
+            return;
+        }
+
+        let mut prev_block = self
+            .headers_pool
+            .get(&header.block_header.prev_block_hash.clone())
+            .unwrap_or_else(|| env::panic_str("the prev block not found"));
+        loop {
+            if let Some(next_block_hash) = prev_block.next_block_hash.clone() {
+                let next_block = self
+                    .headers_pool
+                    .get(&next_block_hash)
+                    .unwrap_or_else(|| env::panic_str("the next block not found"));
+                if next_block.block_height == header.block_height {
+                    break;
+                }
+                prev_block = next_block;
+            } else {
+                break;
+            }
+        }
+
+        let prev_block_hash = prev_block.block_hash.clone();
+        let prev_block = self
+            .headers_pool
+            .get_mut(&prev_block_hash)
+            .unwrap_or_else(|| env::panic_str("the prev block not found"));
+        header.next_block_hash = prev_block.next_block_hash.clone();
+        prev_block.next_block_hash = Some(header.block_hash.clone());
     }
 }
 

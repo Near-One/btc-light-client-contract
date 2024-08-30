@@ -89,4 +89,6 @@ pub struct ExtendedHeader {
     pub chain_work: Work,
     /// Block height in the Bitcoin network
     pub block_height: u64,
+    /// The list of the all blocks sorted by height
+    pub next_block_hash: Option<H256>,
 }
