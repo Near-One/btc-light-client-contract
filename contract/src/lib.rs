@@ -70,6 +70,7 @@ pub struct HeaderPool {
 }
 
 impl HeaderPool {
+    #[must_use]
     pub fn init() -> Self {
         Self {
             next_block: near_sdk::store::LookupMap::new(StorageKey::HeadersPoolNextBlock),
@@ -93,7 +94,7 @@ impl HeaderPool {
         self.size
     }
 
-    pub fn insert_header(&mut self, header: ExtendedHeader) {
+    pub fn insert_header(&mut self, header: &ExtendedHeader) {
         if self.size == 0 {
             self.init_block = header.block_hash.clone();
             self.init_height = header.block_height;
@@ -127,7 +128,7 @@ impl HeaderPool {
                 .unwrap_or_else(|| env::panic_str("block with incorrect height"));
             let prev_next_block_hash = self
                 .next_block
-                .get(&prev_block_hash)
+                .get(prev_block_hash)
                 .unwrap_or_else(|| env::panic_str("next block not found"))
                 .clone();
             self.next_block
@@ -572,15 +573,15 @@ impl BtcLightClient {
     /// Stores parsed block header and meta information
     fn store_block_header(&mut self, header: &mut ExtendedHeader) {
         self.mainchain_height_to_header
-            .insert(header.block_height.clone(), header.block_hash.clone());
+            .insert(header.block_height, header.block_hash.clone());
         self.mainchain_header_to_height
-            .insert(header.block_hash.clone(), header.block_height.clone());
-        self.headers_pool.insert_header(header.clone());
+            .insert(header.block_hash.clone(), header.block_height);
+        self.headers_pool.insert_header(header);
     }
 
     /// Stores and handles fork submissions
     fn store_fork_header(&mut self, header: &mut ExtendedHeader) {
-        self.headers_pool.insert_header(header.clone());
+        self.headers_pool.insert_header(header);
     }
 }
 
