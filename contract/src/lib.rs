@@ -128,7 +128,8 @@ impl HeaderPool {
             let prev_next_block_hash = self
                 .next_block
                 .get(&prev_block_hash)
-                .unwrap_or_else(|| env::panic_str("next block not found")).clone();
+                .unwrap_or_else(|| env::panic_str("next block not found"))
+                .clone();
             self.next_block
                 .insert(header.block_hash.clone(), prev_next_block_hash.clone());
             self.next_block
