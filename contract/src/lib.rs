@@ -292,7 +292,7 @@ impl BtcLightClient {
             .get(&block_header.prev_block_hash)
             .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"));
 
-        let last_target_update = self.last_target_update(&block_header, prev_block_header);
+        let last_target_update = Self::last_target_update(&block_header, prev_block_header);
 
         let current_block_hash = block_header.block_hash();
         require!(
@@ -348,7 +348,7 @@ impl BtcLightClient {
         }
     }
 
-    fn last_target_update(&self, block_header: &Header, prev_block_header: &ExtendedHeader) -> u64 {
+    fn last_target_update(block_header: &Header, prev_block_header: &ExtendedHeader) -> u64 {
         if block_header.bits == prev_block_header.block_header.bits {
             return prev_block_header.last_target_update + 1;
         }
@@ -373,7 +373,7 @@ impl BtcLightClient {
             "Error: The difficulty change exceeds 4 times."
         );
 
-        return 0;
+        0
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
@@ -587,7 +587,8 @@ mod tests {
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 2, 0, 2, 0, 2
                 ]),
-                block_height: 1
+                block_height: 1,
+                last_target_update: DIFFICULTY_ADJUSTMENT_BLOCKS + 1
             }
         );
     }
@@ -613,7 +614,8 @@ mod tests {
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 2, 0, 2, 0, 2
                 ]),
-                block_height: 1
+                block_height: 1,
+                last_target_update: DIFFICULTY_ADJUSTMENT_BLOCKS + 1
             }
         );
     }
@@ -641,7 +643,8 @@ mod tests {
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 2, 0, 2, 0, 2
                 ]),
-                block_height: 1
+                block_height: 1,
+                last_target_update: DIFFICULTY_ADJUSTMENT_BLOCKS + 1
             }
         );
     }
@@ -705,7 +708,8 @@ mod tests {
                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                     0, 3, 0, 3, 0, 3
                 ]),
-                block_height: 2
+                block_height: 2,
+                last_target_update: DIFFICULTY_ADJUSTMENT_BLOCKS + 2
             }
         );
     }
