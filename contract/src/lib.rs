@@ -53,6 +53,114 @@ enum StorageKey {
     MainchainHeightToHeader,
     MainchainHeaderToHeight,
     HeadersPool,
+    HeadersPoolNextBlock,
+    HeadersPoolHeightToHeader,
+}
+
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct HeaderPool {
+    next_block: near_sdk::store::LookupMap<H256, H256>,
+    height_to_header: near_sdk::store::LookupMap<u64, H256>,
+    headers_pool: near_sdk::store::LookupMap<H256, ExtendedHeader>,
+    init_block: H256,
+    last_block: H256,
+    init_height: u64,
+    last_height: u64,
+    size: u64,
+}
+
+impl HeaderPool {
+    pub fn init() -> Self {
+        Self {
+            next_block: near_sdk::store::LookupMap::new(StorageKey::HeadersPoolNextBlock),
+            height_to_header: near_sdk::store::LookupMap::new(
+                StorageKey::HeadersPoolHeightToHeader,
+            ),
+            headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
+            init_block: H256::default(),
+            last_block: H256::default(),
+            init_height: 0,
+            last_height: 0,
+            size: 0,
+        }
+    }
+
+    pub fn get(&self, hash: &H256) -> Option<&ExtendedHeader> {
+        self.headers_pool.get(hash)
+    }
+
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
+    pub fn insert_header(&mut self, header: ExtendedHeader) {
+        if self.size == 0 {
+            self.init_block = header.block_hash.clone();
+            self.init_height = header.block_height;
+            self.last_block = header.block_hash.clone();
+            self.last_height = header.block_height;
+            self.size = 1;
+            self.height_to_header
+                .insert(header.block_height, header.block_hash.clone());
+            self.next_block
+                .insert(header.block_hash.clone(), H256::default());
+            self.headers_pool
+                .insert(header.block_hash.clone(), header.clone());
+            return;
+        }
+
+        self.size += 1;
+
+        if header.block_height == self.last_height + 1 {
+            self.height_to_header
+                .insert(header.block_height, header.block_hash.clone());
+            self.next_block
+                .insert(self.last_block.clone(), header.block_hash.clone());
+            self.next_block
+                .insert(header.block_hash.clone(), H256::default());
+            self.last_block = header.block_hash.clone();
+            self.last_height = header.block_height;
+        } else {
+            let prev_block_hash = self
+                .height_to_header
+                .get(&header.block_height)
+                .unwrap_or_else(|| env::panic_str("block with incorrect height"));
+            let prev_next_block_hash = self
+                .next_block
+                .get(&prev_block_hash)
+                .unwrap_or_else(|| env::panic_str("next block not found")).clone();
+            self.next_block
+                .insert(header.block_hash.clone(), prev_next_block_hash.clone());
+            self.next_block
+                .insert(prev_block_hash.clone(), header.block_hash.clone());
+
+            if prev_next_block_hash == H256::default() {
+                self.last_block = header.block_hash.clone();
+            }
+        }
+
+        self.headers_pool
+            .insert(header.block_hash.clone(), header.clone());
+    }
+
+    pub fn gc(&mut self, batch_size: u64, max_removed_height: u64) {
+        let mut rm_count = 0u64;
+        while rm_count < batch_size && self.init_height < max_removed_height {
+            let next_init_block_hash = self.next_block[&self.init_block].clone();
+            let next_init_block = self.headers_pool[&next_init_block_hash].clone();
+            self.next_block.remove(&self.init_block);
+            self.headers_pool.remove(&self.init_block);
+
+            if next_init_block.block_height > self.init_height {
+                self.height_to_header.remove(&self.init_height);
+                self.init_height = next_init_block.block_height;
+            }
+            self.init_block = next_init_block_hash;
+            self.size -= 1;
+
+            rm_count += 1;
+        }
+    }
 }
 
 /// Contract implementing Bitcoin light client.
@@ -84,7 +192,7 @@ pub struct BtcLightClient {
     mainchain_initial_blockhash: H256,
 
     // Mapping of block hashes to block headers (ALL ever submitted, i.e., incl. forks)
-    headers_pool: near_sdk::store::LookupMap<H256, ExtendedHeader>,
+    headers_pool: HeaderPool,
 
     // If we should run all the block checks or not
     skip_pow_verification: bool,
@@ -112,7 +220,7 @@ impl BtcLightClient {
             mainchain_header_to_height: near_sdk::store::LookupMap::new(
                 StorageKey::MainchainHeaderToHeight,
             ),
-            headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
+            headers_pool: HeaderPool::init(),
             mainchain_initial_blockhash: H256::default(),
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
@@ -141,7 +249,10 @@ impl BtcLightClient {
     }
 
     pub fn get_last_block_header(&self) -> ExtendedHeader {
-        self.headers_pool[&self.mainchain_tip_blockhash].clone()
+        self.headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str("header not found"))
+            .clone()
     }
 
     pub fn get_block_hash_by_height(&self, height: u64) -> Option<&H256> {
@@ -154,8 +265,14 @@ impl BtcLightClient {
     }
 
     pub fn get_mainchain_size(&self) -> u64 {
-        let tail = &self.headers_pool[&self.mainchain_initial_blockhash];
-        let tip = &self.headers_pool[&self.mainchain_tip_blockhash];
+        let tail = self
+            .headers_pool
+            .get(&self.mainchain_initial_blockhash)
+            .unwrap_or_else(|| env::panic_str("tail block not found"));
+        let tip = self
+            .headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str("tip block not found"));
         tip.block_height - tail.block_height
     }
 
@@ -262,22 +379,6 @@ impl BtcLightClient {
 
             let end_removal_block_hash =
                 self.mainchain_height_to_header[&end_removal_height].clone();
-            let mut current_block = self
-                .headers_pool
-                .get(&self.mainchain_initial_blockhash)
-                .unwrap_or_else(|| env::panic_str("block not found"))
-                .clone();
-
-            while current_block.block_hash != end_removal_block_hash {
-                let next_block_hash = current_block.next_block_hash.clone();
-                self.headers_pool.remove(&current_block.block_hash);
-
-                current_block = self
-                    .headers_pool
-                    .get(&next_block_hash.unwrap_or_else(|| env::panic_str("next block not found")))
-                    .unwrap_or_else(|| env::panic_str("block not found"))
-                    .clone();
-            }
 
             for height in start_removal_height..end_removal_height {
                 let blockhash = &self.mainchain_height_to_header[&height];
@@ -289,6 +390,14 @@ impl BtcLightClient {
             self.mainchain_initial_blockhash
                 .clone_from(&end_removal_block_hash);
         }
+
+        let min_block_height = self
+            .headers_pool
+            .get(&self.mainchain_initial_blockhash)
+            .unwrap_or_else(|| env::panic_str("initial block should be recorded"))
+            .block_height;
+
+        self.headers_pool.gc(batch_size, min_block_height);
     }
 }
 
@@ -302,7 +411,6 @@ impl BtcLightClient {
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
-            next_block_hash: None,
         };
 
         self.store_block_header(&mut header);
@@ -344,7 +452,6 @@ impl BtcLightClient {
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
-            next_block_hash: None,
         };
 
         // Main chain submission
@@ -380,7 +487,7 @@ impl BtcLightClient {
             }
         }
 
-        if self.get_mainchain_size() > self.max_gc_threshold {
+        if self.headers_pool.size() > self.max_gc_threshold {
             self.run_mainchain_gc(self.gc_batch_size);
         }
     }
@@ -453,7 +560,7 @@ impl BtcLightClient {
             // Switch iterator cursor to the previous block in fork
             fork_header_cursor = self
                 .headers_pool
-                .get_mut(&prev_block_hash)
+                .get(&prev_block_hash)
                 .unwrap_or_else(|| env::panic_str("previous fork block should be there"));
         }
 
@@ -467,52 +574,12 @@ impl BtcLightClient {
             .insert(header.block_height.clone(), header.block_hash.clone());
         self.mainchain_header_to_height
             .insert(header.block_hash.clone(), header.block_height.clone());
-        self.insert_block_to_list(header);
-        self.headers_pool
-            .insert(header.block_hash.clone(), header.clone());
+        self.headers_pool.insert_header(header.clone());
     }
 
     /// Stores and handles fork submissions
     fn store_fork_header(&mut self, header: &mut ExtendedHeader) {
-        self.insert_block_to_list(header);
-        self.headers_pool
-            .insert(header.block_hash.clone(), header.clone());
-    }
-
-    fn insert_block_to_list(&mut self, header: &mut ExtendedHeader) {
-        if !self
-            .headers_pool
-            .contains_key(&header.block_header.prev_block_hash)
-        {
-            return;
-        }
-
-        let mut prev_block = self
-            .headers_pool
-            .get(&header.block_header.prev_block_hash.clone())
-            .unwrap_or_else(|| env::panic_str("the prev block not found"));
-        loop {
-            if let Some(next_block_hash) = prev_block.next_block_hash.clone() {
-                let next_block = self
-                    .headers_pool
-                    .get(&next_block_hash)
-                    .unwrap_or_else(|| env::panic_str("the next block not found"));
-                if next_block.block_height == header.block_height {
-                    break;
-                }
-                prev_block = next_block;
-            } else {
-                break;
-            }
-        }
-
-        let prev_block_hash = prev_block.block_hash.clone();
-        let prev_block = self
-            .headers_pool
-            .get_mut(&prev_block_hash)
-            .unwrap_or_else(|| env::panic_str("the prev block not found"));
-        header.next_block_hash = prev_block.next_block_hash.clone();
-        prev_block.next_block_hash = Some(header.block_hash.clone());
+        self.headers_pool.insert_header(header.clone());
     }
 }
 
@@ -592,6 +659,8 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
+            max_gc_threshold: 6,
+            gc_batch_size: 5,
         }
     }
 
@@ -601,6 +670,8 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 3,
+            max_gc_threshold: 6,
+            gc_batch_size: 5,
         }
     }
 

@@ -15,6 +15,8 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
         genesis_block_height: 0,
         skip_pow_verification: true,
         gc_threshold: 5,
+        max_gc_threshold: 10,
+        gc_batch_size: 6,
     };
     // Call the init method on the contract
     let outcome = contract
@@ -55,6 +57,8 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
         genesis_block_height: 0,
         skip_pow_verification: true,
         gc_threshold: 5,
+        max_gc_threshold: 10,
+        gc_batch_size: 6,
     };
     // Call the init method on the contract
     let outcome = contract
