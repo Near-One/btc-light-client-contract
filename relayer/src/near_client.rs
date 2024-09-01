@@ -326,7 +326,7 @@ impl NearClient {
                 method_name: method_name.to_string(),
                 args,
                 gas: 100_000_000_000_000, // 100 TeraGas
-                deposit: 0,
+                deposit: 5_u128.pow(23),  // 0.5 Near
             }))],
         };
 
