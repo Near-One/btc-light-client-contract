@@ -7,6 +7,7 @@ use near_plugins::{
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
+use near_sdk::store::LookupMap;
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
 // use bitcoin::block::Header;
@@ -74,8 +75,8 @@ enum StorageKey {
 ))]
 pub struct BtcLightClient {
     // A pair of lookup maps that allows to find header by height and height by header
-    mainchain_height_to_header: near_sdk::store::LookupMap<u64, H256>,
-    mainchain_header_to_height: near_sdk::store::LookupMap<H256, u64>,
+    mainchain_height_to_header: LookupMap<u64, H256>,
+    mainchain_header_to_height: LookupMap<H256, u64>,
 
     // Block with the highest chainWork, i.e., blockchain tip, you can find latest height inside of it
     mainchain_tip_blockhash: H256,
@@ -84,7 +85,7 @@ pub struct BtcLightClient {
     mainchain_initial_blockhash: H256,
 
     // Mapping of block hashes to block headers (ALL ever submitted, i.e., incl. forks)
-    headers_pool: near_sdk::store::LookupMap<H256, ExtendedHeader>,
+    headers_pool: LookupMap<H256, ExtendedHeader>,
 
     // If we should run all the block checks or not
     skip_pow_verification: bool,
@@ -141,14 +142,21 @@ impl BtcLightClient {
 
         self.run_mainchain_gc(num_of_headers);
 
+        env::log_str(&format!("initial_storage: {initial_storage}"));
+        env::log_str(&format!("storage_usage: {}", env::storage_usage()));
+        self.flash_maps();
         let diff_storage_usage = env::storage_usage().saturating_sub(initial_storage);
+        env::log_str(&format!("diff_storage_usage: {diff_storage_usage}"));
         let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
+        env::log_str(&format!("required_deposit: {required_deposit}"));
+
         require!(
             amount >= required_deposit,
             format!("Required deposit {}", required_deposit)
         );
 
         let refund = amount.saturating_sub(required_deposit);
+        env::log_str(&format!("refund: {refund}"));
         if refund > NearToken::from_near(0) {
             Promise::new(env::predecessor_account_id())
                 .transfer(refund)
@@ -469,6 +477,12 @@ impl BtcLightClient {
     /// Stores and handles fork submissions
     fn store_fork_header(&mut self, header: ExtendedHeader) {
         self.headers_pool.insert(header.block_hash.clone(), header);
+    }
+
+    fn flash_maps(&mut self) {
+        self.mainchain_height_to_header.flush();
+        self.mainchain_header_to_height.flush();
+        self.headers_pool.flush();
     }
 }
 
