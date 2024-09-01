@@ -569,8 +569,10 @@ mod tests {
     }
 
     fn get_default_init_args() -> InitArgs {
+        let genesis_block = genesis_block_header();
         InitArgs {
-            genesis_block: genesis_block_header(),
+            genesis_block_hash: genesis_block.block_hash(),
+            genesis_block,
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
@@ -578,8 +580,10 @@ mod tests {
     }
 
     fn get_default_init_args_with_skip_pow() -> InitArgs {
+        let genesis_block = genesis_block_header();
         InitArgs {
-            genesis_block: genesis_block_header(),
+            genesis_block_hash: genesis_block.block_hash(),
+            genesis_block,
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 3,
