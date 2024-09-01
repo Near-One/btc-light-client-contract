@@ -10,8 +10,7 @@ use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
-// use bitcoin::block::Header;
-// mod types;
+pub(crate) const ERR_KEY_NOT_EXIST: &str = "ERR_KEY_NOT_EXIST";
 
 /// Define roles for access control of `Pausable` features. Accounts which are
 /// granted a role are authorized to execute the corresponding action.
@@ -162,8 +161,7 @@ impl BtcLightClient {
     pub fn get_last_block_header(&self) -> ExtendedHeader {
         self.headers_pool
             .get(&self.mainchain_tip_blockhash)
-            .unwrap_or_else(|| env::panic_str("NotExist"))
-            .clone()
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
     }
 
     pub fn get_block_hash_by_height(&self, height: u64) -> Option<H256> {
@@ -179,11 +177,11 @@ impl BtcLightClient {
         let tail = self
             .headers_pool
             .get(&self.mainchain_initial_blockhash)
-            .unwrap_or_else(|| env::panic_str("NotExist"));
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let tip = self
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
-            .unwrap_or_else(|| env::panic_str("NotExist"));
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         tip.block_height - tail.block_height
     }
 
@@ -233,7 +231,7 @@ impl BtcLightClient {
         let heaviest_block_header = self
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
-            .unwrap_or_else(|| env::panic_str("heaviest block must be recorded"));
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let target_block_height = self
             .mainchain_header_to_height
             .get(&args.tx_block_blockhash)
@@ -243,7 +241,7 @@ impl BtcLightClient {
         require!(
             (heaviest_block_header.block_height).saturating_sub(target_block_height)
                 >= args.confirmations,
-            "Not enough blocks confirmed, cannot process verification"
+            "Not enough blocks confirmed"
         );
 
         let header = self
@@ -253,7 +251,7 @@ impl BtcLightClient {
 
         // compute merkle tree root and check if it matches block's original merkle tree root
         merkle_tools::compute_root_from_merkle_proof(
-            args.tx_id.clone(),
+            args.tx_id,
             usize::try_from(args.tx_index).unwrap(),
             &args.merkle_proof,
         ) == header.block_header.merkle_root
@@ -268,12 +266,12 @@ impl BtcLightClient {
         let initial_blockheader = self
             .headers_pool
             .get(&self.mainchain_initial_blockhash)
-            .unwrap_or_else(|| env::panic_str("initial blockheader must be in a header pool"));
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
 
         let tip_blockheader = self
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
-            .unwrap_or_else(|| env::panic_str("tip blockheader must be in a header pool"));
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
 
         let amount_of_headers_we_store =
             tip_blockheader.block_height - initial_blockheader.block_height;
@@ -292,7 +290,7 @@ impl BtcLightClient {
                 let blockhash = &self
                     .mainchain_height_to_header
                     .get(&height)
-                    .unwrap_or_else(|| env::panic_str("NotExist"));
+                    .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
 
                 self.headers_pool.remove(blockhash);
                 self.mainchain_header_to_height.remove(blockhash);
@@ -302,7 +300,7 @@ impl BtcLightClient {
             self.mainchain_initial_blockhash = self
                 .mainchain_height_to_header
                 .get(&end_removal_height)
-                .unwrap_or_else(|| env::panic_str("NotExist"));
+                .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         }
     }
 }
