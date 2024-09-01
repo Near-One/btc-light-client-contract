@@ -6,8 +6,8 @@ use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
+use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::store::LookupMap;
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
 // use bitcoin::block::Header;
@@ -101,13 +101,9 @@ impl BtcLightClient {
     #[must_use]
     pub fn init(args: InitArgs) -> Self {
         let mut contract = Self {
-            mainchain_height_to_header: near_sdk::store::LookupMap::new(
-                StorageKey::MainchainHeightToHeader,
-            ),
-            mainchain_header_to_height: near_sdk::store::LookupMap::new(
-                StorageKey::MainchainHeaderToHeight,
-            ),
-            headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
+            mainchain_height_to_header: LookupMap::new(StorageKey::MainchainHeightToHeader),
+            mainchain_header_to_height: LookupMap::new(StorageKey::MainchainHeaderToHeight),
+            headers_pool: LookupMap::new(StorageKey::HeadersPool),
             mainchain_initial_blockhash: H256::default(),
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
@@ -144,7 +140,6 @@ impl BtcLightClient {
 
         env::log_str(&format!("initial_storage: {initial_storage}"));
         env::log_str(&format!("storage_usage: {}", env::storage_usage()));
-        self.flash_maps();
         let diff_storage_usage = env::storage_usage().saturating_sub(initial_storage);
         env::log_str(&format!("diff_storage_usage: {diff_storage_usage}"));
         let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
@@ -167,28 +162,37 @@ impl BtcLightClient {
     }
 
     pub fn get_last_block_header(&self) -> ExtendedHeader {
-        self.headers_pool[&self.mainchain_tip_blockhash].clone()
+        self.headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str("NotExist"))
+            .clone()
     }
 
-    pub fn get_block_hash_by_height(&self, height: u64) -> Option<&H256> {
+    pub fn get_block_hash_by_height(&self, height: u64) -> Option<H256> {
         self.mainchain_height_to_header.get(&height)
     }
 
     #[allow(clippy::needless_pass_by_value)]
     pub fn get_height_by_block_hash(&self, blockhash: H256) -> Option<u64> {
-        self.mainchain_header_to_height.get(&blockhash).copied()
+        self.mainchain_header_to_height.get(&blockhash)
     }
 
     pub fn get_mainchain_size(&self) -> u64 {
-        let tail = &self.headers_pool[&self.mainchain_initial_blockhash];
-        let tip = &self.headers_pool[&self.mainchain_tip_blockhash];
+        let tail = self
+            .headers_pool
+            .get(&self.mainchain_initial_blockhash)
+            .unwrap_or_else(|| env::panic_str("NotExist"));
+        let tip = self
+            .headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str("NotExist"));
         tip.block_height - tail.block_height
     }
 
     /// This method return n last blocks from the mainchain
     /// # Panics
     /// Cannot find a tip of main chain in a pool
-    pub fn get_last_n_blocks_hashes(&self, skip: u64, limit: u64) -> Vec<&H256> {
+    pub fn get_last_n_blocks_hashes(&self, skip: u64, limit: u64) -> Vec<H256> {
         let mut block_hashes = vec![];
         let tip_hash = &self.mainchain_tip_blockhash;
         let tip = self
@@ -232,7 +236,7 @@ impl BtcLightClient {
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
             .unwrap_or_else(|| env::panic_str("heaviest block must be recorded"));
-        let target_block_height = *self
+        let target_block_height = self
             .mainchain_header_to_height
             .get(&args.tx_block_blockhash)
             .unwrap_or_else(|| env::panic_str("block does not belong to the current main chain"));
@@ -287,15 +291,20 @@ impl BtcLightClient {
             ));
 
             for height in start_removal_height..end_removal_height {
-                let blockhash = &self.mainchain_height_to_header[&height];
+                let blockhash = &self
+                    .mainchain_height_to_header
+                    .get(&height)
+                    .unwrap_or_else(|| env::panic_str("NotExist"));
 
                 self.headers_pool.remove(blockhash);
                 self.mainchain_header_to_height.remove(blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
 
-            self.mainchain_initial_blockhash
-                .clone_from(&self.mainchain_height_to_header[&end_removal_height]);
+            self.mainchain_initial_blockhash = self
+                .mainchain_height_to_header
+                .get(&end_removal_height)
+                .unwrap_or_else(|| env::panic_str("NotExist"));
         }
     }
 }
@@ -312,7 +321,7 @@ impl BtcLightClient {
             chain_work,
         };
 
-        self.store_block_header(header);
+        self.store_block_header(&header);
         self.mainchain_initial_blockhash
             .clone_from(&current_block_hash);
         self.mainchain_tip_blockhash = current_block_hash;
@@ -365,7 +374,7 @@ impl BtcLightClient {
             );
 
             self.mainchain_tip_blockhash = current_header.block_hash.clone();
-            self.store_block_header(current_header);
+            self.store_block_header(&current_header);
         } else {
             log!("Block {}: saving to fork", current_header.block_hash);
             // Fork submission
@@ -377,7 +386,7 @@ impl BtcLightClient {
             let last_main_chain_block_height = main_chain_tip_header.block_height;
             let total_main_chain_chainwork = main_chain_tip_header.chain_work;
 
-            self.store_fork_header(current_header.clone());
+            self.store_fork_header(&current_header);
 
             // Current chainwork is higher than on a current mainchain, let's promote the fork
             if current_block_computed_chain_work > total_main_chain_chainwork {
@@ -405,8 +414,8 @@ impl BtcLightClient {
                     .get(&height)
                     .unwrap_or_else(|| env::panic_str("cannot get a block"));
                 self.mainchain_header_to_height
-                    .remove(current_main_chain_blockhash);
-                self.headers_pool.remove(current_main_chain_blockhash);
+                    .remove(&current_main_chain_blockhash);
+                self.headers_pool.remove(&current_main_chain_blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
         }
@@ -428,7 +437,8 @@ impl BtcLightClient {
         //     \
         //      [f1] - [f2] - [f3] - [f4] <- fork tip
 
-        let mut fork_header_cursor = &fork_tip_header;
+        let fork_tip_hash = fork_tip_header.block_hash.clone();
+        let mut fork_header_cursor = fork_tip_header;
 
         while !self
             .mainchain_header_to_height
@@ -442,9 +452,9 @@ impl BtcLightClient {
             // this height let's save its hashcode
             let main_chain_block = self
                 .mainchain_height_to_header
-                .insert(current_height, current_block_hash.clone());
+                .insert(&current_height, &current_block_hash);
             self.mainchain_header_to_height
-                .insert(current_block_hash, current_height);
+                .insert(&current_block_hash, &current_height);
 
             // If we found a mainchain block at the current height than remove this block from the
             // header pool and from the header -> height map
@@ -457,32 +467,26 @@ impl BtcLightClient {
             // Switch iterator cursor to the previous block in fork
             fork_header_cursor = self
                 .headers_pool
-                .get_mut(&prev_block_hash)
+                .get(&prev_block_hash)
                 .unwrap_or_else(|| env::panic_str("previous fork block should be there"));
         }
 
         // Updating tip of the new main chain
-        self.mainchain_tip_blockhash = fork_tip_header.block_hash;
+        self.mainchain_tip_blockhash = fork_tip_hash;
     }
 
     /// Stores parsed block header and meta information
-    fn store_block_header(&mut self, header: ExtendedHeader) {
+    fn store_block_header(&mut self, header: &ExtendedHeader) {
         self.mainchain_height_to_header
-            .insert(header.block_height, header.block_hash.clone());
+            .insert(&header.block_height, &header.block_hash);
         self.mainchain_header_to_height
-            .insert(header.block_hash.clone(), header.block_height);
-        self.headers_pool.insert(header.block_hash.clone(), header);
+            .insert(&header.block_hash, &header.block_height);
+        self.headers_pool.insert(&header.block_hash, header);
     }
 
     /// Stores and handles fork submissions
-    fn store_fork_header(&mut self, header: ExtendedHeader) {
-        self.headers_pool.insert(header.block_hash.clone(), header);
-    }
-
-    fn flash_maps(&mut self) {
-        self.mainchain_height_to_header.flush();
-        self.mainchain_header_to_height.flush();
-        self.headers_pool.flush();
+    fn store_fork_header(&mut self, header: &ExtendedHeader) {
+        self.headers_pool.insert(&header.block_hash, header);
     }
 }
 
@@ -672,11 +676,11 @@ mod tests {
 
         assert_eq!(
             contract.get_block_hash_by_height(0).unwrap(),
-            &genesis_block_header().block_hash(),
+            genesis_block_header().block_hash(),
         );
         assert_eq!(
             contract.get_block_hash_by_height(1).unwrap(),
-            &block_header_example().block_hash()
+            block_header_example().block_hash()
         );
     }
 
