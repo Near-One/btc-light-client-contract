@@ -119,7 +119,7 @@ impl BtcLightClient {
 
         contract.init_genesis(
             args.genesis_block,
-            args.genesis_block_hash,
+            &args.genesis_block_hash,
             args.genesis_block_height,
         );
 
@@ -314,12 +314,12 @@ impl BtcLightClient {
 }
 
 impl BtcLightClient {
-    fn init_genesis(&mut self, block_header: Header, block_hash: H256, block_height: u64) {
+    fn init_genesis(&mut self, block_header: Header, block_hash: &H256, block_height: u64) {
         env::log_str(&format!(
             "Init with block hash {block_hash} at height {block_height}"
         ));
         let current_block_hash = block_header.block_hash();
-        require!(current_block_hash == block_hash, "Invalid block hash");
+        require!(&current_block_hash == block_hash, "Invalid block hash");
         let chain_work = block_header.work();
 
         let header = ExtendedHeader {
