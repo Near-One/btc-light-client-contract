@@ -141,13 +141,8 @@ impl BtcLightClient {
         }
 
         self.run_mainchain_gc(num_of_headers);
-
-        env::log_str(&format!("initial_storage: {initial_storage}"));
-        env::log_str(&format!("storage_usage: {}", env::storage_usage()));
         let diff_storage_usage = env::storage_usage().saturating_sub(initial_storage);
-        env::log_str(&format!("diff_storage_usage: {diff_storage_usage}"));
         let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
-        env::log_str(&format!("required_deposit: {required_deposit}"));
 
         require!(
             amount >= required_deposit,
@@ -155,7 +150,6 @@ impl BtcLightClient {
         );
 
         let refund = amount.saturating_sub(required_deposit);
-        env::log_str(&format!("refund: {refund}"));
         if refund > NearToken::from_near(0) {
             Promise::new(env::predecessor_account_id())
                 .transfer(refund)
