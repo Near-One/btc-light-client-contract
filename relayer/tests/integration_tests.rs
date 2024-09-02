@@ -120,6 +120,7 @@ async fn verify_transaction_flow(
             transaction_position,
             transaction_block_blockhash.to_byte_array().into(),
             merkle_proof,
+            0,
         )
         .await;
 
