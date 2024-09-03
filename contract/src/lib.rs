@@ -373,8 +373,8 @@ impl BtcLightClient {
                 current_header.block_header.prev_block_hash
             );
 
-            self.mainchain_tip_blockhash = current_header.block_hash.clone();
             self.store_block_header(&current_header);
+            self.mainchain_tip_blockhash = current_header.block_hash;
         } else {
             log!("Block {}: saving to fork", current_header.block_hash);
             // Fork submission
@@ -444,8 +444,8 @@ impl BtcLightClient {
             .mainchain_header_to_height
             .contains_key(&fork_header_cursor.block_hash)
         {
-            let prev_block_hash = fork_header_cursor.block_header.prev_block_hash.clone();
-            let current_block_hash = fork_header_cursor.block_hash.clone();
+            let prev_block_hash = fork_header_cursor.block_header.prev_block_hash;
+            let current_block_hash = fork_header_cursor.block_hash;
             let current_height = fork_header_cursor.block_height;
 
             // Inserting the fork block into the main chain, if some mainchain block is occupying
