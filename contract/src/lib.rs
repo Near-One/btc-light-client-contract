@@ -11,7 +11,6 @@ use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
-use std::cmp::min;
 
 pub(crate) const ERR_KEY_NOT_EXIST: &str = "ERR_KEY_NOT_EXIST";
 
@@ -429,22 +428,21 @@ impl BtcLightClient {
                 .headers_pool
                 .get(&interval_tail_header_hash)
                 .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
-            let actual_time_taken =
-                prev_block_header.block_header.time - interval_tail_extend_header.block_header.time;
+            let mut actual_time_taken = u64::from(
+                prev_block_header.block_header.time - interval_tail_extend_header.block_header.time);
+            if actual_time_taken < EXPECTED_TIME / MAX_ADJUSTMENT_FACTOR {
+                actual_time_taken = EXPECTED_TIME / MAX_ADJUSTMENT_FACTOR;
+            }
+            if actual_time_taken > EXPECTED_TIME * MAX_ADJUSTMENT_FACTOR {
+                actual_time_taken = EXPECTED_TIME * MAX_ADJUSTMENT_FACTOR;
+            }
 
             let last_target = prev_block_header.block_header.target();
 
             let (mut new_target, new_target_overflow) =
-                last_target.overflowing_mul(u64::from(actual_time_taken));
+                last_target.overflowing_mul(actual_time_taken);
             require!(!new_target_overflow, "new target overflow");
             new_target = new_target / U256::from(EXPECTED_TIME);
-
-            let (max_target, max_target_overflow) =
-                last_target.overflowing_mul(MAX_ADJUSTMENT_FACTOR);
-            require!(!max_target_overflow, "max target overflow");
-
-            new_target =
-                min(new_target, max_target).max(last_target / U256::from(MAX_ADJUSTMENT_FACTOR));
 
             let expected_bits = new_target.target_to_bits();
 
