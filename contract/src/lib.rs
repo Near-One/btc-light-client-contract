@@ -421,56 +421,49 @@ impl BtcLightClient {
             return;
         }
 
-        if prev_block_header.block_height + 1 >= BLOCKS_PER_ADJUSTMENT {
-            if let Some(init_header_hash) = self
-                .mainchain_height_to_header
-                .get(&(prev_block_header.block_height + 1 - BLOCKS_PER_ADJUSTMENT))
-            {
-                let init_extend_header = self
-                    .headers_pool
-                    .get(&init_header_hash)
-                    .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
-                let actual_time_taken =
-                    prev_block_header.block_header.time - init_extend_header.block_header.time;
+        if let Some(init_header_hash) = self
+            .mainchain_height_to_header
+            .get(&(prev_block_header.block_height + 1 - BLOCKS_PER_ADJUSTMENT))
+        {
+            let init_extend_header = self
+                .headers_pool
+                .get(&init_header_hash)
+                .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+            let actual_time_taken =
+                prev_block_header.block_header.time - init_extend_header.block_header.time;
 
-                let last_target = prev_block_header.block_header.target();
+            let last_target = prev_block_header.block_header.target();
 
-                let (mut new_target, new_target_overflow) =
-                    last_target.overflowing_mul(u64::from(actual_time_taken));
-                require!(!new_target_overflow, "new target overflow");
-                new_target = new_target / U256::from(EXPECTED_TIME);
+            let (mut new_target, new_target_overflow) =
+                last_target.overflowing_mul(u64::from(actual_time_taken));
+            require!(!new_target_overflow, "new target overflow");
+            new_target = new_target / U256::from(EXPECTED_TIME);
 
-                let (max_target, max_target_overflow) =
-                    last_target.overflowing_mul(MAX_ADJUSTMENT_FACTOR);
-                require!(!max_target_overflow, "max target overflow");
+            let (max_target, max_target_overflow) =
+                last_target.overflowing_mul(MAX_ADJUSTMENT_FACTOR);
+            require!(!max_target_overflow, "max target overflow");
 
-                new_target = min(new_target, max_target)
-                    .max(last_target / U256::from(MAX_ADJUSTMENT_FACTOR));
+            new_target =
+                min(new_target, max_target).max(last_target / U256::from(MAX_ADJUSTMENT_FACTOR));
 
-                let expected_bits = new_target.target_to_bits();
+            let expected_bits = new_target.target_to_bits();
 
-                require!(
-                    expected_bits == block_header.bits,
-                    format!(
-                        "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
-                        expected_bits, block_header.bits
-                    )
-                );
-                return;
-            }
+            require!(
+                expected_bits == block_header.bits,
+                format!(
+                    "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
+                    expected_bits, block_header.bits
+                )
+            );
+        } else {
+            let prev_difficulty = prev_block_header.block_header.work();
+            let current_difficulty = block_header.work();
+
+            require!(
+                prev_difficulty / current_difficulty <= U256::from(MAX_ADJUSTMENT_FACTOR),
+                "Error: The difficulty change exceeds 4 times."
+            );
         }
-
-        let prev_difficulty = prev_block_header.block_header.work();
-        let current_difficulty = block_header.work();
-
-        require!(
-            prev_difficulty / current_difficulty <= U256::from(MAX_ADJUSTMENT_FACTOR),
-            "Error: The difficulty change exceeds 4 times."
-        );
-        require!(
-            current_difficulty / prev_difficulty <= U256::from(MAX_ADJUSTMENT_FACTOR),
-            "Error: The difficulty change exceeds 4 times."
-        );
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
