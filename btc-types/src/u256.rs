@@ -82,17 +82,23 @@ impl U256 {
     }
 
     pub fn target_to_bits(&self) -> u32 {
-        let mut exponent: u32 = 0;
-        let mut target_copy = self.clone();
+        let mut n_size = (self.bits() + 7) / 8;
+        let mut n_compact: u32;
 
-        while target_copy > U256::from(0xFFFFFF as u128) {
-            target_copy = target_copy >> 8;
-            exponent += 1;
+        if n_size <= 3 {
+            n_compact = u32::try_from(self.1 << 8 * (3 - n_size)).unwrap();
+        } else {
+            let target = *self >> 8 * (n_size - 3);
+            n_compact = u32::try_from(target.1 & 0x00ff_ffff).unwrap();
         }
-        let coefficient = (target_copy.1 & 0xFFFFFF) as u32;
-        let bits = coefficient | ((exponent + 3) << 24);
 
-        bits
+        if n_compact & 0x00800000 != 0 {
+            n_compact >>= 8;
+            n_size += 1;
+        }
+
+        n_compact |= n_size << 24;
+        return n_compact;
     }
 
     fn is_zero(&self) -> bool {

@@ -410,7 +410,7 @@ impl BtcLightClient {
     }
 
     fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
-        if prev_block_header.block_height % BLOCKS_PER_ADJUSTMENT != 0 {
+        if (prev_block_header.block_height + 1) % BLOCKS_PER_ADJUSTMENT != 0 {
             require!(
                 block_header.bits == prev_block_header.block_header.bits,
                 format!(
@@ -432,6 +432,7 @@ impl BtcLightClient {
                     .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
                 let actual_time_taken =
                     prev_block_header.block_header.time - init_extend_header.block_header.time;
+
                 let last_target = prev_block_header.block_header.target();
 
                 let (mut new_target, new_target_overflow) =
