@@ -1,6 +1,8 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{ExtendedHeader, Header, BLOCKS_PER_ADJUSTMENT, EXPECTED_TIME, MAX_ADJUSTMENT_FACTOR, Target};
+use btc_types::header::{
+    ExtendedHeader, Header, BLOCKS_PER_ADJUSTMENT, EXPECTED_TIME, MAX_ADJUSTMENT_FACTOR,
+};
 use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
@@ -347,64 +349,58 @@ impl BtcLightClient {
         }
     }
 
-    fn targets_to_bits(target: Target) -> u32 {
-        let mut exponent: u32 = 0;
-        let mut target_copy = target;
-
-        while target_copy > U256::from(0xFFFFFF as u128) {
-            target_copy = target_copy >> 8;
-            exponent += 1;
-        }
-        let coefficient = (target_copy.1 & 0xFFFFFF) as u32;
-        let bits = coefficient | ((exponent + 3) << 24);
-
-        bits
-    }
-
     fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
-        if block_header.bits != prev_block_header.block_header.bits {
+        if prev_block_header.block_height % BLOCKS_PER_ADJUSTMENT != 0 {
             require!(
-                prev_block_header.block_height % BLOCKS_PER_ADJUSTMENT != 0,
+                block_header.bits == prev_block_header.block_header.bits,
                 format!(
-                    "Error: Incorrect target. The target was adjusted {} blocks ago.",
-                    prev_block_header.block_height % BLOCKS_PER_ADJUSTMENT
+                    "Error: Incorrect bits. Expected bits: {}; Actual bits: {}.",
+                    prev_block_header.block_header.bits, block_header.bits
                 )
             );
+            return;
+        }
 
-            if let Some(init_header) = self
-                .mainchain_height_to_header
-                .get(&(prev_block_header.block_height.clone() - BLOCKS_PER_ADJUSTMENT))
-            {
-                let init_extend_header = self.headers_pool.get(init_header).unwrap();
-                let actual_time_taken = prev_block_header.block_height.time.clone() - init_extend_header.block_header.time;
-                let last_target = prev_block_header.block_header.target();
+        if let Some(init_header_hash) = self
+            .mainchain_height_to_header
+            .get(&(prev_block_header.block_height - BLOCKS_PER_ADJUSTMENT + 1))
+        {
+            let init_extend_header = self.headers_pool.get(init_header_hash).unwrap();
+            let actual_time_taken =
+                prev_block_header.block_header.time.clone() - init_extend_header.block_header.time;
+            let last_target = prev_block_header.block_header.target();
 
-                let (mut new_target, _new_target_overflow) = last_target.overflowing_mul(actual_time_taken as u64);
-                new_target = new_target / U256::from(EXPECTED_TIME);
+            let (mut new_target, _new_target_overflow) =
+                last_target.overflowing_mul(actual_time_taken as u64);
+            new_target = new_target / U256::from(EXPECTED_TIME);
 
-                let (max_target, _max_target_overflow) = last_target.overflowing_mul(MAX_ADJUSTMENT_FACTOR);
-                new_target = min(new_target, max_target)
-                    .max(last_target / U256::from(MAX_ADJUSTMENT_FACTOR));
+            let (max_target, _max_target_overflow) =
+                last_target.overflowing_mul(MAX_ADJUSTMENT_FACTOR);
 
-                let expected_bits = Self::targets_to_bits(new_target);
+            new_target =
+                min(new_target, max_target).max(last_target / U256::from(MAX_ADJUSTMENT_FACTOR));
 
-                require!(
-                    expected_bits == block_header.bits,
-                    format!("Error: Incorrect target. Expected target: {:?}, Actual target: {:?}, Old Target: {:?}", expected_bits, block_header.bits, prev_block_header.block_header.bits)
+            let expected_bits = new_target.target_to_bits();
+
+            require!(
+                expected_bits == block_header.bits,
+                format!(
+                    "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
+                    expected_bits, block_header.bits
                 )
-            } else {
-                let prev_difficulty = prev_block_header.block_header.work();
-                let current_difficulty = block_header.work();
+            )
+        } else {
+            let prev_difficulty = prev_block_header.block_header.work();
+            let current_difficulty = block_header.work();
 
-                require!(
-                    prev_difficulty / current_difficulty <= U256::from(MAX_ADJUSTMENT_FACTOR),
-                    "Error: The difficulty change exceeds 4 times."
-                );
-                require!(
-                    current_difficulty / prev_difficulty <= U256::from(MAX_ADJUSTMENT_FACTOR),
-                    "Error: The difficulty change exceeds 4 times."
-                );
-            }
+            require!(
+                prev_difficulty / current_difficulty <= U256::from(MAX_ADJUSTMENT_FACTOR),
+                "Error: The difficulty change exceeds 4 times."
+            );
+            require!(
+                current_difficulty / prev_difficulty <= U256::from(MAX_ADJUSTMENT_FACTOR),
+                "Error: The difficulty change exceeds 4 times."
+            );
         }
     }
 

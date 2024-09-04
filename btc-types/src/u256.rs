@@ -17,7 +17,7 @@ use std::ops::{Div, Not, Rem, Shl, Shr};
     Hash,
     Default,
 )]
-pub struct U256(u128, pub u128);
+pub struct U256(u128, u128);
 
 impl U256 {
     pub const MAX: U256 = U256(
@@ -79,6 +79,20 @@ impl U256 {
 
         let ret = !*self / self.wrapping_inc();
         ret.wrapping_inc()
+    }
+
+    pub fn target_to_bits(&self) -> u32 {
+        let mut exponent: u32 = 0;
+        let mut target_copy = self.clone();
+
+        while target_copy > U256::from(0xFFFFFF as u128) {
+            target_copy = target_copy >> 8;
+            exponent += 1;
+        }
+        let coefficient = (target_copy.1 & 0xFFFFFF) as u32;
+        let bits = coefficient | ((exponent + 3) << 24);
+
+        bits
     }
 
     fn is_zero(&self) -> bool {
