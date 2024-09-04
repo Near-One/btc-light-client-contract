@@ -8,12 +8,12 @@ use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
+use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
-use near_sdk::{env, log, near, require, PanicOnDefault};
+use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 use std::cmp::min;
 
-// use bitcoin::block::Header;
-// mod types;
+pub(crate) const ERR_KEY_NOT_EXIST: &str = "ERR_KEY_NOT_EXIST";
 
 /// Define roles for access control of `Pausable` features. Accounts which are
 /// granted a role are authorized to execute the corresponding action.
@@ -26,6 +26,8 @@ pub enum Role {
     UnrestrictedSubmitBlocks,
     /// Allows to use `verify_transaction` API on a paused contract
     UnrestrictedVerifyTransaction,
+    // Allows to use `run_mainchain_gc` API on a paused contract
+    UnrestrictedRunGC,
     /// May successfully call any of the protected `Upgradable` methods since below it is passed to
     /// every attribute of `access_control_roles`.
     ///
@@ -77,8 +79,8 @@ enum StorageKey {
 ))]
 pub struct BtcLightClient {
     // A pair of lookup maps that allows to find header by height and height by header
-    mainchain_height_to_header: near_sdk::store::LookupMap<u64, H256>,
-    mainchain_header_to_height: near_sdk::store::LookupMap<H256, u64>,
+    mainchain_height_to_header: LookupMap<u64, H256>,
+    mainchain_header_to_height: LookupMap<H256, u64>,
 
     // Block with the highest chainWork, i.e., blockchain tip, you can find latest height inside of it
     mainchain_tip_blockhash: H256,
@@ -87,7 +89,7 @@ pub struct BtcLightClient {
     mainchain_initial_blockhash: H256,
 
     // Mapping of block hashes to block headers (ALL ever submitted, i.e., incl. forks)
-    headers_pool: near_sdk::store::LookupMap<H256, ExtendedHeader>,
+    headers_pool: LookupMap<H256, ExtendedHeader>,
 
     // If we should run all the block checks or not
     skip_pow_verification: bool,
@@ -103,13 +105,9 @@ impl BtcLightClient {
     #[must_use]
     pub fn init(args: InitArgs) -> Self {
         let mut contract = Self {
-            mainchain_height_to_header: near_sdk::store::LookupMap::new(
-                StorageKey::MainchainHeightToHeader,
-            ),
-            mainchain_header_to_height: near_sdk::store::LookupMap::new(
-                StorageKey::MainchainHeaderToHeight,
-            ),
-            headers_pool: near_sdk::store::LookupMap::new(StorageKey::HeadersPool),
+            mainchain_height_to_header: LookupMap::new(StorageKey::MainchainHeightToHeader),
+            mainchain_header_to_height: LookupMap::new(StorageKey::MainchainHeaderToHeight),
+            headers_pool: LookupMap::new(StorageKey::HeadersPool),
             mainchain_initial_blockhash: H256::default(),
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
@@ -123,35 +121,79 @@ impl BtcLightClient {
             "Failed to initialize super admin",
         );
 
-        contract.init_genesis(args.genesis_block, args.genesis_block_height);
+        contract.init_genesis(
+            args.genesis_block,
+            &args.genesis_block_hash,
+            args.genesis_block_height,
+        );
 
         contract
     }
 
+    #[payable]
     #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
-    pub fn submit_blocks(&mut self, #[serializer(borsh)] headers: Vec<Header>) {
+    pub fn submit_blocks(
+        &mut self,
+        #[serializer(borsh)] headers: Vec<Header>,
+    ) -> PromiseOrValue<()> {
+        let amount = env::attached_deposit();
+        let initial_storage = env::storage_usage();
+        let num_of_headers = headers.len().try_into().unwrap();
+
         for header in headers {
             self.submit_block_header(header);
+        }
+
+        self.run_mainchain_gc(num_of_headers);
+        let diff_storage_usage = env::storage_usage().saturating_sub(initial_storage);
+        let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
+
+        require!(
+            amount >= required_deposit,
+            format!("Required deposit {}", required_deposit)
+        );
+
+        let refund = amount.saturating_sub(required_deposit);
+        if refund > NearToken::from_near(0) {
+            Promise::new(env::predecessor_account_id())
+                .transfer(refund)
+                .into()
+        } else {
+            PromiseOrValue::Value(())
         }
     }
 
     pub fn get_last_block_header(&self) -> ExtendedHeader {
-        self.headers_pool[&self.mainchain_tip_blockhash].clone()
+        self.headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
     }
 
-    pub fn get_block_hash_by_height(&self, height: u64) -> Option<&H256> {
+    pub fn get_block_hash_by_height(&self, height: u64) -> Option<H256> {
         self.mainchain_height_to_header.get(&height)
     }
 
     #[allow(clippy::needless_pass_by_value)]
     pub fn get_height_by_block_hash(&self, blockhash: H256) -> Option<u64> {
-        self.mainchain_header_to_height.get(&blockhash).copied()
+        self.mainchain_header_to_height.get(&blockhash)
+    }
+
+    pub fn get_mainchain_size(&self) -> u64 {
+        let tail = self
+            .headers_pool
+            .get(&self.mainchain_initial_blockhash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        let tip = self
+            .headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        tip.block_height - tail.block_height
     }
 
     /// This method return n last blocks from the mainchain
     /// # Panics
     /// Cannot find a tip of main chain in a pool
-    pub fn get_last_n_blocks_hashes(&self, skip: u64, limit: u64) -> Vec<&H256> {
+    pub fn get_last_n_blocks_hashes(&self, skip: u64, limit: u64) -> Vec<H256> {
         let mut block_hashes = vec![];
         let tip_hash = &self.mainchain_tip_blockhash;
         let tip = self
@@ -179,23 +221,28 @@ impl BtcLightClient {
 
     /// Verifies that a transaction is included in a block at a given block height
     ///
-    /// @param txid transaction identifier
-    /// @param txBlockHeight block height at which transacton is supposedly included
-    /// @param txIndex index of transaction in the block's tx merkle tree
-    /// @param merkleProof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
+    /// @param tx_id transaction identifier
+    /// @param tx_block_blockhash block hash at which transacton is supposedly included
+    /// @param tx_index index of transaction in the block's tx merkle tree
+    /// @param merkle_proof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
     /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
-    /// @return True if txid is at the claimed position in the block at the given blockheight, False otherwise
+    /// @return True if tx_id is at the claimed position in the block at the given blockhash, False otherwise
     ///
     /// # Panics
     /// Multiple cases
     #[allow(clippy::needless_pass_by_value)]
     #[pause(except(roles(Role::UnrestrictedVerifyTransaction)))]
     pub fn verify_transaction_inclusion(&self, #[serializer(borsh)] args: ProofArgs) -> bool {
+        require!(
+            args.confirmations <= self.gc_threshold,
+            "The required number of confirmations exceeds the number of blocks stored in memory"
+        );
+
         let heaviest_block_header = self
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
-            .unwrap_or_else(|| env::panic_str("heaviest block must be recorded"));
-        let target_block_height = *self
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        let target_block_height = self
             .mainchain_header_to_height
             .get(&args.tx_block_blockhash)
             .unwrap_or_else(|| env::panic_str("block does not belong to the current main chain"));
@@ -204,7 +251,7 @@ impl BtcLightClient {
         require!(
             (heaviest_block_header.block_height).saturating_sub(target_block_height)
                 >= args.confirmations,
-            "Not enough blocks confirmed, cannot process verification"
+            "Not enough blocks confirmed"
         );
 
         let header = self
@@ -214,7 +261,7 @@ impl BtcLightClient {
 
         // compute merkle tree root and check if it matches block's original merkle tree root
         merkle_tools::compute_root_from_merkle_proof(
-            args.tx_id.clone(),
+            args.tx_id,
             usize::try_from(args.tx_index).unwrap(),
             &args.merkle_proof,
         ) == header.block_header.merkle_root
@@ -225,19 +272,20 @@ impl BtcLightClient {
     ///
     /// # Panics
     /// If initial blockheader or tip blockheader are not in a header pool
+    #[pause(except(roles(Role::UnrestrictedRunGC)))]
     pub fn run_mainchain_gc(&mut self, batch_size: u64) {
         let initial_blockheader = self
             .headers_pool
             .get(&self.mainchain_initial_blockhash)
-            .unwrap_or_else(|| env::panic_str("initial blockheader must be in a header pool"));
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
 
         let tip_blockheader = self
             .headers_pool
             .get(&self.mainchain_tip_blockhash)
-            .unwrap_or_else(|| env::panic_str("tip blockheader must be in a header pool"));
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
 
         let amount_of_headers_we_store =
-            tip_blockheader.block_height - initial_blockheader.block_height;
+            tip_blockheader.block_height - initial_blockheader.block_height + 1;
 
         if amount_of_headers_we_store > self.gc_threshold {
             let total_amount_to_remove = amount_of_headers_we_store - self.gc_threshold;
@@ -245,24 +293,36 @@ impl BtcLightClient {
 
             let start_removal_height = initial_blockheader.block_height;
             let end_removal_height = initial_blockheader.block_height + selected_amount_to_remove;
+            env::log_str(&format!(
+                "Num of blocks to remove {selected_amount_to_remove}"
+            ));
 
             for height in start_removal_height..end_removal_height {
-                let blockhash = &self.mainchain_height_to_header[&height];
+                let blockhash = &self
+                    .mainchain_height_to_header
+                    .get(&height)
+                    .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
 
                 self.headers_pool.remove(blockhash);
                 self.mainchain_header_to_height.remove(blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
 
-            self.mainchain_initial_blockhash
-                .clone_from(&self.mainchain_height_to_header[&end_removal_height]);
+            self.mainchain_initial_blockhash = self
+                .mainchain_height_to_header
+                .get(&end_removal_height)
+                .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         }
     }
 }
 
 impl BtcLightClient {
-    fn init_genesis(&mut self, block_header: Header, block_height: u64) {
+    fn init_genesis(&mut self, block_header: Header, block_hash: &H256, block_height: u64) {
+        env::log_str(&format!(
+            "Init with block hash {block_hash} at height {block_height}"
+        ));
         let current_block_hash = block_header.block_hash();
+        require!(&current_block_hash == block_hash, "Invalid block hash");
         let chain_work = block_header.work();
 
         let header = ExtendedHeader {
@@ -272,7 +332,7 @@ impl BtcLightClient {
             chain_work,
         };
 
-        self.store_block_header(header);
+        self.store_block_header(&header);
         self.mainchain_initial_blockhash
             .clone_from(&current_block_hash);
         self.mainchain_tip_blockhash = current_block_hash;
@@ -294,7 +354,7 @@ impl BtcLightClient {
             .get(&block_header.prev_block_hash)
             .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"));
 
-        self.check_target(&block_header, prev_block_header);
+        self.check_target(&block_header, &prev_block_header);
 
         let current_block_hash = block_header.block_hash();
         require!(
@@ -326,8 +386,8 @@ impl BtcLightClient {
                 current_header.block_header.prev_block_hash
             );
 
-            self.mainchain_tip_blockhash = current_header.block_hash.clone();
-            self.store_block_header(current_header);
+            self.store_block_header(&current_header);
+            self.mainchain_tip_blockhash = current_header.block_hash;
         } else {
             log!("Block {}: saving to fork", current_header.block_hash);
             // Fork submission
@@ -339,7 +399,7 @@ impl BtcLightClient {
             let last_main_chain_block_height = main_chain_tip_header.block_height;
             let total_main_chain_chainwork = main_chain_tip_header.chain_work;
 
-            self.store_fork_header(current_header.clone());
+            self.store_fork_header(&current_header);
 
             // Current chainwork is higher than on a current mainchain, let's promote the fork
             if current_block_computed_chain_work > total_main_chain_chainwork {
@@ -368,8 +428,8 @@ impl BtcLightClient {
             {
                 let init_extend_header = self
                     .headers_pool
-                    .get(init_header_hash)
-                    .unwrap_or_else(|| env::panic_str("block not found"));
+                    .get(&init_header_hash)
+                    .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
                 let actual_time_taken =
                     prev_block_header.block_header.time - init_extend_header.block_header.time;
                 let last_target = prev_block_header.block_header.target();
@@ -430,8 +490,8 @@ impl BtcLightClient {
                     .get(&height)
                     .unwrap_or_else(|| env::panic_str("cannot get a block"));
                 self.mainchain_header_to_height
-                    .remove(current_main_chain_blockhash);
-                self.headers_pool.remove(current_main_chain_blockhash);
+                    .remove(&current_main_chain_blockhash);
+                self.headers_pool.remove(&current_main_chain_blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
         }
@@ -453,23 +513,24 @@ impl BtcLightClient {
         //     \
         //      [f1] - [f2] - [f3] - [f4] <- fork tip
 
-        let mut fork_header_cursor = &fork_tip_header;
+        let fork_tip_hash = fork_tip_header.block_hash.clone();
+        let mut fork_header_cursor = fork_tip_header;
 
         while !self
             .mainchain_header_to_height
             .contains_key(&fork_header_cursor.block_hash)
         {
-            let prev_block_hash = fork_header_cursor.block_header.prev_block_hash.clone();
-            let current_block_hash = fork_header_cursor.block_hash.clone();
+            let prev_block_hash = fork_header_cursor.block_header.prev_block_hash;
+            let current_block_hash = fork_header_cursor.block_hash;
             let current_height = fork_header_cursor.block_height;
 
             // Inserting the fork block into the main chain, if some mainchain block is occupying
             // this height let's save its hashcode
             let main_chain_block = self
                 .mainchain_height_to_header
-                .insert(current_height, current_block_hash.clone());
+                .insert(&current_height, &current_block_hash);
             self.mainchain_header_to_height
-                .insert(current_block_hash, current_height);
+                .insert(&current_block_hash, &current_height);
 
             // If we found a mainchain block at the current height than remove this block from the
             // header pool and from the header -> height map
@@ -482,26 +543,26 @@ impl BtcLightClient {
             // Switch iterator cursor to the previous block in fork
             fork_header_cursor = self
                 .headers_pool
-                .get_mut(&prev_block_hash)
+                .get(&prev_block_hash)
                 .unwrap_or_else(|| env::panic_str("previous fork block should be there"));
         }
 
         // Updating tip of the new main chain
-        self.mainchain_tip_blockhash = fork_tip_header.block_hash;
+        self.mainchain_tip_blockhash = fork_tip_hash;
     }
 
     /// Stores parsed block header and meta information
-    fn store_block_header(&mut self, header: ExtendedHeader) {
+    fn store_block_header(&mut self, header: &ExtendedHeader) {
         self.mainchain_height_to_header
-            .insert(header.block_height, header.block_hash.clone());
+            .insert(&header.block_height, &header.block_hash);
         self.mainchain_header_to_height
-            .insert(header.block_hash.clone(), header.block_height);
-        self.headers_pool.insert(header.block_hash.clone(), header);
+            .insert(&header.block_hash, &header.block_height);
+        self.headers_pool.insert(&header.block_hash, header);
     }
 
     /// Stores and handles fork submissions
-    fn store_fork_header(&mut self, header: ExtendedHeader) {
-        self.headers_pool.insert(header.block_hash.clone(), header);
+    fn store_fork_header(&mut self, header: &ExtendedHeader) {
+        self.headers_pool.insert(&header.block_hash, header);
     }
 }
 
@@ -576,8 +637,10 @@ mod tests {
     }
 
     fn get_default_init_args() -> InitArgs {
+        let genesis_block = genesis_block_header();
         InitArgs {
-            genesis_block: genesis_block_header(),
+            genesis_block_hash: genesis_block.block_hash(),
+            genesis_block,
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
@@ -585,8 +648,10 @@ mod tests {
     }
 
     fn get_default_init_args_with_skip_pow() -> InitArgs {
+        let genesis_block = genesis_block_header();
         InitArgs {
-            genesis_block: genesis_block_header(),
+            genesis_block_hash: genesis_block.block_hash(),
+            genesis_block,
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 3,
@@ -691,11 +756,11 @@ mod tests {
 
         assert_eq!(
             contract.get_block_hash_by_height(0).unwrap(),
-            &genesis_block_header().block_hash(),
+            genesis_block_header().block_hash(),
         );
         assert_eq!(
             contract.get_block_hash_by_height(1).unwrap(),
-            &block_header_example().block_hash()
+            block_header_example().block_hash()
         );
     }
 

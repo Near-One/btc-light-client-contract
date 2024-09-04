@@ -39,4 +39,4 @@ To download block 277136 run:
 ### Run tests
 0. Set up Rust Logger `export RUST_LOG=info`
 1. Move config.example.toml to config.toml and fill in the required fields.
-2. Run tests with `cargo test`.
+2. Run tests with `cargo test -F=integration_tests`.

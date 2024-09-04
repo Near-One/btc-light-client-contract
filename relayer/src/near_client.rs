@@ -247,13 +247,14 @@ impl NearClient {
         transaction_position: usize,
         transaction_block_blockhash: H256,
         merkle_proof: Vec<H256>,
+        confirmations: u64,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let args = btc_types::contract_args::ProofArgs {
             tx_id: transaction_hash,
             tx_block_blockhash: transaction_block_blockhash,
             tx_index: transaction_position.try_into()?,
             merkle_proof,
-            confirmations: 0,
+            confirmations,
         };
 
         let tx_hash = self
@@ -325,8 +326,8 @@ impl NearClient {
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: method_name.to_string(),
                 args,
-                gas: 100_000_000_000_000, // 100 TeraGas
-                deposit: 0,
+                gas: 100_000_000_000_000,     // 100 TeraGas
+                deposit: 5 * 10_u128.pow(23), // 0.5 Near
             }))],
         };
 

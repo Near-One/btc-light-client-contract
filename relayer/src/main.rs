@@ -47,7 +47,7 @@ impl Synchronizer {
 
             let mut blocks_to_submit = vec![];
             for current_height in first_block_height_to_submit..=latest_height {
-                if blocks_to_submit.len() > self.config.batch_size {
+                if blocks_to_submit.len() >= self.config.batch_size {
                     break;
                 }
 
