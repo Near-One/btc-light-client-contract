@@ -435,7 +435,7 @@ impl BtcLightClient {
                 let last_target = prev_block_header.block_header.target();
 
                 let (mut new_target, new_target_overflow) =
-                    last_target.overflowing_mul(actual_time_taken as u64);
+                    last_target.overflowing_mul(u64::from(actual_time_taken));
                 require!(!new_target_overflow, "new target overflow");
                 new_target = new_target / U256::from(EXPECTED_TIME);
 
