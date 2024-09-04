@@ -17,7 +17,7 @@ use std::ops::{Div, Not, Rem, Shl, Shr};
     Hash,
     Default,
 )]
-pub struct U256(u128, u128);
+pub struct U256(u128, pub u128);
 
 impl U256 {
     pub const MAX: U256 = U256(
@@ -100,6 +100,19 @@ impl U256 {
         } else {
             128 - self.1.leading_zeros()
         }
+    }
+
+    pub fn overflowing_mul(self, rhs: u64) -> (Self, bool) {
+        let (high, overflow) = self.0.overflowing_mul(rhs as u128);
+        let (low, overflow_low) = self.1.overflowing_mul(rhs as u128);
+
+        if !overflow_low {
+            return (Self(high, low), overflow);
+        }
+        let carry = ((self.1 >> 64) * (rhs as u128)) >> 64;
+        let (high, overflow_add) = high.overflowing_add(carry);
+
+        (Self(high, low), overflow | overflow_add)
     }
 
     /// Calculates quotient and remainder.

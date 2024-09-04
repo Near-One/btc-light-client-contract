@@ -1,6 +1,6 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{ExtendedHeader, Header, DIFFICULTY_ADJUSTMENT_BLOCKS};
+use btc_types::header::{ExtendedHeader, Header, BLOCKS_PER_ADJUSTMENT, EXPECTED_TIME, MAX_ADJUSTMENT_FACTOR, Target};
 use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
@@ -8,6 +8,7 @@ use near_plugins::{
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, log, near, require, PanicOnDefault};
+use std::cmp::min;
 
 // use bitcoin::block::Header;
 // mod types;
@@ -267,7 +268,6 @@ impl BtcLightClient {
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
-            last_target_update: DIFFICULTY_ADJUSTMENT_BLOCKS,
         };
 
         self.store_block_header(header);
@@ -292,7 +292,7 @@ impl BtcLightClient {
             .get(&block_header.prev_block_hash)
             .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"));
 
-        let last_target_update = Self::last_target_update(&block_header, prev_block_header);
+        self.check_target(&block_header, prev_block_header);
 
         let current_block_hash = block_header.block_hash();
         require!(
@@ -311,7 +311,6 @@ impl BtcLightClient {
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
-            last_target_update,
         };
 
         // Main chain submission
@@ -348,32 +347,65 @@ impl BtcLightClient {
         }
     }
 
-    fn last_target_update(block_header: &Header, prev_block_header: &ExtendedHeader) -> u64 {
-        if block_header.bits == prev_block_header.block_header.bits {
-            return prev_block_header.last_target_update + 1;
+    fn targets_to_bits(target: Target) -> u32 {
+        let mut exponent: u32 = 0;
+        let mut target_copy = target;
+
+        while target_copy > U256::from(0xFFFFFF as u128) {
+            target_copy = target_copy >> 8;
+            exponent += 1;
         }
+        let coefficient = (target_copy.1 & 0xFFFFFF) as u32;
+        let bits = coefficient | ((exponent + 3) << 24);
 
-        require!(
-            prev_block_header.last_target_update >= DIFFICULTY_ADJUSTMENT_BLOCKS,
-            format!(
-                "Error: Incorrect target. The target was adjusted {} blocks ago.",
-                prev_block_header.last_target_update
-            )
-        );
+        bits
+    }
 
-        let prev_difficulty = prev_block_header.block_header.work();
-        let current_difficulty = block_header.work();
+    fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
+        if block_header.bits != prev_block_header.block_header.bits {
+            require!(
+                prev_block_header.block_height % BLOCKS_PER_ADJUSTMENT != 0,
+                format!(
+                    "Error: Incorrect target. The target was adjusted {} blocks ago.",
+                    prev_block_header.block_height % BLOCKS_PER_ADJUSTMENT
+                )
+            );
 
-        require!(
-            prev_difficulty / current_difficulty < U256::from(5u128),
-            "Error: The difficulty change exceeds 4 times."
-        );
-        require!(
-            current_difficulty / prev_difficulty < U256::from(5u128),
-            "Error: The difficulty change exceeds 4 times."
-        );
+            if let Some(init_header) = self
+                .mainchain_height_to_header
+                .get(&(prev_block_header.block_height.clone() - BLOCKS_PER_ADJUSTMENT))
+            {
+                let init_extend_header = self.headers_pool.get(init_header).unwrap();
+                let actual_time_taken = prev_block_header.block_height.time.clone() - init_extend_header.block_header.time;
+                let last_target = prev_block_header.block_header.target();
 
-        0
+                let (mut new_target, _new_target_overflow) = last_target.overflowing_mul(actual_time_taken as u64);
+                new_target = new_target / U256::from(EXPECTED_TIME);
+
+                let (max_target, _max_target_overflow) = last_target.overflowing_mul(MAX_ADJUSTMENT_FACTOR);
+                new_target = min(new_target, max_target)
+                    .max(last_target / U256::from(MAX_ADJUSTMENT_FACTOR));
+
+                let expected_bits = Self::targets_to_bits(new_target);
+
+                require!(
+                    expected_bits == block_header.bits,
+                    format!("Error: Incorrect target. Expected target: {:?}, Actual target: {:?}, Old Target: {:?}", expected_bits, block_header.bits, prev_block_header.block_header.bits)
+                )
+            } else {
+                let prev_difficulty = prev_block_header.block_header.work();
+                let current_difficulty = block_header.work();
+
+                require!(
+                    prev_difficulty / current_difficulty <= U256::from(MAX_ADJUSTMENT_FACTOR),
+                    "Error: The difficulty change exceeds 4 times."
+                );
+                require!(
+                    current_difficulty / prev_difficulty <= U256::from(MAX_ADJUSTMENT_FACTOR),
+                    "Error: The difficulty change exceeds 4 times."
+                );
+            }
+        }
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
@@ -588,7 +620,6 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
-                last_target_update: DIFFICULTY_ADJUSTMENT_BLOCKS + 1
             }
         );
     }
@@ -615,7 +646,6 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
-                last_target_update: DIFFICULTY_ADJUSTMENT_BLOCKS + 1
             }
         );
     }
@@ -644,7 +674,6 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
-                last_target_update: DIFFICULTY_ADJUSTMENT_BLOCKS + 1
             }
         );
     }
@@ -709,7 +738,6 @@ mod tests {
                     0, 3, 0, 3, 0, 3
                 ]),
                 block_height: 2,
-                last_target_update: DIFFICULTY_ADJUSTMENT_BLOCKS + 2
             }
         );
     }

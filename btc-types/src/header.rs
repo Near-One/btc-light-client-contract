@@ -8,7 +8,10 @@ use crate::{
 pub type Target = U256;
 pub type Work = U256;
 
-pub const DIFFICULTY_ADJUSTMENT_BLOCKS: u64 = 2016;
+pub const BLOCKS_PER_ADJUSTMENT: u64 = 2016;
+pub const TARGET_BLOCK_TIME_SECS: u64 = 10 * 60;
+pub const EXPECTED_TIME: u64 = BLOCKS_PER_ADJUSTMENT as u64 * TARGET_BLOCK_TIME_SECS;
+pub const MAX_ADJUSTMENT_FACTOR: u64 = 4;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Header {
@@ -91,6 +94,4 @@ pub struct ExtendedHeader {
     pub chain_work: Work,
     /// Block height in the Bitcoin network
     pub block_height: u64,
-    /// How many blocks ago was the target updated
-    pub last_target_update: u64,
 }
