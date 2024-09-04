@@ -421,16 +421,16 @@ impl BtcLightClient {
             return;
         }
 
-        if let Some(init_header_hash) = self
+        if let Some(interval_tail_header_hash) = self
             .mainchain_height_to_header
             .get(&(prev_block_header.block_height + 1 - BLOCKS_PER_ADJUSTMENT))
         {
-            let init_extend_header = self
+            let interval_tail_extend_header = self
                 .headers_pool
-                .get(&init_header_hash)
+                .get(&interval_tail_header_hash)
                 .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
             let actual_time_taken =
-                prev_block_header.block_header.time - init_extend_header.block_header.time;
+                prev_block_header.block_header.time - interval_tail_extend_header.block_header.time;
 
             let last_target = prev_block_header.block_header.target();
 
