@@ -360,22 +360,27 @@ impl BtcLightClient {
             );
             return;
         }
-
+        
         if let Some(init_header_hash) = self
             .mainchain_height_to_header
-            .get(&(prev_block_header.block_height - BLOCKS_PER_ADJUSTMENT + 1))
+            .get(&(prev_block_header.block_height + 1 - BLOCKS_PER_ADJUSTMENT))
         {
-            let init_extend_header = self.headers_pool.get(init_header_hash).unwrap();
+            let init_extend_header = self
+                .headers_pool
+                .get(init_header_hash)
+                .unwrap_or_else(|| env::panic_str("block not found"));
             let actual_time_taken =
-                prev_block_header.block_header.time.clone() - init_extend_header.block_header.time;
+                prev_block_header.block_header.time - init_extend_header.block_header.time;
             let last_target = prev_block_header.block_header.target();
 
-            let (mut new_target, _new_target_overflow) =
+            let (mut new_target, new_target_overflow) =
                 last_target.overflowing_mul(actual_time_taken as u64);
+            require!(!new_target_overflow, "new target overflow");
             new_target = new_target / U256::from(EXPECTED_TIME);
 
-            let (max_target, _max_target_overflow) =
+            let (max_target, max_target_overflow) =
                 last_target.overflowing_mul(MAX_ADJUSTMENT_FACTOR);
+            require!(!max_target_overflow, "max target overflow");
 
             new_target =
                 min(new_target, max_target).max(last_target / U256::from(MAX_ADJUSTMENT_FACTOR));
