@@ -100,7 +100,7 @@ impl BtcLightClient {
     /// Recommended initialization parameters:
     /// * `genesis_block_height % 2016 == 0`: The genesis block height must be divisible by 2016 to align with difficulty adjustment cycles.
     /// * The `genesis_block` must be at least 144 blocks earlier than the last block. 144 is the approximate number of blocks generated in one day.
-    /// * `skip_pow_verification = true`: Should be set to `true` for standard use. Set to `false` only for testing purposes.
+    /// * `skip_pow_verification = false`: Should be set to `false` for standard use. Set to `true` only for testing purposes.
     /// * `gc_threshold = 52704`: This is the approximate number of blocks generated in a year.
     #[init]
     #[private]
