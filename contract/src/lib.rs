@@ -230,6 +230,10 @@ impl BtcLightClient {
     /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
     /// @return True if tx_id is at the claimed position in the block at the given blockhash, False otherwise
     ///
+    /// # Warning
+    /// This function may return `true` if the provided `tx_id` is a hash of an internal node in the Merkle tree rather than a valid transaction hash.
+    /// We assume that validation of whether the `tx_id` corresponds to a valid transaction hash is performed at a higher level of verification.
+    ///
     /// # Panics
     /// Multiple cases
     #[allow(clippy::needless_pass_by_value)]
