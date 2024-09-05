@@ -320,6 +320,9 @@ impl BtcLightClient {
         env::log_str(&format!(
             "Init with block hash {block_hash} at height {block_height}"
         ));
+
+        require!(block_height % BLOCKS_PER_ADJUSTMENT == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", BLOCKS_PER_ADJUSTMENT));
+
         let current_block_hash = block_header.block_hash();
         require!(&current_block_hash == block_hash, "Invalid block hash");
         let chain_work = block_header.work();
@@ -420,49 +423,40 @@ impl BtcLightClient {
             return;
         }
 
-        if let Some(interval_tail_header_hash) = self
+        let interval_tail_header_hash = self
             .mainchain_height_to_header
             .get(&(prev_block_header.block_height + 1 - BLOCKS_PER_ADJUSTMENT))
-        {
-            let interval_tail_extend_header = self
-                .headers_pool
-                .get(&interval_tail_header_hash)
-                .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
-            let mut actual_time_taken = u64::from(
-                prev_block_header.block_header.time - interval_tail_extend_header.block_header.time,
-            );
-            if actual_time_taken < EXPECTED_TIME / MAX_ADJUSTMENT_FACTOR {
-                actual_time_taken = EXPECTED_TIME / MAX_ADJUSTMENT_FACTOR;
-            }
-            if actual_time_taken > EXPECTED_TIME * MAX_ADJUSTMENT_FACTOR {
-                actual_time_taken = EXPECTED_TIME * MAX_ADJUSTMENT_FACTOR;
-            }
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        let interval_tail_extend_header = self
+            .headers_pool
+            .get(&interval_tail_header_hash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        let mut actual_time_taken = u64::from(
+            prev_block_header.block_header.time - interval_tail_extend_header.block_header.time,
+        );
 
-            let last_target = prev_block_header.block_header.target();
-
-            let (mut new_target, new_target_overflow) =
-                last_target.overflowing_mul(actual_time_taken);
-            require!(!new_target_overflow, "new target overflow");
-            new_target = new_target / U256::from(EXPECTED_TIME);
-
-            let expected_bits = new_target.target_to_bits();
-
-            require!(
-                expected_bits == block_header.bits,
-                format!(
-                    "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
-                    expected_bits, block_header.bits
-                )
-            );
-        } else {
-            let prev_difficulty = prev_block_header.block_header.work();
-            let current_difficulty = block_header.work();
-
-            require!(
-                prev_difficulty / current_difficulty <= U256::from(MAX_ADJUSTMENT_FACTOR),
-                "Error: The difficulty change exceeds 4 times."
-            );
+        if actual_time_taken < EXPECTED_TIME / MAX_ADJUSTMENT_FACTOR {
+            actual_time_taken = EXPECTED_TIME / MAX_ADJUSTMENT_FACTOR;
         }
+        if actual_time_taken > EXPECTED_TIME * MAX_ADJUSTMENT_FACTOR {
+            actual_time_taken = EXPECTED_TIME * MAX_ADJUSTMENT_FACTOR;
+        }
+
+        let last_target = prev_block_header.block_header.target();
+
+        let (mut new_target, new_target_overflow) = last_target.overflowing_mul(actual_time_taken);
+        require!(!new_target_overflow, "new target overflow");
+        new_target = new_target / U256::from(EXPECTED_TIME);
+
+        let expected_bits = new_target.target_to_bits();
+
+        require!(
+            expected_bits == block_header.bits,
+            format!(
+                "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
+                expected_bits, block_header.bits
+            )
+        );
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
