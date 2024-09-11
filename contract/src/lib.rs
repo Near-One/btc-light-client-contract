@@ -238,8 +238,7 @@ impl BtcLightClient {
     ///
     /// # Panics
     /// Multiple cases
-    #[allow(clippy::needless_pass_by_value)]
-    #[pause(except(roles(Role::UnrestrictedVerifyTransaction)))]
+    #[pause]
     pub fn verify_transaction_inclusion(&self, #[serializer(borsh)] args: ProofArgs) -> bool {
         require!(
             args.confirmations <= self.gc_threshold,
