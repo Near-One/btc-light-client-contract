@@ -2,6 +2,7 @@ use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
 use btc_types::header::{
     ExtendedHeader, Header, BLOCKS_PER_ADJUSTMENT, EXPECTED_TIME, MAX_ADJUSTMENT_FACTOR,
+    POW_TARGET_TIME_BETWEEN_BLOCKS_SECS, PROOF_OF_WORK_LIMIT_BITS,
 };
 use btc_types::u256::U256;
 use near_plugins::{
@@ -420,8 +421,46 @@ impl BtcLightClient {
         }
     }
 
+    #[cfg(feature = "testnet")]
+    fn check_target_testnet(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
+        let time_diff = block_header
+            .time
+            .saturating_sub(prev_block_header.block_header.time);
+        if (time_diff >= 2 * POW_TARGET_TIME_BETWEEN_BLOCKS_SECS) {
+            require!(
+                block_header.bits == PROOF_OF_WORK_LIMIT_BITS,
+                format!(
+                    "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
+                    PROOF_OF_WORK_LIMIT_BITS, block_header.bits
+                )
+            )
+        } else {
+            let mut current_block_header = prev_block_header.clone();
+            while current_block_header.block_header.bits == PROOF_OF_WORK_LIMIT_BITS
+                && current_block_header.block_height % BLOCKS_PER_ADJUSTMENT != 0
+            {
+                current_block_header = self
+                    .headers_pool
+                    .get(&current_block_header.block_header.prev_block_hash)
+                    .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+            }
+
+            let last_bits = current_block_header.block_header.bits;
+            require!(
+                last_bits == block_header.bits,
+                format!(
+                    "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
+                    last_bits, block_header.bits
+                )
+            )
+        }
+    }
+
     fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         if (prev_block_header.block_height + 1) % BLOCKS_PER_ADJUSTMENT != 0 {
+            #[cfg(feature = "testnet")]
+            return check_target_testnet(block_header, prev_block_header);
+
             require!(
                 block_header.bits == prev_block_header.block_header.bits,
                 format!(
