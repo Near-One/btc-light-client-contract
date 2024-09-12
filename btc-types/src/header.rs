@@ -14,9 +14,10 @@ pub const EXPECTED_TIME: u64 = BLOCKS_PER_ADJUSTMENT as u64 * TARGET_BLOCK_TIME_
 pub const MAX_ADJUSTMENT_FACTOR: u64 = 4;
 
 #[cfg(feature = "testnet")]
-pub const PROOF_OF_WORK_LIMIT_BITS: u32 = 0x1d00ffff;
-#[cfg(feature = "testnet")]
-pub const POW_TARGET_TIME_BETWEEN_BLOCKS_SECS: u32 = 10 * 60;
+pub mod testnet {
+    pub const PROOF_OF_WORK_LIMIT_BITS: u32 = 0x1d00ffff;
+    pub const POW_TARGET_TIME_BETWEEN_BLOCKS_SECS: u32 = 10 * 60;
+}
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Header {

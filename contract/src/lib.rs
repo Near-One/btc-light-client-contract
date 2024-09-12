@@ -3,8 +3,6 @@ use btc_types::hash::H256;
 use btc_types::header::{
     ExtendedHeader, Header, BLOCKS_PER_ADJUSTMENT, EXPECTED_TIME, MAX_ADJUSTMENT_FACTOR,
 };
-#[cfg(feature = "testnet")]
-use btc_types::header::{POW_TARGET_TIME_BETWEEN_BLOCKS_SECS, PROOF_OF_WORK_LIMIT_BITS};
 use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
@@ -424,6 +422,10 @@ impl BtcLightClient {
 
     #[cfg(feature = "testnet")]
     fn check_target_testnet(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
+        use btc_types::header::testnet::{
+            POW_TARGET_TIME_BETWEEN_BLOCKS_SECS, PROOF_OF_WORK_LIMIT_BITS,
+        };
+
         let time_diff = block_header
             .time
             .saturating_sub(prev_block_header.block_header.time);
