@@ -23,8 +23,6 @@ pub enum Role {
     PauseManager,
     /// Allows to use contract API even after contract is paused
     UnrestrictedSubmitBlocks,
-    /// Allows to use `verify_transaction` API on a paused contract
-    UnrestrictedVerifyTransaction,
     // Allows to use `run_mainchain_gc` API on a paused contract
     UnrestrictedRunGC,
     /// May successfully call any of the protected `Upgradable` methods since below it is passed to
