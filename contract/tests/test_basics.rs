@@ -329,19 +329,21 @@ async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Er
     assert!(format!("{:?}", outcome.failures()[0].clone().into_result())
         .contains("Required deposit"));
 
+    for i in 1..=2 {
+        let outcome = user_account
+            .call(contract.id(), "submit_blocks")
+            .args_borsh(block_headers[i].to_vec())
+            .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+            .max_gas()
+            .transact()
+            .await?;
+
+        assert!(outcome.is_success());
+    }
+
     let outcome = user_account
         .call(contract.id(), "submit_blocks")
-        .args_borsh(block_headers[1].to_vec())
-        .deposit(STORAGE_DEPOSIT_PER_BLOCK)
-        .max_gas()
-        .transact()
-        .await?;
-
-    assert!(outcome.is_success());
-
-    let outcome = user_account
-        .call(contract.id(), "submit_blocks")
-        .args_borsh(block_headers[1].to_vec())
+        .args_borsh(block_headers[3].to_vec())
         .max_gas()
         .transact()
         .await?;
