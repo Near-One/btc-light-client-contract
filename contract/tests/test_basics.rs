@@ -341,6 +341,8 @@ async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Er
         assert!(outcome.is_success());
     }
 
+    let amount_init = user_account.view_account().await?.balance;
+
     let outcome = user_account
         .call(contract.id(), "submit_blocks")
         .args_borsh(block_headers[3].to_vec())
@@ -349,6 +351,21 @@ async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Er
         .await?;
 
     assert!(outcome.is_success());
+
+    let amount_before = user_account.view_account().await?.balance;
+    let outcome = user_account
+        .call(contract.id(), "submit_blocks")
+        .args_borsh(block_headers[4].to_vec())
+        .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+        .max_gas()
+        .transact()
+        .await?;
+
+    assert!(outcome.is_success());
+
+    let amount_after = user_account.view_account().await?.balance;
+    assert!(amount_before.as_yoctonear() - amount_after.as_yoctonear() <
+        2 * (amount_init.as_yoctonear() - amount_before.as_yoctonear()));
 
     Ok(())
 }
