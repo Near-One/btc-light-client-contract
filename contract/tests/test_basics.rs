@@ -2,8 +2,8 @@ use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::header::{ExtendedHeader, Header};
 use near_sdk::NearToken;
 use serde_json::json;
-use std::io::BufReader;
 use std::fs::File;
+use std::io::BufReader;
 
 const STORAGE_DEPOSIT_PER_BLOCK: NearToken = NearToken::from_millinear(500);
 
@@ -75,6 +75,7 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
 
     let user_account = sandbox.dev_create_account().await?;
 
+    let storage_usage_init = contract.view_account().await.unwrap().storage_usage;
     // second block
     let outcome = user_account
         .call(contract.id(), "submit_blocks")
@@ -83,6 +84,8 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
         .transact()
         .await?;
     assert!(outcome.is_success());
+
+    let storage_usage_one_block = contract.view_account().await.unwrap().storage_usage;
 
     // first fork block
     let outcome = user_account
@@ -93,6 +96,8 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     assert!(outcome.is_success());
 
+    let storage_usage_fork = contract.view_account().await.unwrap().storage_usage;
+
     // second fork block
     let outcome = user_account
         .call(contract.id(), "submit_blocks")
@@ -101,6 +106,14 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
         .transact()
         .await?;
     assert!(outcome.is_success());
+
+    let storage_usage_after = contract.view_account().await.unwrap().storage_usage;
+    assert_eq!(
+        storage_usage_after - storage_usage_fork,
+        storage_usage_one_block
+            - storage_usage_init
+            - (storage_usage_fork - storage_usage_one_block)
+    );
 
     let user_message_outcome = contract
         .view("get_last_block_header")
@@ -171,7 +184,8 @@ async fn test_submit_blocks_for_period() -> Result<(), Box<dyn std::error::Error
 
     let contract = sandbox.dev_deploy(&contract_wasm).await?;
 
-    let block_headers = read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
+    let block_headers =
+        read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
     let args = InitArgs {
         genesis_block: block_headers[0][0].clone(),
         genesis_block_hash: block_headers[0][0].block_hash(),
@@ -207,13 +221,15 @@ async fn test_submit_blocks_for_period() -> Result<(), Box<dyn std::error::Error
 }
 
 #[tokio::test]
-async fn test_submit_blocks_for_period_incorrect_target() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_submit_blocks_for_period_incorrect_target() -> Result<(), Box<dyn std::error::Error>>
+{
     let sandbox = near_workspaces::sandbox().await?;
     let contract_wasm = near_workspaces::compile_project("./").await?;
 
     let contract = sandbox.dev_deploy(&contract_wasm).await?;
 
-    let mut block_headers = read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
+    let mut block_headers =
+        read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
     let args = InitArgs {
         genesis_block: block_headers[0][0].clone(),
         genesis_block_hash: block_headers[0][0].block_hash(),
@@ -252,7 +268,8 @@ async fn test_submit_blocks_for_period_incorrect_target() -> Result<(), Box<dyn 
         if i != block_headers.len() - 1 {
             assert!(outcome.is_success());
         } else {
-            assert!(format!("{:?}", outcome.failures()[0].clone().into_result()).contains("Error: Incorrect target."));
+            assert!(format!("{:?}", outcome.failures()[0].clone().into_result())
+                .contains("Error: Incorrect target."));
         }
     }
 
