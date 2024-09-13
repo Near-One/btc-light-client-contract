@@ -269,6 +269,25 @@ async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
         user_message_outcome.json::<u64>().unwrap(),
         10
     );
+
+
+    let outcome = user_account
+        .call(contract.id(), "run_mainchain_gc")
+        .args_json(json!({"batch_size": 100}))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(outcome.is_success());
+
+    let user_message_outcome = contract
+        .view("get_mainchain_size")
+        .args_json(json!({}))
+        .await?;
+
+    assert_eq!(
+        user_message_outcome.json::<u64>().unwrap(),
+        10
+    );
     Ok(())
 }
 
