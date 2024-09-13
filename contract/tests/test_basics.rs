@@ -4,6 +4,7 @@ use near_sdk::NearToken;
 use serde_json::json;
 use std::fs::File;
 use std::io::BufReader;
+use btc_types::hash::H256;
 
 const STORAGE_DEPOSIT_PER_BLOCK: NearToken = NearToken::from_millinear(500);
 
@@ -216,6 +217,95 @@ async fn test_submit_blocks_for_period() -> Result<(), Box<dyn std::error::Error
 
         assert!(outcome.is_success());
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_last_n_blocks() -> Result<(), Box<dyn std::error::Error>> {
+    let sandbox = near_workspaces::sandbox().await?;
+    let contract_wasm = near_workspaces::compile_project("./").await?;
+
+    let contract = sandbox.dev_deploy(&contract_wasm).await?;
+
+    let block_headers =
+        read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
+    let args = InitArgs {
+        genesis_block: block_headers[0][0].clone(),
+        genesis_block_hash: block_headers[0][0].block_hash(),
+        genesis_block_height: 685440,
+        skip_pow_verification: false,
+        gc_threshold: 2017,
+    };
+    // Call the init method on the contract
+    let outcome = contract
+        .call("init")
+        .args_json(json!({
+            "args": serde_json::to_value(args).unwrap(),
+        }))
+        .transact()
+        .await?;
+    assert!(outcome.is_success());
+
+    let user_account = sandbox.dev_create_account().await?;
+
+    for block_headers_batch in &block_headers[1..=2] {
+        let outcome = user_account
+            .call(contract.id(), "submit_blocks")
+            .args_borsh(block_headers_batch.to_vec())
+            .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+            .max_gas()
+            .transact()
+            .await?;
+
+        assert!(outcome.is_success());
+    }
+
+    let user_message_outcome = contract
+        .view("get_last_n_blocks_hashes")
+        .args_json(json!({"skip": 0, "limit": 0}))
+        .await?;
+
+    assert_eq!(
+        user_message_outcome.json::<Vec<H256>>()?,
+        vec![]
+    );
+
+    let user_message_outcome = contract
+        .view("get_last_n_blocks_hashes")
+        .args_json(json!({"skip": 0, "limit": 200}))
+        .await?;
+
+    assert_eq!(
+        user_message_outcome.json::<Vec<H256>>()?.len(),
+        97
+    );
+
+    let user_message_outcome = contract
+        .view("get_last_n_blocks_hashes")
+        .args_json(json!({"skip": 200, "limit": 200}))
+        .await?;
+
+    assert_eq!(
+        user_message_outcome.json::<Vec<H256>>()?,
+        vec![]
+    );
+
+    let user_message_outcome = contract
+        .view("get_last_n_blocks_hashes")
+        .args_json(json!({"skip": 10, "limit": 10}))
+        .await?;
+
+    let last_blocks = user_message_outcome.json::<Vec<H256>>()?;
+    assert_eq!(
+        last_blocks[0].to_string(),
+        "0000000000000000000aab4a401ac27b945057be99db4ccc9631da4bb0b9d746"
+    );
+
+    assert_eq!(
+        last_blocks[9].to_string(),
+        "0000000000000000000758a734884015e791dee8aced3dcce049753dc5aeeacb"
+    );
 
     Ok(())
 }
