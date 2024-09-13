@@ -2,6 +2,8 @@ use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::header::{ExtendedHeader, Header};
 use near_sdk::NearToken;
 use serde_json::json;
+use std::io::BufReader;
+use std::fs::File;
 
 const STORAGE_DEPOSIT_PER_BLOCK: NearToken = NearToken::from_millinear(500);
 
@@ -152,6 +154,55 @@ async fn test_view_call_verify_transaction_inclusion() -> Result<(), Box<dyn std
         .json()?;
 
     assert!(!result);
+
+    Ok(())
+}
+
+fn read_blocks_from_json(path: &str) -> Vec<Vec<Header>> {
+    let file = File::open(path).expect("Unable to open file");
+    let reader = BufReader::new(file);
+    serde_json::from_reader(reader).unwrap()
+}
+
+#[tokio::test]
+async fn test_submit_blocks_for_period() -> Result<(), Box<dyn std::error::Error>> {
+    let sandbox = near_workspaces::sandbox().await?;
+    let contract_wasm = near_workspaces::compile_project("./").await?;
+
+    let contract = sandbox.dev_deploy(&contract_wasm).await?;
+
+    let block_headers = read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
+    let args = InitArgs {
+        genesis_block: block_headers[0][0].clone(),
+        genesis_block_hash: block_headers[0][0].block_hash(),
+        genesis_block_height: 685440,
+        skip_pow_verification: false,
+        gc_threshold: 2017,
+    };
+    // Call the init method on the contract
+    let outcome = contract
+        .call("init")
+        .args_json(json!({
+            "args": serde_json::to_value(args).unwrap(),
+        }))
+        .transact()
+        .await?;
+    assert!(outcome.is_success());
+
+    let user_account = sandbox.dev_create_account().await?;
+
+    for block_headers_batch in &block_headers[1..] {
+        let outcome = user_account
+            .call(contract.id(), "submit_blocks")
+            .args_borsh(block_headers_batch.to_vec())
+            .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+            .max_gas()
+            .transact()
+            .await?;
+
+        println!("{:?}", outcome);
+        assert!(outcome.is_success());
+    }
 
     Ok(())
 }
