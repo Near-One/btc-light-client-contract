@@ -292,7 +292,7 @@ async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
-async fn test_dont_pay_on_block_submission() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Error>> {
     let sandbox = near_workspaces::sandbox().await?;
     let contract_wasm = near_workspaces::compile_project("./").await?;
 
@@ -328,6 +328,25 @@ async fn test_dont_pay_on_block_submission() -> Result<(), Box<dyn std::error::E
 
     assert!(format!("{:?}", outcome.failures()[0].clone().into_result())
         .contains("Required deposit"));
+
+    let outcome = user_account
+        .call(contract.id(), "submit_blocks")
+        .args_borsh(block_headers[1].to_vec())
+        .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+        .max_gas()
+        .transact()
+        .await?;
+
+    assert!(outcome.is_success());
+
+    let outcome = user_account
+        .call(contract.id(), "submit_blocks")
+        .args_borsh(block_headers[1].to_vec())
+        .max_gas()
+        .transact()
+        .await?;
+
+    assert!(outcome.is_success());
 
     Ok(())
 }
