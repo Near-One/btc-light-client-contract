@@ -35,7 +35,7 @@ async fn init_contract() -> Result<(Contract, Account), Box<dyn std::error::Erro
 
     let user_account = sandbox.dev_create_account().await?;
 
-    return Ok((contract, user_account));
+    Ok((contract, user_account))
 }
 
 async fn init_contract_from_file(
@@ -51,7 +51,7 @@ async fn init_contract_from_file(
     let args = InitArgs {
         genesis_block: block_headers[0][0].clone(),
         genesis_block_hash: block_headers[0][0].block_hash(),
-        genesis_block_height: 685440,
+        genesis_block_height: 685_440,
         skip_pow_verification: false,
         gc_threshold,
     };
@@ -67,7 +67,7 @@ async fn init_contract_from_file(
 
     let user_account = sandbox.dev_create_account().await?;
 
-    return Ok((contract, user_account, block_headers));
+    Ok((contract, user_account, block_headers))
 }
 
 #[tokio::test]
@@ -178,7 +178,7 @@ async fn test_submit_blocks_for_period() -> Result<(), Box<dyn std::error::Error
     for block_headers_batch in &block_headers[1..] {
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
-            .args_borsh(block_headers_batch.to_vec())
+            .args_borsh(block_headers_batch.clone())
             .deposit(STORAGE_DEPOSIT_PER_BLOCK)
             .max_gas()
             .transact()
@@ -197,7 +197,7 @@ async fn test_get_last_n_blocks() -> Result<(), Box<dyn std::error::Error>> {
     for block_headers_batch in &block_headers[1..=2] {
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
-            .args_borsh(block_headers_batch.to_vec())
+            .args_borsh(block_headers_batch.clone())
             .deposit(STORAGE_DEPOSIT_PER_BLOCK)
             .max_gas()
             .transact()
@@ -253,7 +253,7 @@ async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
     for block_headers_batch in &block_headers[1..=2] {
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
-            .args_borsh(block_headers_batch.to_vec())
+            .args_borsh(block_headers_batch.clone())
             .deposit(STORAGE_DEPOSIT_PER_BLOCK)
             .max_gas()
             .transact()
@@ -292,7 +292,7 @@ async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Er
 
     let outcome = user_account
         .call(contract.id(), "submit_blocks")
-        .args_borsh(block_headers[1].to_vec())
+        .args_borsh(block_headers[1].clone())
         .max_gas()
         .transact()
         .await?;
@@ -301,10 +301,10 @@ async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Er
         format!("{:?}", outcome.failures()[0].clone().into_result()).contains("Required deposit")
     );
 
-    for i in 1..=2 {
+    for block_headers_batch in block_headers.iter().take(3).skip(1) {
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
-            .args_borsh(block_headers[i].to_vec())
+            .args_borsh(block_headers_batch.clone())
             .deposit(STORAGE_DEPOSIT_PER_BLOCK)
             .max_gas()
             .transact()
@@ -317,7 +317,7 @@ async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Er
 
     let outcome = user_account
         .call(contract.id(), "submit_blocks")
-        .args_borsh(block_headers[3].to_vec())
+        .args_borsh(block_headers[3].clone())
         .max_gas()
         .transact()
         .await?;
@@ -327,7 +327,7 @@ async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Er
     let amount_before = user_account.view_account().await?.balance;
     let outcome = user_account
         .call(contract.id(), "submit_blocks")
-        .args_borsh(block_headers[4].to_vec())
+        .args_borsh(block_headers[4].clone())
         .deposit(STORAGE_DEPOSIT_PER_BLOCK)
         .max_gas()
         .transact()
@@ -358,17 +358,17 @@ async fn test_submit_blocks_for_period_incorrect_target() -> Result<(), Box<dyn 
     for i in 1..block_headers.len() {
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
-            .args_borsh(block_headers[i].to_vec())
+            .args_borsh(block_headers[i].clone())
             .deposit(STORAGE_DEPOSIT_PER_BLOCK)
             .max_gas()
             .transact()
             .await?;
 
-        if i != block_headers.len() - 1 {
-            assert!(outcome.is_success());
-        } else {
+        if i == block_headers.len() - 1 {
             assert!(format!("{:?}", outcome.failures()[0].clone().into_result())
                 .contains("Error: Incorrect target."));
+        } else {
+            assert!(outcome.is_success());
         }
     }
 
