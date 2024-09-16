@@ -1,15 +1,15 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
+use btc_types::hash::H256;
 use btc_types::header::{ExtendedHeader, Header};
 use near_sdk::NearToken;
+use near_workspaces::{Account, Contract};
 use serde_json::json;
 use std::fs::File;
 use std::io::BufReader;
-use btc_types::hash::H256;
 
 const STORAGE_DEPOSIT_PER_BLOCK: NearToken = NearToken::from_millinear(500);
 
-#[tokio::test]
-async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> {
+async fn init_contract() -> Result<(Contract, Account), Box<dyn std::error::Error>> {
     let sandbox = near_workspaces::sandbox().await?;
     let contract_wasm = near_workspaces::compile_project("./").await?;
 
@@ -19,47 +19,6 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
     let args = InitArgs {
         genesis_block: block_header.clone(),
         genesis_block_hash: block_header.block_hash(),
-        genesis_block_height: 0,
-        skip_pow_verification: true,
-        gc_threshold: 5,
-    };
-    // Call the init method on the contract
-    let outcome = contract
-        .call("init")
-        .args_json(json!({
-            "args": serde_json::to_value(args).unwrap(),
-        }))
-        .transact()
-        .await?;
-    assert!(outcome.is_success());
-
-    let _user_account = sandbox.dev_create_account().await?;
-
-    let user_message_outcome = contract
-        .view("get_last_block_header")
-        .args_json(json!({}))
-        .await?;
-
-    assert_eq!(
-        user_message_outcome.json::<ExtendedHeader>()?.block_header,
-        block_header.clone()
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
-    let sandbox = near_workspaces::sandbox().await?;
-    let contract_wasm = near_workspaces::compile_project("./").await?;
-
-    let contract = sandbox.dev_deploy(&contract_wasm).await?;
-
-    let block_header = genesis_block_header();
-
-    let args = InitArgs {
-        genesis_block_hash: block_header.block_hash(),
-        genesis_block: block_header.clone(),
         genesis_block_height: 0,
         skip_pow_verification: true,
         gc_threshold: 5,
@@ -75,6 +34,62 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
     assert!(outcome.is_success());
 
     let user_account = sandbox.dev_create_account().await?;
+
+    return Ok((contract, user_account));
+}
+
+async fn init_contract_from_file(
+    gc_threshold: u64,
+) -> Result<(Contract, Account, Vec<Vec<Header>>), Box<dyn std::error::Error>> {
+    let sandbox = near_workspaces::sandbox().await?;
+    let contract_wasm = near_workspaces::compile_project("./").await?;
+
+    let contract = sandbox.dev_deploy(&contract_wasm).await?;
+
+    let block_headers =
+        read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
+    let args = InitArgs {
+        genesis_block: block_headers[0][0].clone(),
+        genesis_block_hash: block_headers[0][0].block_hash(),
+        genesis_block_height: 685440,
+        skip_pow_verification: false,
+        gc_threshold,
+    };
+    // Call the init method on the contract
+    let outcome = contract
+        .call("init")
+        .args_json(json!({
+            "args": serde_json::to_value(args).unwrap(),
+        }))
+        .transact()
+        .await?;
+    assert!(outcome.is_success());
+
+    let user_account = sandbox.dev_create_account().await?;
+
+    return Ok((contract, user_account, block_headers));
+}
+
+#[tokio::test]
+async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> {
+    let (contract, _user_account) = init_contract().await?;
+
+    let user_message_outcome = contract
+        .view("get_last_block_header")
+        .args_json(json!({}))
+        .await?;
+
+    assert_eq!(
+        user_message_outcome.json::<ExtendedHeader>()?.block_header,
+        genesis_block_header().clone()
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
+    let (contract, user_account) = init_contract().await?;
 
     let storage_usage_init = contract.view_account().await.unwrap().storage_usage;
     // second block
@@ -131,35 +146,13 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn test_view_call_verify_transaction_inclusion() -> Result<(), Box<dyn std::error::Error>> {
-    let sandbox = near_workspaces::sandbox().await?;
-    let contract_wasm = near_workspaces::compile_project("./").await?;
+    let (contract, user_account) = init_contract().await?;
 
-    let contract = sandbox.dev_deploy(&contract_wasm).await?;
-
-    let block_header = genesis_block_header();
-    let args = InitArgs {
-        genesis_block: block_header.clone(),
-        genesis_block_hash: block_header.block_hash(),
-        genesis_block_height: 0,
-        skip_pow_verification: true,
-        gc_threshold: 5,
-    };
-    // Call the init method on the contract
-    let outcome = contract
-        .call("init")
-        .args_json(json!({
-            "args": serde_json::to_value(args).unwrap(),
-        }))
-        .transact()
-        .await?;
-    assert!(outcome.is_success());
-
-    let user_account = sandbox.dev_create_account().await?;
     let result: bool = user_account
         .view(contract.id(), "verify_transaction_inclusion")
         .args_borsh(ProofArgs {
             tx_id: merkle_tools::H256::default(),
-            tx_block_blockhash: block_header.block_hash(),
+            tx_block_blockhash: genesis_block_header().block_hash(),
             tx_index: 0,
             merkle_proof: vec![],
             confirmations: 0,
@@ -180,31 +173,7 @@ fn read_blocks_from_json(path: &str) -> Vec<Vec<Header>> {
 
 #[tokio::test]
 async fn test_submit_blocks_for_period() -> Result<(), Box<dyn std::error::Error>> {
-    let sandbox = near_workspaces::sandbox().await?;
-    let contract_wasm = near_workspaces::compile_project("./").await?;
-
-    let contract = sandbox.dev_deploy(&contract_wasm).await?;
-
-    let block_headers =
-        read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
-    let args = InitArgs {
-        genesis_block: block_headers[0][0].clone(),
-        genesis_block_hash: block_headers[0][0].block_hash(),
-        genesis_block_height: 685440,
-        skip_pow_verification: false,
-        gc_threshold: 2017,
-    };
-    // Call the init method on the contract
-    let outcome = contract
-        .call("init")
-        .args_json(json!({
-            "args": serde_json::to_value(args).unwrap(),
-        }))
-        .transact()
-        .await?;
-    assert!(outcome.is_success());
-
-    let user_account = sandbox.dev_create_account().await?;
+    let (contract, user_account, block_headers) = init_contract_from_file(2017).await?;
 
     for block_headers_batch in &block_headers[1..] {
         let outcome = user_account
@@ -223,31 +192,7 @@ async fn test_submit_blocks_for_period() -> Result<(), Box<dyn std::error::Error
 
 #[tokio::test]
 async fn test_get_last_n_blocks() -> Result<(), Box<dyn std::error::Error>> {
-    let sandbox = near_workspaces::sandbox().await?;
-    let contract_wasm = near_workspaces::compile_project("./").await?;
-
-    let contract = sandbox.dev_deploy(&contract_wasm).await?;
-
-    let block_headers =
-        read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
-    let args = InitArgs {
-        genesis_block: block_headers[0][0].clone(),
-        genesis_block_hash: block_headers[0][0].block_hash(),
-        genesis_block_height: 685440,
-        skip_pow_verification: false,
-        gc_threshold: 2017,
-    };
-    // Call the init method on the contract
-    let outcome = contract
-        .call("init")
-        .args_json(json!({
-            "args": serde_json::to_value(args).unwrap(),
-        }))
-        .transact()
-        .await?;
-    assert!(outcome.is_success());
-
-    let user_account = sandbox.dev_create_account().await?;
+    let (contract, user_account, block_headers) = init_contract_from_file(2017).await?;
 
     for block_headers_batch in &block_headers[1..=2] {
         let outcome = user_account
@@ -266,30 +211,21 @@ async fn test_get_last_n_blocks() -> Result<(), Box<dyn std::error::Error>> {
         .args_json(json!({"skip": 0, "limit": 0}))
         .await?;
 
-    assert_eq!(
-        user_message_outcome.json::<Vec<H256>>()?,
-        vec![]
-    );
+    assert_eq!(user_message_outcome.json::<Vec<H256>>()?, vec![]);
 
     let user_message_outcome = contract
         .view("get_last_n_blocks_hashes")
         .args_json(json!({"skip": 0, "limit": 200}))
         .await?;
 
-    assert_eq!(
-        user_message_outcome.json::<Vec<H256>>()?.len(),
-        97
-    );
+    assert_eq!(user_message_outcome.json::<Vec<H256>>()?.len(), 97);
 
     let user_message_outcome = contract
         .view("get_last_n_blocks_hashes")
         .args_json(json!({"skip": 200, "limit": 200}))
         .await?;
 
-    assert_eq!(
-        user_message_outcome.json::<Vec<H256>>()?,
-        vec![]
-    );
+    assert_eq!(user_message_outcome.json::<Vec<H256>>()?, vec![]);
 
     let user_message_outcome = contract
         .view("get_last_n_blocks_hashes")
@@ -312,31 +248,7 @@ async fn test_get_last_n_blocks() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
-    let sandbox = near_workspaces::sandbox().await?;
-    let contract_wasm = near_workspaces::compile_project("./").await?;
-
-    let contract = sandbox.dev_deploy(&contract_wasm).await?;
-
-    let block_headers =
-        read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
-    let args = InitArgs {
-        genesis_block: block_headers[0][0].clone(),
-        genesis_block_hash: block_headers[0][0].block_hash(),
-        genesis_block_height: 685440,
-        skip_pow_verification: false,
-        gc_threshold: 10,
-    };
-    // Call the init method on the contract
-    let outcome = contract
-        .call("init")
-        .args_json(json!({
-            "args": serde_json::to_value(args).unwrap(),
-        }))
-        .transact()
-        .await?;
-    assert!(outcome.is_success());
-
-    let user_account = sandbox.dev_create_account().await?;
+    let (contract, user_account, block_headers) = init_contract_from_file(10).await?;
 
     for block_headers_batch in &block_headers[1..=2] {
         let outcome = user_account
@@ -355,11 +267,7 @@ async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
         .args_json(json!({}))
         .await?;
 
-    assert_eq!(
-        user_message_outcome.json::<u64>().unwrap(),
-        10
-    );
-
+    assert_eq!(user_message_outcome.json::<u64>().unwrap(), 10);
 
     let outcome = user_account
         .call(contract.id(), "run_mainchain_gc")
@@ -374,40 +282,13 @@ async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
         .args_json(json!({}))
         .await?;
 
-    assert_eq!(
-        user_message_outcome.json::<u64>().unwrap(),
-        10
-    );
+    assert_eq!(user_message_outcome.json::<u64>().unwrap(), 10);
     Ok(())
 }
 
 #[tokio::test]
 async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Error>> {
-    let sandbox = near_workspaces::sandbox().await?;
-    let contract_wasm = near_workspaces::compile_project("./").await?;
-
-    let contract = sandbox.dev_deploy(&contract_wasm).await?;
-
-    let block_headers =
-        read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
-    let args = InitArgs {
-        genesis_block: block_headers[0][0].clone(),
-        genesis_block_hash: block_headers[0][0].block_hash(),
-        genesis_block_height: 685440,
-        skip_pow_verification: false,
-        gc_threshold: 10,
-    };
-    // Call the init method on the contract
-    let outcome = contract
-        .call("init")
-        .args_json(json!({
-            "args": serde_json::to_value(args).unwrap(),
-        }))
-        .transact()
-        .await?;
-    assert!(outcome.is_success());
-
-    let user_account = sandbox.dev_create_account().await?;
+    let (contract, user_account, block_headers) = init_contract_from_file(10).await?;
 
     let outcome = user_account
         .call(contract.id(), "submit_blocks")
@@ -416,8 +297,9 @@ async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Er
         .transact()
         .await?;
 
-    assert!(format!("{:?}", outcome.failures()[0].clone().into_result())
-        .contains("Required deposit"));
+    assert!(
+        format!("{:?}", outcome.failures()[0].clone().into_result()).contains("Required deposit")
+    );
 
     for i in 1..=2 {
         let outcome = user_account
@@ -454,8 +336,10 @@ async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Er
     assert!(outcome.is_success());
 
     let amount_after = user_account.view_account().await?.balance;
-    assert!(amount_before.as_yoctonear() - amount_after.as_yoctonear() <
-        2 * (amount_init.as_yoctonear() - amount_before.as_yoctonear()));
+    assert!(
+        amount_before.as_yoctonear() - amount_after.as_yoctonear()
+            < 2 * (amount_init.as_yoctonear() - amount_before.as_yoctonear())
+    );
 
     Ok(())
 }
@@ -463,38 +347,13 @@ async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Er
 #[tokio::test]
 async fn test_submit_blocks_for_period_incorrect_target() -> Result<(), Box<dyn std::error::Error>>
 {
-    let sandbox = near_workspaces::sandbox().await?;
-    let contract_wasm = near_workspaces::compile_project("./").await?;
-
-    let contract = sandbox.dev_deploy(&contract_wasm).await?;
-
-    let mut block_headers =
-        read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
-    let args = InitArgs {
-        genesis_block: block_headers[0][0].clone(),
-        genesis_block_hash: block_headers[0][0].block_hash(),
-        genesis_block_height: 685440,
-        skip_pow_verification: false,
-        gc_threshold: 2017,
-    };
+    let (contract, user_account, mut block_headers) = init_contract_from_file(2017).await?;
 
     for i in 0..block_headers.len() {
         for j in 0..block_headers[i].len() {
             block_headers[i][j].bits = block_headers[0][0].bits;
         }
     }
-
-    // Call the init method on the contract
-    let outcome = contract
-        .call("init")
-        .args_json(json!({
-            "args": serde_json::to_value(args).unwrap(),
-        }))
-        .transact()
-        .await?;
-    assert!(outcome.is_success());
-
-    let user_account = sandbox.dev_create_account().await?;
 
     for i in 1..block_headers.len() {
         let outcome = user_account
