@@ -281,7 +281,10 @@ async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
     let mainchain_blocks = user_message_outcome.json::<Vec<H256>>().unwrap();
     assert_eq!(mainchain_blocks.len(), 10);
     for i in 0..mainchain_blocks.len() {
-        assert_eq!(mainchain_blocks[mainchain_blocks.len() - i - 1], block_headers[2][block_headers[2].len() - i - 1].block_hash());
+        assert_eq!(
+            mainchain_blocks[mainchain_blocks.len() - i - 1],
+            block_headers[2][block_headers[2].len() - i - 1].block_hash()
+        );
     }
 
     let outcome = user_account
