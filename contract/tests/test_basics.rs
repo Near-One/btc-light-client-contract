@@ -273,6 +273,17 @@ async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
 
     assert_eq!(user_message_outcome.json::<u64>().unwrap(), 10);
 
+    let user_message_outcome = contract
+        .view("get_last_n_blocks_hashes")
+        .args_json(json!({"skip": 0, "limit": 100}))
+        .await?;
+
+    let mainchain_blocks = user_message_outcome.json::<Vec<H256>>().unwrap();
+    assert_eq!(mainchain_blocks.len(), 10);
+    for i in 0..mainchain_blocks.len() {
+        assert_eq!(mainchain_blocks[mainchain_blocks.len() - i - 1], block_headers[2][block_headers[2].len() - i - 1].block_hash());
+    }
+
     let outcome = user_account
         .call(contract.id(), "run_mainchain_gc")
         .args_json(json!({"batch_size": 100}))
