@@ -250,6 +250,8 @@ async fn test_get_last_n_blocks() -> Result<(), Box<dyn std::error::Error>> {
 async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
     let (contract, user_account, block_headers) = init_contract_from_file(10).await?;
 
+    let mut submitted_blocks_count: usize = 1;
+
     for block_headers_batch in &block_headers[1..=2] {
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
@@ -260,7 +262,9 @@ async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
             .await?;
 
         assert!(outcome.is_success());
+        submitted_blocks_count += block_headers_batch.len();
     }
+    assert_eq!(submitted_blocks_count, 97);
 
     let user_message_outcome = contract
         .view("get_mainchain_size")
