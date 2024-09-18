@@ -74,13 +74,13 @@ async fn init_contract_from_file(
 async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> {
     let (contract, _user_account) = init_contract().await?;
 
-    let user_message_outcome = contract
+    let outcome = contract
         .view("get_last_block_header")
         .args_json(json!({}))
         .await?;
 
     assert_eq!(
-        user_message_outcome.json::<ExtendedHeader>()?.block_header,
+        outcome.json::<ExtendedHeader>()?.block_header,
         genesis_block_header().clone()
     );
 
@@ -131,13 +131,13 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
             - (storage_usage_fork - storage_usage_one_block)
     );
 
-    let user_message_outcome = contract
+    let outcome = contract
         .view("get_last_block_header")
         .args_json(json!({}))
         .await?;
 
     assert_eq!(
-        user_message_outcome.json::<ExtendedHeader>()?.block_header,
+        outcome.json::<ExtendedHeader>()?.block_header,
         fork_block_header_example_2()
     );
 
@@ -206,33 +206,33 @@ async fn test_get_last_n_blocks() -> Result<(), Box<dyn std::error::Error>> {
         assert!(outcome.is_success());
     }
 
-    let user_message_outcome = contract
+    let outcome = contract
         .view("get_last_n_blocks_hashes")
         .args_json(json!({"skip": 0, "limit": 0}))
         .await?;
 
-    assert_eq!(user_message_outcome.json::<Vec<H256>>()?, vec![]);
+    assert_eq!(outcome.json::<Vec<H256>>()?, vec![]);
 
-    let user_message_outcome = contract
+    let outcome = contract
         .view("get_last_n_blocks_hashes")
         .args_json(json!({"skip": 0, "limit": 200}))
         .await?;
 
-    assert_eq!(user_message_outcome.json::<Vec<H256>>()?.len(), 97);
+    assert_eq!(outcome.json::<Vec<H256>>()?.len(), 97);
 
-    let user_message_outcome = contract
+    let outcome = contract
         .view("get_last_n_blocks_hashes")
         .args_json(json!({"skip": 200, "limit": 200}))
         .await?;
 
-    assert_eq!(user_message_outcome.json::<Vec<H256>>()?, vec![]);
+    assert_eq!(outcome.json::<Vec<H256>>()?, vec![]);
 
-    let user_message_outcome = contract
+    let outcome = contract
         .view("get_last_n_blocks_hashes")
         .args_json(json!({"skip": 10, "limit": 10}))
         .await?;
 
-    let last_blocks = user_message_outcome.json::<Vec<H256>>()?;
+    let last_blocks = outcome.json::<Vec<H256>>()?;
     assert_eq!(
         last_blocks[0].to_string(),
         "0000000000000000000aab4a401ac27b945057be99db4ccc9631da4bb0b9d746"
@@ -266,19 +266,19 @@ async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
     }
     assert_eq!(submitted_blocks_count, 97);
 
-    let user_message_outcome = contract
+    let outcome = contract
         .view("get_mainchain_size")
         .args_json(json!({}))
         .await?;
 
-    assert_eq!(user_message_outcome.json::<u64>().unwrap(), 10);
+    assert_eq!(outcome.json::<u64>().unwrap(), 10);
 
-    let user_message_outcome = contract
+    let outcome = contract
         .view("get_last_n_blocks_hashes")
         .args_json(json!({"skip": 0, "limit": 100}))
         .await?;
 
-    let mainchain_blocks = user_message_outcome.json::<Vec<H256>>().unwrap();
+    let mainchain_blocks = outcome.json::<Vec<H256>>().unwrap();
     assert_eq!(mainchain_blocks.len(), 10);
     for i in 0..mainchain_blocks.len() {
         assert_eq!(
@@ -295,12 +295,12 @@ async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
     assert!(outcome.is_success());
 
-    let user_message_outcome = contract
+    let outcome = contract
         .view("get_mainchain_size")
         .args_json(json!({}))
         .await?;
 
-    assert_eq!(user_message_outcome.json::<u64>().unwrap(), 10);
+    assert_eq!(outcome.json::<u64>().unwrap(), 10);
     Ok(())
 }
 
