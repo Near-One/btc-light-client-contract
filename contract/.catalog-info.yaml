@@ -13,5 +13,7 @@ spec:
   owner: nearone-team
   type: contract
   lifecycle: production
-  deployedAt: []
+  deployedAt:
+    - contract:near/mainnet/btc-client.bridge.near
+    - contract:near/mainnet/btc-client-v4.testnet
   interactsWith: []
