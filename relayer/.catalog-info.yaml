@@ -12,5 +12,3 @@ spec:
   owner: nearone-team
   type: service
   lifecycle: production
-  deployedAt: []
-  interactsWith: []
