@@ -1,0 +1,10 @@
+---
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  name: btc-light-client-public
+  description: Public btc-light-client repository
+spec:
+  targets:
+    - ./contract/.catalog-info.yaml
+    - ./relayer/.catalog-info.yaml
