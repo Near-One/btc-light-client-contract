@@ -98,7 +98,6 @@ pub struct BtcLightClient {
 #[near]
 impl BtcLightClient {
     /// Recommended initialization parameters:
-    /// * `genesis_block_height % 2016 == 0`: The genesis block height must be divisible by 2016 to align with difficulty adjustment cycles.
     /// * The `genesis_block` must be at least 144 blocks earlier than the last block. 144 is the approximate number of blocks generated in one day.
     /// * `skip_pow_verification = false`: Should be set to `false` for standard use. Set to `true` only for testing purposes.
     /// * `gc_threshold = 52704`: This is the approximate number of blocks generated in a year.
@@ -326,8 +325,6 @@ impl BtcLightClient {
         env::log_str(&format!(
             "Init with block hash {block_hash} at height {block_height}"
         ));
-
-        require!(block_height % BLOCKS_PER_ADJUSTMENT == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", BLOCKS_PER_ADJUSTMENT));
 
         let current_block_hash = block_header.block_hash();
         require!(&current_block_hash == block_hash, "Invalid block hash");
