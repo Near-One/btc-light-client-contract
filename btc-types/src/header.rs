@@ -5,6 +5,8 @@ use crate::{
     hash::{double_sha256, H256},
     u256::U256,
 };
+use scrypt::{scrypt, Params};
+
 pub type Target = U256;
 pub type Work = U256;
 
@@ -83,6 +85,23 @@ impl Header {
         block_header.extend_from_slice(&self.nonce.to_le_bytes());
 
         double_sha256(&block_header)
+    }
+
+    pub fn block_hash_pow(&self) -> H256 {
+        let mut block_header = Vec::with_capacity(Self::SIZE);
+        block_header.extend_from_slice(&self.version.to_le_bytes());
+        block_header.extend(self.prev_block_hash.0);
+        block_header.extend(self.merkle_root.0);
+        block_header.extend_from_slice(&self.time.to_le_bytes());
+        block_header.extend_from_slice(&self.bits.to_le_bytes());
+        block_header.extend_from_slice(&self.nonce.to_le_bytes());
+
+        let params = Params::new(10, 1, 1, 32).unwrap(); // N=1024 (2^10), r=1, p=1
+
+        let mut output = [0u8; 32];
+        scrypt(&block_header, &block_header, &params, &mut output).unwrap();
+
+        H256::from(output)
     }
 }
 

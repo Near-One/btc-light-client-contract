@@ -11,6 +11,7 @@ use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
+use hex;
 
 pub(crate) const ERR_KEY_NOT_EXIST: &str = "ERR_KEY_NOT_EXIST";
 
@@ -362,10 +363,12 @@ impl BtcLightClient {
         self.check_target(&block_header, &prev_block_header);
 
         let current_block_hash = block_header.block_hash();
+        let pow_hash = block_header.block_hash_pow();
+
         require!(
             self.skip_pow_verification
-                || U256::from_le_bytes(&current_block_hash.0) <= block_header.target(),
-            "block should have correct pow"
+                || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
+            format!("block should have correct pow {}, {:?}, {:?}", hex::encode(&pow_hash.0), U256::from_le_bytes(&pow_hash.0), block_header.target())
         );
 
         let (current_block_computed_chain_work, overflow) = prev_block_header
