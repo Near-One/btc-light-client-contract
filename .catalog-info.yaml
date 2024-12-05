@@ -8,3 +8,5 @@ spec:
   targets:
     - ./contract/.catalog-info.yaml
     - ./relayer/.catalog-info.yaml
+    - ./btc-types/.catalog-info.yaml
+    - ./merkle-tools/.catalog-info.yaml

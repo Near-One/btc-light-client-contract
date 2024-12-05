@@ -492,8 +492,9 @@ impl BtcLightClient {
             .headers_pool
             .get(&interval_tail_header_hash)
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        let prev_block_time = prev_block_header.block_header.time;
         let mut actual_time_taken = u64::from(
-            prev_block_header.block_header.time - interval_tail_extend_header.block_header.time,
+            prev_block_time.saturating_sub(interval_tail_extend_header.block_header.time),
         );
 
         if actual_time_taken < self.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
