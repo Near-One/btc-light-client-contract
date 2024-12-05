@@ -1,8 +1,6 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{
-    ExtendedHeader, Header, BLOCKS_PER_ADJUSTMENT, EXPECTED_TIME, MAX_ADJUSTMENT_FACTOR,
-};
+use btc_types::header::{ExtendedHeader, Header, MAX_ADJUSTMENT_FACTOR};
 use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
@@ -94,11 +92,20 @@ pub struct BtcLightClient {
 
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
     gc_threshold: u64,
+
+    // Expected time bitween blocks adjustment in seconds,
+    // for bitcoin = 600 * 2016, litecoin = 150 * 2016, dogecoin = 60 * 1
+    expected_time_secs: u64,
+
+    // Number of blocks between adjustment,
+    // for bitocin and litecoin = 2016, for dogecoin = 1
+    blocks_per_adjustment: u64,
 }
 
 #[near]
 impl BtcLightClient {
     /// Recommended initialization parameters:
+    /// * `genesis_block_height % blocks_per_adjustment == 0`: The genesis block height must be divisible by `blocks_per_adjustment` to align with difficulty adjustment cycles.
     /// * The `genesis_block` must be at least 144 blocks earlier than the last block. 144 is the approximate number of blocks generated in one day.
     /// * `skip_pow_verification = false`: Should be set to `false` for standard use. Set to `true` only for testing purposes.
     /// * `gc_threshold = 52704`: This is the approximate number of blocks generated in a year.
@@ -114,6 +121,8 @@ impl BtcLightClient {
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
+            expected_time_secs: args.targer_block_time_secs * args.blocks_per_adjustment,
+            blocks_per_adjustment: args.blocks_per_adjustment
         };
 
         // Make the contract itself super admin. This allows us to grant any role in the
@@ -437,7 +446,7 @@ impl BtcLightClient {
         } else {
             let mut current_block_header = prev_block_header.clone();
             while current_block_header.block_header.bits == PROOF_OF_WORK_LIMIT_BITS
-                && current_block_header.block_height % BLOCKS_PER_ADJUSTMENT != 0
+                && current_block_header.block_height % self.blocks_per_adjustment != 0
             {
                 current_block_header = self
                     .headers_pool
@@ -457,7 +466,7 @@ impl BtcLightClient {
     }
 
     fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
-        if (prev_block_header.block_height + 1) % BLOCKS_PER_ADJUSTMENT != 0 {
+        if (prev_block_header.block_height + 1) % self.blocks_per_adjustment != 0 {
             #[cfg(feature = "testnet")]
             return self.check_target_testnet(block_header, prev_block_header);
 
@@ -476,7 +485,7 @@ impl BtcLightClient {
 
         let interval_tail_header_hash = self
             .mainchain_height_to_header
-            .get(&(prev_block_header.block_height + 1 - BLOCKS_PER_ADJUSTMENT))
+            .get(&(prev_block_header.block_height + 1 - self.blocks_per_adjustment))
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let interval_tail_extend_header = self
             .headers_pool
@@ -486,18 +495,18 @@ impl BtcLightClient {
             prev_block_header.block_header.time - interval_tail_extend_header.block_header.time,
         );
 
-        if actual_time_taken < EXPECTED_TIME / MAX_ADJUSTMENT_FACTOR {
-            actual_time_taken = EXPECTED_TIME / MAX_ADJUSTMENT_FACTOR;
+        if actual_time_taken < self.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
+            actual_time_taken = self.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
         }
-        if actual_time_taken > EXPECTED_TIME * MAX_ADJUSTMENT_FACTOR {
-            actual_time_taken = EXPECTED_TIME * MAX_ADJUSTMENT_FACTOR;
+        if actual_time_taken > self.expected_time_secs * MAX_ADJUSTMENT_FACTOR {
+            actual_time_taken = self.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
         }
 
         let last_target = prev_block_header.block_header.target();
 
         let (mut new_target, new_target_overflow) = last_target.overflowing_mul(actual_time_taken);
         require!(!new_target_overflow, "new target overflow");
-        new_target = new_target / U256::from(EXPECTED_TIME);
+        new_target = new_target / U256::from(self.expected_time_secs);
 
         let expected_bits = new_target.target_to_bits();
 

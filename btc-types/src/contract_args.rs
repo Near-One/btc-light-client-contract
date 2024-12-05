@@ -10,6 +10,8 @@ pub struct InitArgs {
     pub genesis_block_height: u64,
     pub skip_pow_verification: bool,
     pub gc_threshold: u64,
+    pub targer_block_time_secs: u64,
+    pub blocks_per_adjustment: u64,
 }
 
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
