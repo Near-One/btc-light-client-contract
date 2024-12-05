@@ -336,6 +336,8 @@ impl BtcLightClient {
             "Init with block hash {block_hash} at height {block_height}"
         ));
 
+        require!(block_height % self.blocks_per_adjustment == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", self.blocks_per_adjustment));
+
         let current_block_hash = block_header.block_hash();
         require!(&current_block_hash == block_hash, "Invalid block hash");
         let chain_work = block_header.work();
@@ -377,7 +379,7 @@ impl BtcLightClient {
         require!(
             self.skip_pow_verification
                 || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
-            format!("block should have correct pow {}, {:?}, {:?}", hex::encode(&pow_hash.0), U256::from_le_bytes(&pow_hash.0), block_header.target())
+            format!("block should have correct pow")
         );
 
         let (current_block_computed_chain_work, overflow) = prev_block_header
