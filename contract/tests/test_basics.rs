@@ -22,6 +22,8 @@ async fn init_contract() -> Result<(Contract, Account), Box<dyn std::error::Erro
         genesis_block_height: 0,
         skip_pow_verification: true,
         gc_threshold: 5,
+        blocks_per_adjustment: 2016,
+        targer_block_time_secs: 600
     };
     // Call the init method on the contract
     let outcome = contract
@@ -54,6 +56,8 @@ async fn init_contract_from_file(
         genesis_block_height: 685_440,
         skip_pow_verification: false,
         gc_threshold,
+        blocks_per_adjustment: 2016,
+        targer_block_time_secs: 600
     };
     // Call the init method on the contract
     let outcome = contract

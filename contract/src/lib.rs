@@ -9,7 +9,6 @@ use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
-use hex;
 
 pub(crate) const ERR_KEY_NOT_EXIST: &str = "ERR_KEY_NOT_EXIST";
 
@@ -693,6 +692,8 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
+            blocks_per_adjustment: 2016,
+            targer_block_time_secs: 600
         }
     }
 
@@ -704,6 +705,8 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 3,
+            blocks_per_adjustment: 2016,
+            targer_block_time_secs: 600
         }
     }
 
