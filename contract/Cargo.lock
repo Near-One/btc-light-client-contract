@@ -639,7 +639,6 @@ version = "0.1.0"
 dependencies = [
  "borsh",
  "btc-types",
- "hex 0.4.3",
  "merkle-tools",
  "near-plugins",
  "near-sdk",
