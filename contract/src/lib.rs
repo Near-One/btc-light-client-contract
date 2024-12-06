@@ -121,7 +121,7 @@ impl BtcLightClient {
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
             expected_time_secs: args.targer_block_time_secs * args.blocks_per_adjustment,
-            blocks_per_adjustment: args.blocks_per_adjustment
+            blocks_per_adjustment: args.blocks_per_adjustment,
         };
 
         // Make the contract itself super admin. This allows us to grant any role in the
@@ -376,8 +376,7 @@ impl BtcLightClient {
         let pow_hash = block_header.block_hash_pow();
 
         require!(
-            self.skip_pow_verification
-                || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
+            self.skip_pow_verification || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
             format!("block should have correct pow")
         );
 
@@ -694,7 +693,7 @@ mod tests {
             skip_pow_verification: false,
             gc_threshold: 3,
             blocks_per_adjustment: 2016,
-            targer_block_time_secs: 600
+            targer_block_time_secs: 600,
         }
     }
 
@@ -707,7 +706,7 @@ mod tests {
             skip_pow_verification: true,
             gc_threshold: 3,
             blocks_per_adjustment: 2016,
-            targer_block_time_secs: 600
+            targer_block_time_secs: 600,
         }
     }
 
