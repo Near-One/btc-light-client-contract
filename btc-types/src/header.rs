@@ -5,12 +5,12 @@ use crate::{
     hash::{double_sha256, H256},
     u256::U256,
 };
+#[cfg(feature = "scrypt_hash")]
+use scrypt::{scrypt, Params};
+
 pub type Target = U256;
 pub type Work = U256;
 
-pub const BLOCKS_PER_ADJUSTMENT: u64 = 2016;
-pub const TARGET_BLOCK_TIME_SECS: u64 = 10 * 60;
-pub const EXPECTED_TIME: u64 = BLOCKS_PER_ADJUSTMENT as u64 * TARGET_BLOCK_TIME_SECS;
 pub const MAX_ADJUSTMENT_FACTOR: u64 = 4;
 
 #[cfg(feature = "testnet")]
@@ -74,6 +74,28 @@ impl Header {
 
     #[must_use]
     pub fn block_hash(&self) -> H256 {
+        let block_header = self.get_block_header_vec();
+        double_sha256(&block_header)
+    }
+
+    pub fn block_hash_pow(&self) -> H256 {
+        let block_header = self.get_block_header_vec();
+        #[cfg(feature = "scrypt_hash")]
+        {
+            let params = Params::new(10, 1, 1, 32).unwrap(); // N=1024 (2^10), r=1, p=1
+
+            let mut output = [0u8; 32];
+            scrypt(&block_header, &block_header, &params, &mut output).unwrap();
+            H256::from(output)
+        }
+
+        #[cfg(not(feature = "scrypt_hash"))]
+        {
+            double_sha256(&block_header)
+        }
+    }
+
+    fn get_block_header_vec(&self) -> Vec<u8> {
         let mut block_header = Vec::with_capacity(Self::SIZE);
         block_header.extend_from_slice(&self.version.to_le_bytes());
         block_header.extend(self.prev_block_hash.0);
@@ -82,7 +104,7 @@ impl Header {
         block_header.extend_from_slice(&self.bits.to_le_bytes());
         block_header.extend_from_slice(&self.nonce.to_le_bytes());
 
-        double_sha256(&block_header)
+        block_header
     }
 }
 
