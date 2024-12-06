@@ -80,7 +80,8 @@ impl Header {
 
     pub fn block_hash_pow(&self) -> H256 {
         let block_header = self.get_block_header_vec();
-        #[cfg(feature = "scrypt_hash")] {
+        #[cfg(feature = "scrypt_hash")]
+        {
             let params = Params::new(10, 1, 1, 32).unwrap(); // N=1024 (2^10), r=1, p=1
 
             let mut output = [0u8; 32];
@@ -88,7 +89,8 @@ impl Header {
             H256::from(output)
         }
 
-        #[cfg(not(feature = "scrypt_hash"))] {
+        #[cfg(not(feature = "scrypt_hash"))]
+        {
             double_sha256(&block_header)
         }
     }
