@@ -41,5 +41,7 @@ overflow-checks = true
 inherits = "release"
 
 [features]
+default = ["bitcoin"]
+bitcoin = []
 testnet = ["btc-types/testnet"]
-scrypt_hash = ["btc-types/scrypt_hash"]
+litecoin = ["btc-types/scrypt_hash"]

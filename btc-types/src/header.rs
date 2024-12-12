@@ -5,8 +5,6 @@ use crate::{
     hash::{double_sha256, H256},
     u256::U256,
 };
-#[cfg(feature = "scrypt_hash")]
-use scrypt::{scrypt, Params};
 
 pub type Target = U256;
 pub type Work = U256;
@@ -82,10 +80,10 @@ impl Header {
         let block_header = self.get_block_header_vec();
         #[cfg(feature = "scrypt_hash")]
         {
-            let params = Params::new(10, 1, 1, 32).unwrap(); // N=1024 (2^10), r=1, p=1
+            let params = scrypt::Params::new(10, 1, 1, 32).unwrap(); // N=1024 (2^10), r=1, p=1
 
             let mut output = [0u8; 32];
-            scrypt(&block_header, &block_header, &params, &mut output).unwrap();
+            scrypt::scrypt(&block_header, &block_header, &params, &mut output).unwrap();
             H256::from(output)
         }
 

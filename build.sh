@@ -28,7 +28,7 @@ docker run \
      -e RUSTFLAGS='-C link-arg=-s' \
      rust:1.78 \
      /bin/bash -c "rustup target add wasm32-unknown-unknown; \
-     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --release --features scrypt_hash"
+     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --release --features litecoin"
 
 mkdir -p res
 cp $DIR/contract/target/wasm32-unknown-unknown/release/btc_light_client_contract.wasm $DIR/res/btc_light_client_litecoin.wasm
