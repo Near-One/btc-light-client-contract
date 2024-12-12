@@ -127,6 +127,7 @@ impl Client {
             println!("MERKLE ROOT: {:?}",hex::encode(str_merkle_root));
             println!("COIN ROOT: {:?}", hex::encode(coin_root.clone()));
             println!("INPUT SCRIPT: {:?}", coinbase_tx.input[0].script_sig.to_hex_string());
+            println!("CHAIN INDEX: {:?}", chain_index);
             println!("================");
             println!("");
 
