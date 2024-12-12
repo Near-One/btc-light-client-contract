@@ -51,8 +51,8 @@ impl Synchronizer {
                 }
 
                 let block_hash = continue_on_fail!(self.bitcoin_client.get_block_hash(current_height), "Bitcoin Client: Error on get_block_hash", sleep_time_on_fail_sec,  'main_loop);
-                let block_header = continue_on_fail!(self.bitcoin_client.get_aux_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop).0;
-                blocks_to_submit.push(block_header);
+                let (block_header, aux_data) = continue_on_fail!(self.bitcoin_client.get_aux_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop);
+                blocks_to_submit.push((block_header, aux_data));
             }
 
             let number_of_blocks_to_submit: u64 = blocks_to_submit.len().try_into().unwrap();
@@ -67,7 +67,7 @@ impl Synchronizer {
                 continue;
             }
 
-            let last_block_hash = blocks_to_submit[blocks_to_submit.len() - 1].block_hash();
+            let last_block_hash = blocks_to_submit[blocks_to_submit.len() - 1].0.block_hash();
 
             let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(last_block_hash).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
             if block_already_submitted {

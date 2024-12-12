@@ -148,7 +148,7 @@ impl BtcLightClient {
 
     #[payable]
     #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
-    pub fn submit_block(
+    pub fn submit_blocks(
         &mut self,
         #[serializer(borsh)] headers: Vec<(Header, Option<AuxData>)>,
     ) -> PromiseOrValue<()> {
@@ -524,9 +524,15 @@ impl BtcLightClient {
             }
         }
 
+        if self
+            .mainchain_height_to_header
+            .get(&(prev_block_header.block_height - self.blocks_per_adjustment)) == None {
+            return;
+        }
+
         let interval_tail_header_hash = self
             .mainchain_height_to_header
-            .get(&(prev_block_header.block_height + 1 - self.blocks_per_adjustment))
+            .get(&(prev_block_header.block_height - self.blocks_per_adjustment))
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let interval_tail_extend_header = self
             .headers_pool

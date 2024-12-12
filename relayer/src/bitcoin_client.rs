@@ -8,15 +8,15 @@ use bitcoincore_rpc::{jsonrpc, RpcApi};
 
 use crate::config::Config;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AuxData {
-    coinbase_tx: bitcoin::Transaction,
-    parent_block_hash: BlockHash,
-    merkle_branch: Vec<TxMerkleNode>,
-    merkle_index: u32,
-    chainmerkle_branch: Vec<TxMerkleNode>,
-    chain_index: u32,
-    parent_block: Header,
+    pub(crate) coinbase_tx: bitcoin::Transaction,
+    pub(crate) parent_block_hash: BlockHash,
+    pub(crate) merkle_branch: Vec<TxMerkleNode>,
+    pub(crate) merkle_index: u32,
+    pub(crate) chainmerkle_branch: Vec<TxMerkleNode>,
+    pub(crate) chain_index: u32,
+    pub(crate) parent_block: Header,
 }
 
 #[derive(Debug)]
