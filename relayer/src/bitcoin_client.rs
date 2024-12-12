@@ -1,9 +1,22 @@
+use bitcoin::consensus::encode;
+use bitcoin::{Transaction, TxMerkleNode};
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::{jsonrpc, RpcApi};
 
 use crate::config::Config;
+
+#[derive(Debug)]
+pub struct AuxData {
+    coinbase_tx: bitcoin::Transaction,
+    parent_block_hash: BlockHash,
+    merkle_branch: Vec<TxMerkleNode>,
+    merkle_index: u32,
+    chainmerkle_branch: Vec<TxMerkleNode>,
+    chain_index: u32,
+    parent_block: Header,
+}
 
 #[derive(Debug)]
 pub struct Client {
@@ -57,6 +70,48 @@ impl Client {
         self.inner.get_block_header(block_hash)
     }
 
+    pub fn get_aux_block_header(
+        &self,
+        block_hash: &BlockHash,
+    ) -> Result<(Header, Option<AuxData>), bitcoincore_rpc::Error> {
+        let hex: String = self.inner.call("getblockheader", &[into_json(block_hash)?, false.into()])?;
+        if hex.len() == 160 {
+            let block1: Header = encode::deserialize_hex(&hex)?;
+            return Ok((block1, None));
+        } else {
+            let data_bytes = hex::decode(&hex).unwrap();
+            let mut cursor = 0;
+            let (block1, readed_len): (Header, usize) = encode::deserialize_partial(&data_bytes).unwrap();
+            cursor += readed_len;
+            let (coinbase_tx, readed_len): (Transaction, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += readed_len;
+            let (parent_block_hash, reader_len): (BlockHash, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+            let (merkle_branch, reader_len): (Vec<TxMerkleNode>, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+            let (merkle_index, reader_len): (u32, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+            let (chainmerkle_branch, reader_len): (Vec<TxMerkleNode>, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+            let (chain_index, reader_len): (u32, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+            let (parent_block, reader_len): (Header, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+
+            let aux_data = AuxData {
+                coinbase_tx,
+                parent_block_hash,
+                merkle_branch,
+                merkle_index,
+                chainmerkle_branch,
+                chain_index,
+                parent_block
+            };
+
+            return Ok((block1, Some(aux_data)));
+        }
+    }
+
     /// Get block header by bock height
     ///
     /// # Errors
@@ -108,4 +163,11 @@ impl Client {
 
         merkle_tools::merkle_proof_calculator(transactions, transaction_position)
     }
+}
+
+fn into_json<T>(val: T) -> Result<serde_json::Value, bitcoincore_rpc::Error>
+    where
+        T: serde::ser::Serialize,
+{
+    Ok(serde_json::to_value(val)?)
 }

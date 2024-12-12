@@ -37,8 +37,7 @@ impl Synchronizer {
         }
     }
     async fn sync(&mut self) {
-        let mut first_block_height_to_submit =
-            self.get_last_correct_block_height().await.unwrap() + 1;
+        let mut first_block_height_to_submit = self.get_last_correct_block_height().await.unwrap() + 1;
         let sleep_time_on_fail_sec = self.config.sleep_time_on_fail_sec;
 
         'main_loop: loop {
@@ -52,7 +51,7 @@ impl Synchronizer {
                 }
 
                 let block_hash = continue_on_fail!(self.bitcoin_client.get_block_hash(current_height), "Bitcoin Client: Error on get_block_hash", sleep_time_on_fail_sec,  'main_loop);
-                let block_header = continue_on_fail!(self.bitcoin_client.get_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop);
+                let block_header = continue_on_fail!(self.bitcoin_client.get_aux_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop).0;
                 blocks_to_submit.push(block_header);
             }
 
