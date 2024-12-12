@@ -312,9 +312,9 @@ dependencies = [
 
 [[package]]
 name = "bitcoin"
-version = "0.32.0"
+version = "0.32.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7170e7750a20974246f17ece04311b4205a6155f1db564c5b224af817663c3ea"
+checksum = "ce6bc65742dea50536e35ad42492b234c27904a27f0abdcbce605015cb4ea026"
 dependencies = [
  "base58ck",
  "bech32",
@@ -567,6 +567,7 @@ dependencies = [
 name = "btc-types"
 version = "0.1.0"
 dependencies = [
+ "bitcoin",
  "borsh 1.5.0",
  "hex",
  "near-sdk",
