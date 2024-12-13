@@ -26,7 +26,7 @@ use crate::bitcoin_client::AuxData;
 
 use crate::config::NearConfig;
 
-const SUBMIT_BLOCKS: &str = "submit_blocks";
+const SUBMIT_BLOCKS: &str = "submit_blocks_aux";
 const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 #[allow(dead_code)]
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";

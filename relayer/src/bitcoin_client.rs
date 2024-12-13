@@ -109,33 +109,6 @@ impl Client {
                 parent_block
             };
 
-            let merkle_root = merkle_tools::compute_root_from_merkle_proof(
-                merkle_tools::H256::from(coinbase_tx.clone().compute_txid().to_raw_hash().to_byte_array()), merkle_index as usize, &merkle_branch.iter().map(|h| merkle_tools::H256::from(h.to_byte_array())).collect());
-            let mut str_merkle_root = merkle_root.0;
-            str_merkle_root.reverse();
-
-
-            let coin_root = merkle_tools::compute_root_from_merkle_proof(
-                merkle_tools::H256::from(block1.block_hash().to_byte_array()), chain_index as usize, &chainmerkle_branch.iter().map(|h| merkle_tools::H256::from(h.to_byte_array())).collect());
-
-            let mut coin_root = coin_root.0;
-            coin_root.reverse();
-
-            println!("\n\n\n\n================");
-            println!("LITECOIN BLOCK HASH: {:?}, \n PREV_BLOCK_HASH: {:?} \n PARENT BLOCK_HASH: {:?}", parent_block.block_hash(), parent_block.prev_blockhash, parent_block_hash);
-            println!("COINBASE TX HASH: {:?}", coinbase_tx.clone().compute_txid());
-            println!("MERKLE ROOT: {:?}",hex::encode(str_merkle_root));
-            println!("COIN ROOT: {:?}", hex::encode(coin_root.clone()));
-            println!("INPUT SCRIPT: {:?}", coinbase_tx.input[0].script_sig.to_hex_string());
-            println!("CHAIN INDEX: {:?}", chain_index);
-            println!("================");
-            println!("");
-
-            println!("Doge Block: {:?}, AuxData: {:?}", block1, aux_data);
-            //assert_eq!(parent_block_hash, parent_block.block_hash());
-            assert_eq!(merkle_root.0, parent_block.merkle_root.to_byte_array());
-            assert!(coinbase_tx.input[0].script_sig.to_hex_string().contains(&hex::encode(coin_root)));
-
             return Ok((block1, Some(aux_data)));
         }
     }
