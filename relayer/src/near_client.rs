@@ -326,7 +326,7 @@ impl NearClient {
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: method_name.to_string(),
                 args,
-                gas: 200_000_000_000_000,     // 200 TeraGas
+                gas: 300_000_000_000_000,     // 300 TeraGas
                 deposit: 5 * 10_u128.pow(23), // 0.5 Near
             }))],
         };
