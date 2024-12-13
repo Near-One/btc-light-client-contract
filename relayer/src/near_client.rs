@@ -8,8 +8,8 @@ use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
 
-use bitcoin::BlockHash;
 use bitcoin::consensus::serialize;
+use bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
@@ -17,12 +17,12 @@ use log::info;
 use near_crypto::InMemorySigner;
 use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncResponse;
 use near_primitives::borsh;
+use serde::Serialize;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
-use serde::Serialize;
 
-use tokio::time;
 use crate::bitcoin_client::AuxData;
+use tokio::time;
 
 use crate::config::NearConfig;
 
@@ -63,15 +63,21 @@ fn get_btc_header(header: Header) -> btc_types::header::Header {
 fn get_aux_data(aux_data: Option<AuxData>) -> Option<btc_types::aux::AuxData> {
     match aux_data {
         None => None,
-        Some(aux_data) => {
-            Some(btc_types::aux::AuxData {
-                coinbase_tx: serialize(&aux_data.coinbase_tx),
-                merkle_proof: aux_data.merkle_branch.iter().map(|h| H256::from(h.to_raw_hash().to_byte_array())).collect(),
-                chain_merkle_proof: aux_data.chainmerkle_branch.iter().map(|h| H256::from(h.to_raw_hash().to_byte_array())).collect(),
-                chain_id: aux_data.chain_index as usize,
-                parent_block: get_btc_header(aux_data.parent_block)
-            })
-        }
+        Some(aux_data) => Some(btc_types::aux::AuxData {
+            coinbase_tx: serialize(&aux_data.coinbase_tx),
+            merkle_proof: aux_data
+                .merkle_branch
+                .iter()
+                .map(|h| H256::from(h.to_raw_hash().to_byte_array()))
+                .collect(),
+            chain_merkle_proof: aux_data
+                .chainmerkle_branch
+                .iter()
+                .map(|h| H256::from(h.to_raw_hash().to_byte_array()))
+                .collect(),
+            chain_id: aux_data.chain_index as usize,
+            parent_block: get_btc_header(aux_data.parent_block),
+        }),
     }
 }
 
@@ -134,7 +140,10 @@ impl NearClient {
         let args: Vec<_> = headers
             .iter()
             .map(|header| {
-                (get_btc_header((*header).0), get_aux_data((*header).1.clone()))
+                (
+                    get_btc_header((*header).0),
+                    get_aux_data((*header).1.clone()),
+                )
             })
             .collect();
 

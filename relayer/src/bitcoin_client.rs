@@ -1,6 +1,6 @@
 use bitcoin::consensus::encode;
-use bitcoin::{Transaction, TxMerkleNode};
 use bitcoin::hashes::sha256d;
+use bitcoin::{Transaction, TxMerkleNode};
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
@@ -75,28 +75,38 @@ impl Client {
         &self,
         block_hash: &BlockHash,
     ) -> Result<(Header, Option<AuxData>), bitcoincore_rpc::Error> {
-        let hex: String = self.inner.call("getblockheader", &[into_json(block_hash)?, false.into()])?;
+        let hex: String = self
+            .inner
+            .call("getblockheader", &[into_json(block_hash)?, false.into()])?;
         if hex.len() == 160 {
             let block1: Header = encode::deserialize_hex(&hex)?;
             return Ok((block1, None));
         } else {
             let data_bytes = hex::decode(&hex).unwrap();
             let mut cursor = 0;
-            let (block1, readed_len): (Header, usize) = encode::deserialize_partial(&data_bytes).unwrap();
+            let (block1, readed_len): (Header, usize) =
+                encode::deserialize_partial(&data_bytes).unwrap();
             cursor += readed_len;
-            let (coinbase_tx, readed_len): (Transaction, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            let (coinbase_tx, readed_len): (Transaction, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
             cursor += readed_len;
-            let (parent_block_hash, reader_len): (BlockHash, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            let (parent_block_hash, reader_len): (BlockHash, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
             cursor += reader_len;
-            let (merkle_branch, reader_len): (Vec<TxMerkleNode>, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            let (merkle_branch, reader_len): (Vec<TxMerkleNode>, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
             cursor += reader_len;
-            let (merkle_index, reader_len): (u32, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            let (merkle_index, reader_len): (u32, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
             cursor += reader_len;
-            let (chainmerkle_branch, reader_len): (Vec<TxMerkleNode>, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            let (chainmerkle_branch, reader_len): (Vec<TxMerkleNode>, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
             cursor += reader_len;
-            let (chain_index, reader_len): (u32, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            let (chain_index, reader_len): (u32, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
             cursor += reader_len;
-            let (parent_block, reader_len): (Header, usize) = encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            let (parent_block, reader_len): (Header, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
             cursor += reader_len;
 
             let aux_data = AuxData {
@@ -106,7 +116,7 @@ impl Client {
                 merkle_index,
                 chainmerkle_branch: chainmerkle_branch.clone(),
                 chain_index,
-                parent_block
+                parent_block,
             };
 
             return Ok((block1, Some(aux_data)));
@@ -167,8 +177,8 @@ impl Client {
 }
 
 fn into_json<T>(val: T) -> Result<serde_json::Value, bitcoincore_rpc::Error>
-    where
-        T: serde::ser::Serialize,
+where
+    T: serde::ser::Serialize,
 {
     Ok(serde_json::to_value(val)?)
 }

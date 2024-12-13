@@ -55,7 +55,7 @@ enum StorageKey {
     MainchainHeightToHeader,
     MainchainHeaderToHeight,
     HeadersPool,
-    LitecoinBlocks,
+    AuxParentBlocks,
 }
 
 /// Contract implementing Bitcoin light client.
@@ -103,7 +103,7 @@ pub struct BtcLightClient {
     // for bitocin and litecoin = 2016, for dogecoin = 1
     blocks_per_adjustment: u64,
 
-    used_litecoin_blocks: LookupSet<H256>,
+    used_aux_parent_blocks: LookupSet<H256>,
 }
 
 #[near]
@@ -127,7 +127,7 @@ impl BtcLightClient {
             gc_threshold: args.gc_threshold,
             expected_time_secs: args.targer_block_time_secs * args.blocks_per_adjustment,
             blocks_per_adjustment: args.blocks_per_adjustment,
-            used_litecoin_blocks: LookupSet::new(StorageKey::LitecoinBlocks),
+            used_aux_parent_blocks: LookupSet::new(StorageKey::AuxParentBlocks),
         };
 
         // Make the contract itself super admin. This allows us to grant any role in the
@@ -452,7 +452,7 @@ impl BtcLightClient {
     fn check_aux(&mut self, block_header: &Header, aux_data: AuxData) {
         let parent_block_hash = aux_data.parent_block.block_hash();
         require!(
-            self.used_litecoin_blocks.insert(&parent_block_hash),
+            self.used_aux_parent_blocks.insert(&parent_block_hash),
             "parent block already used"
         );
 
