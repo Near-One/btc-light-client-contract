@@ -150,6 +150,15 @@ impl BtcLightClient {
     #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
     pub fn submit_blocks(
         &mut self,
+        #[serializer(borsh)] headers: Vec<Header>,
+    ) -> PromiseOrValue<()> {
+        self.submit_blocks_aux(headers.into_iter().map(|h| (h, None::<AuxData>)).collect())
+    }
+
+    #[payable]
+    #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
+    pub fn submit_blocks_aux(
+        &mut self,
         #[serializer(borsh)] headers: Vec<(Header, Option<AuxData>)>,
     ) -> PromiseOrValue<()> {
         let amount = env::attached_deposit();
