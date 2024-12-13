@@ -506,6 +506,8 @@ impl BtcLightClient {
         }
     }
 
+    //https://github.com/dogecoin/dogecoin/blob/master/src/pow.cpp
+    //https://github.com/dogecoin/dogecoin/blob/master/src/dogecoin.cpp
     fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         if (prev_block_header.block_height + 1) % self.blocks_per_adjustment != 0 {
             #[cfg(feature = "testnet")]
@@ -539,15 +541,18 @@ impl BtcLightClient {
             .get(&interval_tail_header_hash)
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let prev_block_time = prev_block_header.block_header.time;
-        let mut actual_time_taken = u64::from(
+        let actual_time_taken0 = u64::from(
             prev_block_time.saturating_sub(interval_tail_extend_header.block_header.time),
         );
+        let mut actual_time_taken = actual_time_taken0;
 
-        if actual_time_taken < self.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
-            actual_time_taken = self.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
+        actual_time_taken = (self.expected_time_secs as i64 + (actual_time_taken as i64 - self.expected_time_secs as i64) / 8) as u64;
+
+        if actual_time_taken < self.expected_time_secs - self.expected_time_secs / 4 {
+            actual_time_taken = self.expected_time_secs - self.expected_time_secs / 4;
         }
-        if actual_time_taken > self.expected_time_secs * MAX_ADJUSTMENT_FACTOR {
-            actual_time_taken = self.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
+        if actual_time_taken > self.expected_time_secs + self.expected_time_secs * 2 {
+            actual_time_taken = self.expected_time_secs + self.expected_time_secs * 2;
         }
 
         let last_target = prev_block_header.block_header.target();
@@ -561,8 +566,8 @@ impl BtcLightClient {
         require!(
             expected_bits == block_header.bits,
             format!(
-                "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
-                expected_bits, block_header.bits
+                "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}, Expected Time: {:?}, Actual Time: {:?}, Adopted Time: {:?}",
+                expected_bits, block_header.bits, self.expected_time_secs, actual_time_taken0, actual_time_taken
             )
         );
     }
