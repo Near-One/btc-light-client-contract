@@ -2,7 +2,7 @@ use bitcoin::hashes::Hash;
 use btc_types::aux::AuxData;
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{ExtendedHeader, Header, MAX_ADJUSTMENT_FACTOR};
+use btc_types::header::{ExtendedHeader, Header};
 use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
@@ -385,9 +385,10 @@ impl BtcLightClient {
                 let pow_hash = block_header.block_hash_pow();
                 require!(
                     self.skip_pow_verification
-                    || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
-                    format!("block should have correct pow"));
-            },
+                        || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
+                    format!("block should have correct pow")
+                );
+            }
             Some(aux_data) => {
                 self.check_aux(&block_header, aux_data);
             }
@@ -441,16 +442,21 @@ impl BtcLightClient {
 
     fn check_aux(&mut self, block_header: &Header, aux_data: AuxData) {
         let parent_block_hash = aux_data.parent_block.block_hash();
-        require!(self.used_litecoin_blocks.insert(&parent_block_hash), "parent block already used");
+        require!(
+            self.used_litecoin_blocks.insert(&parent_block_hash),
+            "parent block already used"
+        );
 
         let coinbase_tx = aux_data.get_coinbase_tx();
         let coinbase_tx_hash = coinbase_tx.compute_txid();
 
-        require!(merkle_tools::compute_root_from_merkle_proof(
-            H256::from(coinbase_tx_hash.to_raw_hash().to_byte_array()),
-            0,
-            &aux_data.merkle_proof,
-        ) == aux_data.parent_block.merkle_root);
+        require!(
+            merkle_tools::compute_root_from_merkle_proof(
+                H256::from(coinbase_tx_hash.to_raw_hash().to_byte_array()),
+                0,
+                &aux_data.merkle_proof,
+            ) == aux_data.parent_block.merkle_root
+        );
 
         let chain_root = merkle_tools::compute_root_from_merkle_proof(
             block_header.block_hash(),
@@ -458,13 +464,22 @@ impl BtcLightClient {
             &aux_data.chain_merkle_proof,
         );
 
-        require!(coinbase_tx.input.get(0).unwrap().script_sig.to_hex_string().contains(&chain_root.to_string()), "coinbase_tx don't contain chain_root");
+        require!(
+            coinbase_tx
+                .input
+                .get(0)
+                .unwrap()
+                .script_sig
+                .to_hex_string()
+                .contains(&chain_root.to_string()),
+            "coinbase_tx don't contain chain_root"
+        );
 
         let pow_hash = aux_data.parent_block.block_hash_pow();
         require!(
-                    self.skip_pow_verification
-                    || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
-                    format!("block should have correct pow"));
+            self.skip_pow_verification || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
+            format!("block should have correct pow")
+        );
     }
 
     #[cfg(feature = "testnet")]
@@ -506,8 +521,6 @@ impl BtcLightClient {
         }
     }
 
-    //https://github.com/dogecoin/dogecoin/blob/master/src/pow.cpp
-    //https://github.com/dogecoin/dogecoin/blob/master/src/dogecoin.cpp
     fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         if (prev_block_header.block_height + 1) % self.blocks_per_adjustment != 0 {
             #[cfg(feature = "testnet")]
@@ -526,38 +539,31 @@ impl BtcLightClient {
             }
         }
 
-        if self
-            .mainchain_height_to_header
-            .get(&(prev_block_header.block_height - self.blocks_per_adjustment)) == None {
-            return;
-        }
+        #[cfg(not(feature = "dogecoin"))]
+        let first_block_height = prev_block_header.block_height + 1 - self.blocks_per_adjustment;
 
-        let interval_tail_header_hash = self
-            .mainchain_height_to_header
-            .get(&(prev_block_header.block_height - self.blocks_per_adjustment))
-            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        #[cfg(feature = "dogecoin")]
+        let first_block_height = prev_block_header.block_height - self.blocks_per_adjustment;
+
+        let interval_tail_header_hash =
+            match self.mainchain_height_to_header.get(&first_block_height) {
+                None => return,
+                Some(header_hash) => header_hash,
+            };
+
         let interval_tail_extend_header = self
             .headers_pool
             .get(&interval_tail_header_hash)
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let prev_block_time = prev_block_header.block_header.time;
-        let actual_time_taken0 = u64::from(
+        let actual_time_taken = u64::from(
             prev_block_time.saturating_sub(interval_tail_extend_header.block_header.time),
         );
-        let mut actual_time_taken = actual_time_taken0;
-
-        actual_time_taken = (self.expected_time_secs as i64 + (actual_time_taken as i64 - self.expected_time_secs as i64) / 8) as u64;
-
-        if actual_time_taken < self.expected_time_secs - self.expected_time_secs / 4 {
-            actual_time_taken = self.expected_time_secs - self.expected_time_secs / 4;
-        }
-        if actual_time_taken > self.expected_time_secs + self.expected_time_secs * 2 {
-            actual_time_taken = self.expected_time_secs + self.expected_time_secs * 2;
-        }
+        let modulated_time = self.get_modulated_time(actual_time_taken);
 
         let last_target = prev_block_header.block_header.target();
 
-        let (mut new_target, new_target_overflow) = last_target.overflowing_mul(actual_time_taken);
+        let (mut new_target, new_target_overflow) = last_target.overflowing_mul(modulated_time);
         require!(!new_target_overflow, "new target overflow");
         new_target = new_target / U256::from(self.expected_time_secs);
 
@@ -566,10 +572,42 @@ impl BtcLightClient {
         require!(
             expected_bits == block_header.bits,
             format!(
-                "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}, Expected Time: {:?}, Actual Time: {:?}, Adopted Time: {:?}",
-                expected_bits, block_header.bits, self.expected_time_secs, actual_time_taken0, actual_time_taken
+                "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
+                expected_bits, block_header.bits
             )
         );
+    }
+
+    #[cfg(not(feature = "dogecoin"))]
+    fn get_modulated_time(&self, actual_time_taken: u64) -> u64 {
+        use btc_types::header::MAX_ADJUSTMENT_FACTOR;
+
+        let mut modulated_time = actual_time_taken;
+
+        if modulated_time < self.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
+            modulated_time = self.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
+        }
+        if modulated_time > self.expected_time_secs * MAX_ADJUSTMENT_FACTOR {
+            modulated_time = self.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
+        }
+
+        modulated_time
+    }
+
+    #[cfg(feature = "dogecoin")]
+    fn get_modulated_time(&self, actual_time_taken: u64) -> u64 {
+        let mut modulated_time = (self.expected_time_secs as i64
+            + (actual_time_taken as i64 - self.expected_time_secs as i64) / 8)
+            as u64;
+
+        if modulated_time < self.expected_time_secs - self.expected_time_secs / 4 {
+            modulated_time = self.expected_time_secs - self.expected_time_secs / 4;
+        }
+        if modulated_time > self.expected_time_secs + self.expected_time_secs * 2 {
+            modulated_time = self.expected_time_secs + self.expected_time_secs * 2;
+        }
+
+        modulated_time
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
@@ -745,7 +783,7 @@ mod tests {
             skip_pow_verification: false,
             gc_threshold: 3,
             blocks_per_adjustment: 2016,
-            targer_block_time_secs: 600
+            targer_block_time_secs: 600,
         }
     }
 
@@ -758,7 +796,7 @@ mod tests {
             skip_pow_verification: true,
             gc_threshold: 3,
             blocks_per_adjustment: 2016,
-            targer_block_time_secs: 600
+            targer_block_time_secs: 600,
         }
     }
 

@@ -44,3 +44,4 @@ inherits = "release"
 [features]
 testnet = ["btc-types/testnet"]
 scrypt_hash = ["btc-types/scrypt_hash"]
+dogecoin = ["scrypt_hash"]
