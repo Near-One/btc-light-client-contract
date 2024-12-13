@@ -52,8 +52,8 @@ impl Synchronizer {
                 }
 
                 let block_hash = continue_on_fail!(self.bitcoin_client.get_block_hash(current_height), "Bitcoin Client: Error on get_block_hash", sleep_time_on_fail_sec,  'main_loop);
-                let block_header = continue_on_fail!(self.bitcoin_client.get_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop);
-                blocks_to_submit.push(block_header);
+                let (block_header, aux_data) = continue_on_fail!(self.bitcoin_client.get_aux_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop);
+                blocks_to_submit.push((block_header, aux_data));
             }
 
             let number_of_blocks_to_submit: u64 = blocks_to_submit.len().try_into().unwrap();
@@ -68,7 +68,7 @@ impl Synchronizer {
                 continue;
             }
 
-            let last_block_hash = blocks_to_submit[blocks_to_submit.len() - 1].block_hash();
+            let last_block_hash = blocks_to_submit[blocks_to_submit.len() - 1].0.block_hash();
 
             let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(last_block_hash).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
             if block_already_submitted {
@@ -109,13 +109,11 @@ impl Synchronizer {
     async fn get_last_correct_block_height(&self) -> Result<u64, Box<dyn std::error::Error>> {
         let last_block_header = self.near_client.get_last_block_header().await?;
         let last_block_height = last_block_header.block_height;
-
         if self.get_bitcoin_block_hash_by_height(last_block_height)?
             == last_block_header.block_hash.to_string()
         {
             return Ok(last_block_height);
         }
-
         let last_block_hashes_in_relay_contract = self
             .near_client
             .get_last_n_blocks_hashes(self.config.max_fork_len, 1)
