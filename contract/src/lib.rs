@@ -432,7 +432,12 @@ impl BtcLightClient {
     }
 
     #[cfg(feature = "testnet")]
-    fn check_target_testnet(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
+    fn check_target_testnet(
+        &self,
+        block_header: &Header,
+        prev_block_header: &ExtendedHeader,
+        config: NetworkConfig,
+    ) {
         use btc_types::header::testnet::{
             POW_TARGET_TIME_BETWEEN_BLOCKS_SECS, PROOF_OF_WORK_LIMIT_BITS,
         };
@@ -451,7 +456,7 @@ impl BtcLightClient {
         } else {
             let mut current_block_header = prev_block_header.clone();
             while current_block_header.block_header.bits == PROOF_OF_WORK_LIMIT_BITS
-                && current_block_header.block_height % self.blocks_per_adjustment != 0
+                && current_block_header.block_height % config.blocks_per_adjustment != 0
             {
                 current_block_header = self
                     .headers_pool
@@ -475,7 +480,7 @@ impl BtcLightClient {
 
         if (prev_block_header.block_height + 1) % config.blocks_per_adjustment != 0 {
             #[cfg(feature = "testnet")]
-            return self.check_target_testnet(block_header, prev_block_header);
+            return self.check_target_testnet(block_header, prev_block_header, config);
 
             #[cfg(not(feature = "testnet"))]
             {

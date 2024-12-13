@@ -7,7 +7,7 @@ pub enum Network {
     Litecoin,
 }
 
-#[derive(Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct NetworkConfig {
     pub expected_time_secs: u64,
     pub blocks_per_adjustment: u64,
