@@ -121,3 +121,27 @@ pub struct ExtendedHeader {
     /// Block height in the Bitcoin network
     pub block_height: u64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Header;
+    use serde_json::json;
+
+    #[test]
+    fn test_block_hash() {
+        let block: Header = serde_json::from_value(json!({
+            "version":536870912,
+            "prev_block_hash":"ed544a1c2362b7d33f47e51dc573e69a66687d610bd777d8213954018a22d0f2",
+            "merkle_root":"40186039cb7fcc2d8efb7d3f5be9cad80d36ab9df81983805856608ca65dbd62",
+            "time":1734025733,
+            "bits":503578623,
+            "nonce":1640674470
+        }))
+        .unwrap();
+
+        assert_eq!(
+            block.block_hash().to_string(),
+            "cc802d4035f69e5c814b7bf3fa481cd5bd9e4ad4a10ad33a89c46467e4ea49e5"
+        );
+    }
+}
