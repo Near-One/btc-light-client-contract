@@ -109,13 +109,11 @@ impl Synchronizer {
     async fn get_last_correct_block_height(&self) -> Result<u64, Box<dyn std::error::Error>> {
         let last_block_header = self.near_client.get_last_block_header().await?;
         let last_block_height = last_block_header.block_height;
-
         if self.get_bitcoin_block_hash_by_height(last_block_height)?
             == last_block_header.block_hash.to_string()
         {
             return Ok(last_block_height);
         }
-
         let last_block_hashes_in_relay_contract = self
             .near_client
             .get_last_n_blocks_hashes(self.config.max_fork_len, 1)
