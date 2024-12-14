@@ -320,14 +320,25 @@ impl BtcLightClient {
     }
 
     pub fn get_config() -> NetworkConfig {
+        NetworkConfig::new(Self::get_network())
+    }
+
+    pub fn get_network() -> Network {
         #[cfg(feature = "bitcoin")]
         {
-            NetworkConfig::new(Network::Bitcoin)
+            Network::Bitcoin
         }
-
+        #[cfg(feature = "bitcoin_testnet")]
+        {
+            Network::BitcoinTestnet
+        }
         #[cfg(feature = "litecoin")]
         {
-            NetworkConfig::new(Network::Litecoin)
+            Network::Litecoin
+        }
+        #[cfg(feature = "litecoin_testnet")]
+        {
+            Network::LitecoinTestnet
         }
     }
 }
@@ -431,31 +442,26 @@ impl BtcLightClient {
         }
     }
 
-    #[cfg(feature = "testnet")]
     fn check_target_testnet(
         &self,
         block_header: &Header,
         prev_block_header: &ExtendedHeader,
         config: NetworkConfig,
     ) {
-        use btc_types::header::testnet::{
-            POW_TARGET_TIME_BETWEEN_BLOCKS_SECS, PROOF_OF_WORK_LIMIT_BITS,
-        };
-
         let time_diff = block_header
             .time
             .saturating_sub(prev_block_header.block_header.time);
-        if time_diff >= 2 * POW_TARGET_TIME_BETWEEN_BLOCKS_SECS {
+        if time_diff >= 2 * config.pow_target_time_between_blocks_secs {
             require!(
-                block_header.bits == PROOF_OF_WORK_LIMIT_BITS,
+                block_header.bits == config.proof_of_work_limit_bits,
                 format!(
                     "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
-                    PROOF_OF_WORK_LIMIT_BITS, block_header.bits
+                    config.proof_of_work_limit_bits, block_header.bits
                 )
             )
         } else {
             let mut current_block_header = prev_block_header.clone();
-            while current_block_header.block_header.bits == PROOF_OF_WORK_LIMIT_BITS
+            while current_block_header.block_header.bits == config.proof_of_work_limit_bits
                 && current_block_header.block_height % config.blocks_per_adjustment != 0
             {
                 current_block_header = self
@@ -479,11 +485,9 @@ impl BtcLightClient {
         let config = Self::get_config();
 
         if (prev_block_header.block_height + 1) % config.blocks_per_adjustment != 0 {
-            #[cfg(feature = "testnet")]
-            return self.check_target_testnet(block_header, prev_block_header, config);
-
-            #[cfg(not(feature = "testnet"))]
-            {
+            if config.pow_allow_min_difficulty_blocks {
+                return self.check_target_testnet(block_header, prev_block_header, config);
+            } else {
                 require!(
                     block_header.bits == prev_block_header.block_header.bits,
                     format!(

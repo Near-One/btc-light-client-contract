@@ -37,5 +37,4 @@ panic = "abort"
 overflow-checks = true
 
 [features]
-testnet = []
 scrypt_hash = ["scrypt"]

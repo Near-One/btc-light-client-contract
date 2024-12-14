@@ -43,8 +43,12 @@ inherits = "release"
 [profile.litecoin]
 inherits = "release"
 
+[profile.litecoin-testnet]
+inherits = "release"
+
 [features]
 default = ["bitcoin"]
 bitcoin = []
-testnet = ["bitcoin", "btc-types/testnet"]
+bitcoin_testnet = [] 
 litecoin = ["btc-types/scrypt_hash"]
+litecoin_testnet = ["btc-types/scrypt_hash"]

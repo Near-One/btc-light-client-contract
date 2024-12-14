@@ -11,12 +11,6 @@ pub type Work = U256;
 
 pub const MAX_ADJUSTMENT_FACTOR: u64 = 4;
 
-#[cfg(feature = "testnet")]
-pub mod testnet {
-    pub const PROOF_OF_WORK_LIMIT_BITS: u32 = 0x1d00ffff;
-    pub const POW_TARGET_TIME_BETWEEN_BLOCKS_SECS: u32 = 10 * 60;
-}
-
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Header {
     /// Block version, now repurposed for soft fork signalling.
