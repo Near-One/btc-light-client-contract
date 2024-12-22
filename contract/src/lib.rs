@@ -1,8 +1,7 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{
-    ExtendedHeader, Header, BLOCKS_PER_ADJUSTMENT, EXPECTED_TIME, MAX_ADJUSTMENT_FACTOR,
-};
+use btc_types::header::{ExtendedHeader, Header, MAX_ADJUSTMENT_FACTOR};
+use btc_types::network::{Network, NetworkConfig};
 use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
@@ -98,7 +97,7 @@ pub struct BtcLightClient {
 #[near]
 impl BtcLightClient {
     /// Recommended initialization parameters:
-    /// * `genesis_block_height % 2016 == 0`: The genesis block height must be divisible by 2016 to align with difficulty adjustment cycles.
+    /// * `genesis_block_height % blocks_per_adjustment == 0`: The genesis block height must be divisible by `blocks_per_adjustment` to align with difficulty adjustment cycles.
     /// * The `genesis_block` must be at least 144 blocks earlier than the last block. 144 is the approximate number of blocks generated in one day.
     /// * `skip_pow_verification = false`: Should be set to `false` for standard use. Set to `true` only for testing purposes.
     /// * `gc_threshold = 52704`: This is the approximate number of blocks generated in a year.
@@ -319,15 +318,40 @@ impl BtcLightClient {
                 .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         }
     }
+
+    pub fn get_config() -> NetworkConfig {
+        NetworkConfig::new(Self::get_network())
+    }
+
+    pub fn get_network() -> Network {
+        #[cfg(feature = "bitcoin")]
+        {
+            Network::Bitcoin
+        }
+        #[cfg(feature = "bitcoin_testnet")]
+        {
+            Network::BitcoinTestnet
+        }
+        #[cfg(feature = "litecoin")]
+        {
+            Network::Litecoin
+        }
+        #[cfg(feature = "litecoin_testnet")]
+        {
+            Network::LitecoinTestnet
+        }
+    }
 }
 
 impl BtcLightClient {
     fn init_genesis(&mut self, block_header: Header, block_hash: &H256, block_height: u64) {
+        let config = Self::get_config();
+
         env::log_str(&format!(
             "Init with block hash {block_hash} at height {block_height}"
         ));
 
-        require!(block_height % BLOCKS_PER_ADJUSTMENT == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", BLOCKS_PER_ADJUSTMENT));
+        require!(block_height % config.blocks_per_adjustment == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.blocks_per_adjustment));
 
         let current_block_hash = block_header.block_hash();
         require!(&current_block_hash == block_hash, "Invalid block hash");
@@ -365,10 +389,11 @@ impl BtcLightClient {
         self.check_target(&block_header, &prev_block_header);
 
         let current_block_hash = block_header.block_hash();
+        let pow_hash = block_header.block_hash_pow();
+
         require!(
-            self.skip_pow_verification
-                || U256::from_le_bytes(&current_block_hash.0) <= block_header.target(),
-            "block should have correct pow"
+            self.skip_pow_verification || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
+            format!("block should have correct pow")
         );
 
         let (current_block_computed_chain_work, overflow) = prev_block_header
@@ -417,27 +442,27 @@ impl BtcLightClient {
         }
     }
 
-    #[cfg(feature = "testnet")]
-    fn check_target_testnet(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
-        use btc_types::header::testnet::{
-            POW_TARGET_TIME_BETWEEN_BLOCKS_SECS, PROOF_OF_WORK_LIMIT_BITS,
-        };
-
+    fn check_target_testnet(
+        &self,
+        block_header: &Header,
+        prev_block_header: &ExtendedHeader,
+        config: NetworkConfig,
+    ) {
         let time_diff = block_header
             .time
             .saturating_sub(prev_block_header.block_header.time);
-        if time_diff >= 2 * POW_TARGET_TIME_BETWEEN_BLOCKS_SECS {
+        if time_diff >= 2 * config.pow_target_time_between_blocks_secs {
             require!(
-                block_header.bits == PROOF_OF_WORK_LIMIT_BITS,
+                block_header.bits == config.proof_of_work_limit_bits,
                 format!(
                     "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
-                    PROOF_OF_WORK_LIMIT_BITS, block_header.bits
+                    config.proof_of_work_limit_bits, block_header.bits
                 )
             )
         } else {
             let mut current_block_header = prev_block_header.clone();
-            while current_block_header.block_header.bits == PROOF_OF_WORK_LIMIT_BITS
-                && current_block_header.block_height % BLOCKS_PER_ADJUSTMENT != 0
+            while current_block_header.block_header.bits == config.proof_of_work_limit_bits
+                && current_block_header.block_height % config.blocks_per_adjustment != 0
             {
                 current_block_header = self
                     .headers_pool
@@ -457,12 +482,12 @@ impl BtcLightClient {
     }
 
     fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
-        if (prev_block_header.block_height + 1) % BLOCKS_PER_ADJUSTMENT != 0 {
-            #[cfg(feature = "testnet")]
-            return self.check_target_testnet(block_header, prev_block_header);
+        let config = Self::get_config();
 
-            #[cfg(not(feature = "testnet"))]
-            {
+        if (prev_block_header.block_height + 1) % config.blocks_per_adjustment != 0 {
+            if config.pow_allow_min_difficulty_blocks {
+                return self.check_target_testnet(block_header, prev_block_header, config);
+            } else {
                 require!(
                     block_header.bits == prev_block_header.block_header.bits,
                     format!(
@@ -476,7 +501,7 @@ impl BtcLightClient {
 
         let interval_tail_header_hash = self
             .mainchain_height_to_header
-            .get(&(prev_block_header.block_height + 1 - BLOCKS_PER_ADJUSTMENT))
+            .get(&(prev_block_header.block_height + 1 - config.blocks_per_adjustment))
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let interval_tail_extend_header = self
             .headers_pool
@@ -487,18 +512,18 @@ impl BtcLightClient {
             prev_block_time.saturating_sub(interval_tail_extend_header.block_header.time),
         );
 
-        if actual_time_taken < EXPECTED_TIME / MAX_ADJUSTMENT_FACTOR {
-            actual_time_taken = EXPECTED_TIME / MAX_ADJUSTMENT_FACTOR;
+        if actual_time_taken < config.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
+            actual_time_taken = config.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
         }
-        if actual_time_taken > EXPECTED_TIME * MAX_ADJUSTMENT_FACTOR {
-            actual_time_taken = EXPECTED_TIME * MAX_ADJUSTMENT_FACTOR;
+        if actual_time_taken > config.expected_time_secs * MAX_ADJUSTMENT_FACTOR {
+            actual_time_taken = config.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
         }
 
         let last_target = prev_block_header.block_header.target();
 
         let (mut new_target, new_target_overflow) = last_target.overflowing_mul(actual_time_taken);
         require!(!new_target_overflow, "new target overflow");
-        new_target = new_target / U256::from(EXPECTED_TIME);
+        new_target = new_target / U256::from(config.expected_time_secs);
 
         let expected_bits = new_target.target_to_bits();
 

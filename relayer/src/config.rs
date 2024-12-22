@@ -19,6 +19,7 @@ pub struct BitcoinConfig {
     pub endpoint: String,
     pub node_user: String,
     pub node_password: String,
+    pub node_headers: Option<Vec<(String, String)>>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
