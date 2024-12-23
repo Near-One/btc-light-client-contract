@@ -1,9 +1,92 @@
+use bitcoin::consensus::encode;
+use bitcoin::hashes::sha256d;
+use bitcoin::{Transaction, TxMerkleNode};
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
+use bitcoincore_rpc::jsonrpc::minreq_http::HttpError;
+use bitcoincore_rpc::jsonrpc::Transport;
 use bitcoincore_rpc::{jsonrpc, RpcApi};
+use jsonrpc::{Request, Response};
 
 use crate::config::Config;
+
+#[derive(Debug, Clone)]
+pub struct AuxData {
+    pub(crate) coinbase_tx: bitcoin::Transaction,
+    pub(crate) parent_block_hash: BlockHash,
+    pub(crate) merkle_branch: Vec<TxMerkleNode>,
+    pub(crate) merkle_index: u32,
+    pub(crate) chainmerkle_branch: Vec<TxMerkleNode>,
+    pub(crate) chain_index: u32,
+    pub(crate) parent_block: Header,
+}
+
+struct CustomMinreqHttpTransport {
+    url: String,
+    timeout: std::time::Duration,
+    basic_auth: Option<String>,
+    headers: Vec<(String, String)>,
+}
+
+impl CustomMinreqHttpTransport {
+    fn request<R>(&self, req: impl serde::Serialize) -> Result<R, jsonrpc::minreq_http::Error>
+    where
+        R: for<'a> serde::de::Deserialize<'a>,
+    {
+        let req = match &self.basic_auth {
+            Some(auth) => minreq::Request::new(minreq::Method::Post, &self.url)
+                .with_timeout(self.timeout.as_secs())
+                .with_header("Authorization", auth)
+                .with_headers(self.headers.clone())
+                .with_json(&req)?,
+            None => minreq::Request::new(minreq::Method::Post, &self.url)
+                .with_timeout(self.timeout.as_secs())
+                .with_json(&req)?,
+        };
+
+        // Send the request and parse the response. If the response is an error that does not
+        // contain valid JSON in its body (for instance if the bitcoind HTTP server work queue
+        // depth is exceeded), return the raw HTTP error so users can match against it.
+        let resp = req.send()?;
+        match resp.json() {
+            Ok(json) => Ok(json),
+            Err(minreq_err) => {
+                if resp.status_code != 200 {
+                    Err(jsonrpc::minreq_http::Error::Http(HttpError {
+                        status_code: resp.status_code,
+                        body: resp.as_str().unwrap_or("").to_string(),
+                    }))
+                } else {
+                    Err(jsonrpc::minreq_http::Error::Minreq(minreq_err))
+                }
+            }
+        }
+    }
+
+    pub fn basic_auth(user: String, pass: Option<String>) -> String {
+        let mut s = user;
+        s.push(':');
+        if let Some(ref pass) = pass {
+            s.push_str(pass.as_ref());
+        }
+        format!("Basic {}", &jsonrpc::base64::encode(s.as_bytes()))
+    }
+}
+
+impl Transport for CustomMinreqHttpTransport {
+    fn send_request(&self, req: Request) -> Result<Response, jsonrpc::Error> {
+        Ok(self.request(req)?)
+    }
+
+    fn send_batch(&self, reqs: &[Request]) -> Result<Vec<Response>, jsonrpc::Error> {
+        Ok(self.request(reqs)?)
+    }
+
+    fn fmt_target(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.url)
+    }
+}
 
 #[derive(Debug)]
 pub struct Client {
@@ -17,15 +100,17 @@ impl Client {
     /// * incorrect bitcoin endpoint
     #[must_use]
     pub fn new(config: &Config) -> Self {
-        let mut builder = jsonrpc::minreq_http::Builder::new()
-            .url(&config.bitcoin.endpoint)
-            .unwrap();
-        builder = builder.basic_auth(
-            config.bitcoin.node_user.clone(),
-            Some(config.bitcoin.node_password.clone()),
-        );
-
-        let inner = bitcoincore_rpc::Client::from_jsonrpc(builder.build().into());
+        let client = CustomMinreqHttpTransport {
+            url: config.bitcoin.endpoint.clone(),
+            timeout: std::time::Duration::from_secs(15),
+            basic_auth: Some(CustomMinreqHttpTransport::basic_auth(
+                config.bitcoin.node_user.clone(),
+                Some(config.bitcoin.node_password.clone()),
+            )),
+            headers: config.bitcoin.node_headers.clone().unwrap_or_default(),
+        };
+        println!("client: {:?}", client.headers);
+        let inner = bitcoincore_rpc::Client::from_jsonrpc(client.into());
 
         Self { inner }
     }
@@ -55,6 +140,58 @@ impl Client {
         block_hash: &BlockHash,
     ) -> Result<Header, bitcoincore_rpc::Error> {
         self.inner.get_block_header(block_hash)
+    }
+
+    pub fn get_aux_block_header(
+        &self,
+        block_hash: &BlockHash,
+    ) -> Result<(Header, Option<AuxData>), bitcoincore_rpc::Error> {
+        let hex: String = self
+            .inner
+            .call("getblockheader", &[into_json(block_hash)?, false.into()])?;
+        if hex.len() == 160 {
+            let block1: Header = encode::deserialize_hex(&hex)?;
+            return Ok((block1, None));
+        } else {
+            let data_bytes = hex::decode(&hex).unwrap();
+            let mut cursor = 0;
+            let (block1, readed_len): (Header, usize) =
+                encode::deserialize_partial(&data_bytes).unwrap();
+            cursor += readed_len;
+            let (coinbase_tx, readed_len): (Transaction, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += readed_len;
+            let (parent_block_hash, reader_len): (BlockHash, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+            let (merkle_branch, reader_len): (Vec<TxMerkleNode>, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+            let (merkle_index, reader_len): (u32, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+            let (chainmerkle_branch, reader_len): (Vec<TxMerkleNode>, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+            let (chain_index, reader_len): (u32, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+            let (parent_block, reader_len): (Header, usize) =
+                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
+            cursor += reader_len;
+
+            let aux_data = AuxData {
+                coinbase_tx: coinbase_tx.clone(),
+                parent_block_hash,
+                merkle_branch: merkle_branch.clone(),
+                merkle_index,
+                chainmerkle_branch: chainmerkle_branch.clone(),
+                chain_index,
+                parent_block,
+            };
+
+            return Ok((block1, Some(aux_data)));
+        }
     }
 
     /// Get block header by bock height
@@ -108,4 +245,11 @@ impl Client {
 
         merkle_tools::merkle_proof_calculator(transactions, transaction_position)
     }
+}
+
+fn into_json<T>(val: T) -> Result<serde_json::Value, bitcoincore_rpc::Error>
+where
+    T: serde::ser::Serialize,
+{
+    Ok(serde_json::to_value(val)?)
 }
