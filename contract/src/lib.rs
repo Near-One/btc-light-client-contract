@@ -385,7 +385,7 @@ impl BtcLightClient {
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
-            aux_parent_block: None
+            aux_parent_block: None,
         };
 
         self.store_block_header(&header);
@@ -440,7 +440,7 @@ impl BtcLightClient {
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
-            aux_parent_block
+            aux_parent_block,
         };
 
         // Main chain submission
@@ -736,8 +736,7 @@ impl BtcLightClient {
 
     /// Remove block header and meta information
     fn remove_block_header(&mut self, header_block_hash: &H256) {
-        self.mainchain_header_to_height
-            .remove(&header_block_hash);
+        self.mainchain_header_to_height.remove(&header_block_hash);
         if let Some(header) = self.headers_pool.remove(&header_block_hash) {
             if let Some(aux_parent_blockhash) = header.aux_parent_block {
                 self.used_aux_parent_blocks.remove(&aux_parent_blockhash);

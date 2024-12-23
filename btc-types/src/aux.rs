@@ -1,9 +1,9 @@
+use crate::hash::H256;
+use crate::header::Header;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::deserialize;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
-use crate::hash::H256;
-use crate::header::Header;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AuxData {
