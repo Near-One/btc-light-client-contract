@@ -16,10 +16,14 @@ docker run \
      cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --release; \
      cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features bitcoin_testnet --profile bitcoin-testnet; \
      cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features litecoin --profile litecoin; \
-     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features litecoin_testnet  --profile litecoin-testnet"
+     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features litecoin_testnet  --profile litecoin-testnet; \
+     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features dogecoin --profile dogecoin; \
+     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features dogecoin_testnet  --profile dogecoin-testnet"
 
 mkdir -p res
 cp $DIR/contract/target/wasm32-unknown-unknown/release/btc_light_client_contract.wasm $DIR/res/btc_light_client_mainnet.wasm
 cp $DIR/contract/target/wasm32-unknown-unknown/bitcoin-testnet/btc_light_client_contract.wasm $DIR/res/btc_light_client_testnet.wasm
 cp $DIR/contract/target/wasm32-unknown-unknown/litecoin/btc_light_client_contract.wasm $DIR/res/btc_light_client_litecoin.wasm
 cp $DIR/contract/target/wasm32-unknown-unknown/litecoin-testnet/btc_light_client_contract.wasm $DIR/res/btc_light_client_litecoin_testnet.wasm
+cp $DIR/contract/target/wasm32-unknown-unknown/dogecoin/btc_light_client_contract.wasm $DIR/res/btc_light_client_dogecoin.wasm
+cp $DIR/contract/target/wasm32-unknown-unknown/dogecoin-testnet/btc_light_client_contract.wasm $DIR/res/btc_light_client_dogecoin_testnet.wasm

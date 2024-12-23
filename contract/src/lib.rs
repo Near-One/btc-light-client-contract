@@ -615,13 +615,14 @@ impl BtcLightClient {
     fn get_modulated_time(&self, actual_time_taken: u64) -> u64 {
         use btc_types::header::MAX_ADJUSTMENT_FACTOR;
 
+        let config = Self::get_config();
         let mut modulated_time = actual_time_taken;
 
-        if modulated_time < self.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
-            modulated_time = self.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
+        if modulated_time < config.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
+            modulated_time = config.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
         }
-        if modulated_time > self.expected_time_secs * MAX_ADJUSTMENT_FACTOR {
-            modulated_time = self.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
+        if modulated_time > config.expected_time_secs * MAX_ADJUSTMENT_FACTOR {
+            modulated_time = config.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
         }
 
         modulated_time
@@ -629,15 +630,17 @@ impl BtcLightClient {
 
     #[cfg(any(feature = "dogecoin", feature = "dogecoin_testnet"))]
     fn get_modulated_time(&self, actual_time_taken: u64) -> u64 {
-        let mut modulated_time = (self.expected_time_secs as i64
-            + (actual_time_taken as i64 - self.expected_time_secs as i64) / 8)
+        let config = Self::get_config();
+
+        let mut modulated_time = (config.expected_time_secs as i64
+            + (actual_time_taken as i64 - config.expected_time_secs as i64) / 8)
             as u64;
 
-        if modulated_time < self.expected_time_secs - self.expected_time_secs / 4 {
-            modulated_time = self.expected_time_secs - self.expected_time_secs / 4;
+        if modulated_time < config.expected_time_secs - config.expected_time_secs / 4 {
+            modulated_time = config.expected_time_secs - config.expected_time_secs / 4;
         }
-        if modulated_time > self.expected_time_secs + self.expected_time_secs * 2 {
-            modulated_time = self.expected_time_secs + self.expected_time_secs * 2;
+        if modulated_time > config.expected_time_secs + config.expected_time_secs * 2 {
+            modulated_time = config.expected_time_secs + config.expected_time_secs * 2;
         }
 
         modulated_time
