@@ -96,6 +96,7 @@ pub struct BtcLightClient {
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
     gc_threshold: u64,
 
+    // Used only for networks with AuxPoW (Dogecoin). These are the hashes of already used parent blocks (Litecoin blocks for Dogecoin)
     used_aux_parent_blocks: LookupSet<H256>,
 }
 
@@ -322,8 +323,7 @@ impl BtcLightClient {
                     .get(&height)
                     .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
 
-                self.headers_pool.remove(blockhash);
-                self.mainchain_header_to_height.remove(blockhash);
+                self.remove_block_header(blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
 
@@ -385,6 +385,7 @@ impl BtcLightClient {
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
+            aux_parent_block: None
         };
 
         self.store_block_header(&header);
@@ -413,7 +414,7 @@ impl BtcLightClient {
 
         let current_block_hash = block_header.block_hash();
 
-        match aux_data {
+        let aux_parent_block = match aux_data {
             None => {
                 let pow_hash = block_header.block_hash_pow();
                 require!(
@@ -421,11 +422,13 @@ impl BtcLightClient {
                         || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
                     format!("block should have correct pow")
                 );
+                None
             }
             Some(aux_data) => {
-                self.check_aux(&block_header, aux_data);
+                self.check_aux(&block_header, &aux_data);
+                Some(aux_data.parent_block.block_hash())
             }
-        }
+        };
 
         let (current_block_computed_chain_work, overflow) = prev_block_header
             .chain_work
@@ -437,6 +440,7 @@ impl BtcLightClient {
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
+            aux_parent_block
         };
 
         // Main chain submission
@@ -473,7 +477,7 @@ impl BtcLightClient {
         }
     }
 
-    fn check_aux(&mut self, block_header: &Header, aux_data: AuxData) {
+    fn check_aux(&mut self, block_header: &Header, aux_data: &AuxData) {
         let parent_block_hash = aux_data.parent_block.block_hash();
         require!(
             self.used_aux_parent_blocks.insert(&parent_block_hash),
@@ -663,9 +667,7 @@ impl BtcLightClient {
                     .mainchain_height_to_header
                     .get(&height)
                     .unwrap_or_else(|| env::panic_str("cannot get a block"));
-                self.mainchain_header_to_height
-                    .remove(&current_main_chain_blockhash);
-                self.headers_pool.remove(&current_main_chain_blockhash);
+                self.remove_block_header(&current_main_chain_blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
         }
@@ -709,9 +711,7 @@ impl BtcLightClient {
             // If we found a mainchain block at the current height than remove this block from the
             // header pool and from the header -> height map
             if let Some(current_main_chain_blockhash) = main_chain_block {
-                self.mainchain_header_to_height
-                    .remove(&current_main_chain_blockhash);
-                self.headers_pool.remove(&current_main_chain_blockhash);
+                self.remove_block_header(&current_main_chain_blockhash);
             }
 
             // Switch iterator cursor to the previous block in fork
@@ -732,6 +732,17 @@ impl BtcLightClient {
         self.mainchain_header_to_height
             .insert(&header.block_hash, &header.block_height);
         self.headers_pool.insert(&header.block_hash, header);
+    }
+
+    /// Remove block header and meta information
+    fn remove_block_header(&mut self, header_block_hash: &H256) {
+        self.mainchain_header_to_height
+            .remove(&header_block_hash);
+        if let Some(header) = self.headers_pool.remove(&header_block_hash) {
+            if let Some(aux_parent_blockhash) = header.aux_parent_block {
+                self.used_aux_parent_blocks.remove(&aux_parent_blockhash);
+            }
+        }
     }
 
     /// Stores and handles fork submissions

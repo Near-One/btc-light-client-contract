@@ -114,6 +114,9 @@ pub struct ExtendedHeader {
     pub chain_work: Work,
     /// Block height in the Bitcoin network
     pub block_height: u64,
+
+    // The parent block if AuxPow is used (for Dogecoin)
+    pub aux_parent_block: Option<H256>,
 }
 
 #[cfg(test)]
