@@ -38,10 +38,27 @@ panic = "abort"
 # Opt into extra safety checks on arithmetic operations https://stackoverflow.com/a/64136471/249801
 overflow-checks = true
 
-[profile.testnet]
+[profile.bitcoin-testnet]
+inherits = "release"
+
+[profile.litecoin]
+inherits = "release"
+
+[profile.litecoin-testnet]
+inherits = "release"
+
+[profile.dogecoin]
+inherits = "release"
+
+[profile.dogecoin-testnet]
 inherits = "release"
 
 [features]
-testnet = ["btc-types/testnet"]
+default = ["bitcoin"]
 scrypt_hash = ["btc-types/scrypt_hash"]
 dogecoin = ["scrypt_hash"]
+dogecoin_testnet = ["scrypt_hash"]
+bitcoin = []
+bitcoin_testnet = []
+litecoin = ["scrypt_hash"]
+litecoin_testnet = ["scrypt_hash"]

@@ -5,19 +5,11 @@ use crate::{
     hash::{double_sha256, H256},
     u256::U256,
 };
-#[cfg(feature = "scrypt_hash")]
-use scrypt::{scrypt, Params};
 
 pub type Target = U256;
 pub type Work = U256;
 
 pub const MAX_ADJUSTMENT_FACTOR: u64 = 4;
-
-#[cfg(feature = "testnet")]
-pub mod testnet {
-    pub const PROOF_OF_WORK_LIMIT_BITS: u32 = 0x1d00ffff;
-    pub const POW_TARGET_TIME_BETWEEN_BLOCKS_SECS: u32 = 10 * 60;
-}
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Header {
@@ -80,15 +72,17 @@ impl Header {
 
     pub fn block_hash_pow(&self) -> H256 {
         let block_header = self.get_block_header_vec();
-        #[cfg(feature = "scrypt_hash")] {
-            let params = Params::new(10, 1, 1, 32).unwrap(); // N=1024 (2^10), r=1, p=1
+        #[cfg(feature = "scrypt_hash")]
+        {
+            let params = scrypt::Params::new(10, 1, 1, 32).unwrap(); // N=1024 (2^10), r=1, p=1
 
             let mut output = [0u8; 32];
-            scrypt(&block_header, &block_header, &params, &mut output).unwrap();
+            scrypt::scrypt(&block_header, &block_header, &params, &mut output).unwrap();
             H256::from(output)
         }
 
-        #[cfg(not(feature = "scrypt_hash"))] {
+        #[cfg(not(feature = "scrypt_hash"))]
+        {
             double_sha256(&block_header)
         }
     }
@@ -120,4 +114,28 @@ pub struct ExtendedHeader {
     pub chain_work: Work,
     /// Block height in the Bitcoin network
     pub block_height: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Header;
+    use serde_json::json;
+
+    #[test]
+    fn test_block_hash() {
+        let block: Header = serde_json::from_value(json!({
+            "version":536870912,
+            "prev_block_hash":"ed544a1c2362b7d33f47e51dc573e69a66687d610bd777d8213954018a22d0f2",
+            "merkle_root":"40186039cb7fcc2d8efb7d3f5be9cad80d36ab9df81983805856608ca65dbd62",
+            "time":1734025733,
+            "bits":503578623,
+            "nonce":1640674470
+        }))
+        .unwrap();
+
+        assert_eq!(
+            block.block_hash().to_string(),
+            "cc802d4035f69e5c814b7bf3fa481cd5bd9e4ad4a10ad33a89c46467e4ea49e5"
+        );
+    }
 }

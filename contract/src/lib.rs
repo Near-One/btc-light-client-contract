@@ -3,6 +3,7 @@ use btc_types::aux::AuxData;
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
 use btc_types::header::{ExtendedHeader, Header};
+use btc_types::network::{Network, NetworkConfig};
 use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
@@ -95,14 +96,6 @@ pub struct BtcLightClient {
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
     gc_threshold: u64,
 
-    // Expected time bitween blocks adjustment in seconds,
-    // for bitcoin = 600 * 2016, litecoin = 150 * 2016, dogecoin = 60 * 1
-    expected_time_secs: u64,
-
-    // Number of blocks between adjustment,
-    // for bitocin and litecoin = 2016, for dogecoin = 1
-    blocks_per_adjustment: u64,
-
     used_aux_parent_blocks: LookupSet<H256>,
 }
 
@@ -125,8 +118,6 @@ impl BtcLightClient {
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
-            expected_time_secs: args.targer_block_time_secs * args.blocks_per_adjustment,
-            blocks_per_adjustment: args.blocks_per_adjustment,
             used_aux_parent_blocks: LookupSet::new(StorageKey::AuxParentBlocks),
         };
 
@@ -342,15 +333,48 @@ impl BtcLightClient {
                 .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         }
     }
+
+    pub fn get_config() -> NetworkConfig {
+        NetworkConfig::new(Self::get_network())
+    }
+
+    pub fn get_network() -> Network {
+        #[cfg(feature = "bitcoin")]
+        {
+            Network::Bitcoin
+        }
+        #[cfg(feature = "bitcoin_testnet")]
+        {
+            Network::BitcoinTestnet
+        }
+        #[cfg(feature = "litecoin")]
+        {
+            Network::Litecoin
+        }
+        #[cfg(feature = "litecoin_testnet")]
+        {
+            Network::LitecoinTestnet
+        }
+        #[cfg(feature = "dogecoin")]
+        {
+            Network::Dogecoin
+        }
+        #[cfg(feature = "dogecoin_testnet")]
+        {
+            Network::DogecoinTestnet
+        }
+    }
 }
 
 impl BtcLightClient {
     fn init_genesis(&mut self, block_header: Header, block_hash: &H256, block_height: u64) {
+        let config = Self::get_config();
+
         env::log_str(&format!(
             "Init with block hash {block_hash} at height {block_height}"
         ));
 
-        require!(block_height % self.blocks_per_adjustment == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", self.blocks_per_adjustment));
+        require!(block_height % config.blocks_per_adjustment == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.blocks_per_adjustment));
 
         let current_block_hash = block_header.block_hash();
         require!(&current_block_hash == block_hash, "Invalid block hash");
@@ -491,27 +515,27 @@ impl BtcLightClient {
         );
     }
 
-    #[cfg(feature = "testnet")]
-    fn check_target_testnet(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
-        use btc_types::header::testnet::{
-            POW_TARGET_TIME_BETWEEN_BLOCKS_SECS, PROOF_OF_WORK_LIMIT_BITS,
-        };
-
+    fn check_target_testnet(
+        &self,
+        block_header: &Header,
+        prev_block_header: &ExtendedHeader,
+        config: NetworkConfig,
+    ) {
         let time_diff = block_header
             .time
             .saturating_sub(prev_block_header.block_header.time);
-        if time_diff >= 2 * POW_TARGET_TIME_BETWEEN_BLOCKS_SECS {
+        if time_diff >= 2 * config.pow_target_time_between_blocks_secs {
             require!(
-                block_header.bits == PROOF_OF_WORK_LIMIT_BITS,
+                block_header.bits == config.proof_of_work_limit_bits,
                 format!(
                     "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
-                    PROOF_OF_WORK_LIMIT_BITS, block_header.bits
+                    config.proof_of_work_limit_bits, block_header.bits
                 )
             )
         } else {
             let mut current_block_header = prev_block_header.clone();
-            while current_block_header.block_header.bits == PROOF_OF_WORK_LIMIT_BITS
-                && current_block_header.block_height % self.blocks_per_adjustment != 0
+            while current_block_header.block_header.bits == config.proof_of_work_limit_bits
+                && current_block_header.block_height % config.blocks_per_adjustment != 0
             {
                 current_block_header = self
                     .headers_pool
@@ -531,12 +555,12 @@ impl BtcLightClient {
     }
 
     fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
-        if (prev_block_header.block_height + 1) % self.blocks_per_adjustment != 0 {
-            #[cfg(feature = "testnet")]
-            return self.check_target_testnet(block_header, prev_block_header);
+        let config = Self::get_config();
 
-            #[cfg(not(feature = "testnet"))]
-            {
+        if (prev_block_header.block_height + 1) % config.blocks_per_adjustment != 0 {
+            if config.pow_allow_min_difficulty_blocks {
+                return self.check_target_testnet(block_header, prev_block_header, config);
+            } else {
                 require!(
                     block_header.bits == prev_block_header.block_header.bits,
                     format!(
@@ -548,11 +572,11 @@ impl BtcLightClient {
             }
         }
 
-        #[cfg(not(feature = "dogecoin"))]
-        let first_block_height = prev_block_header.block_height + 1 - self.blocks_per_adjustment;
+        #[cfg(not(any(feature = "dogecoin", feature = "dogecoin_testnet")))]
+        let first_block_height = prev_block_header.block_height + 1 - config.blocks_per_adjustment;
 
-        #[cfg(feature = "dogecoin")]
-        let first_block_height = prev_block_header.block_height - self.blocks_per_adjustment;
+        #[cfg(any(feature = "dogecoin", feature = "dogecoin_testnet"))]
+        let first_block_height = prev_block_header.block_height - config.blocks_per_adjustment;
 
         let interval_tail_header_hash =
             match self.mainchain_height_to_header.get(&first_block_height) {
@@ -574,7 +598,7 @@ impl BtcLightClient {
 
         let (mut new_target, new_target_overflow) = last_target.overflowing_mul(modulated_time);
         require!(!new_target_overflow, "new target overflow");
-        new_target = new_target / U256::from(self.expected_time_secs);
+        new_target = new_target / U256::from(config.expected_time_secs);
 
         let expected_bits = new_target.target_to_bits();
 
@@ -587,7 +611,7 @@ impl BtcLightClient {
         );
     }
 
-    #[cfg(not(feature = "dogecoin"))]
+    #[cfg(not(any(feature = "dogecoin", feature = "dogecoin_testnet")))]
     fn get_modulated_time(&self, actual_time_taken: u64) -> u64 {
         use btc_types::header::MAX_ADJUSTMENT_FACTOR;
 
@@ -603,7 +627,7 @@ impl BtcLightClient {
         modulated_time
     }
 
-    #[cfg(feature = "dogecoin")]
+    #[cfg(any(feature = "dogecoin", feature = "dogecoin_testnet"))]
     fn get_modulated_time(&self, actual_time_taken: u64) -> u64 {
         let mut modulated_time = (self.expected_time_secs as i64
             + (actual_time_taken as i64 - self.expected_time_secs as i64) / 8)
@@ -791,8 +815,6 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
-            blocks_per_adjustment: 2016,
-            targer_block_time_secs: 600,
         }
     }
 
@@ -804,8 +826,6 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 3,
-            blocks_per_adjustment: 2016,
-            targer_block_time_secs: 600,
         }
     }
 
