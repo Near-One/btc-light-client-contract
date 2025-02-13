@@ -254,8 +254,8 @@ impl BtcLightClient {
 
         // Check requested confirmations. No need to compute proof if insufficient confirmations.
         require!(
-            (heaviest_block_header.block_height).saturating_sub(target_block_height)
-                > args.confirmations,
+            (heaviest_block_header.block_height).saturating_sub(target_block_height) + 1
+                >= args.confirmations,
             "Not enough blocks confirmed"
         );
 
