@@ -16,11 +16,11 @@ crate-type = ["cdylib", "rlib"]
 borsh = { version = "1.*", features = ["derive"] }
 serde = { version = "1.*", features = ["derive"] }
 hex = "0.4"
+near-sdk = "5.8.1"
+schemars = "0.8.22"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 sha2 = "0.*"
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-near-sdk = "5.1.0"
 
 [profile.release]
 codegen-units = 1
