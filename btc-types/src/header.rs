@@ -1,16 +1,16 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use near_sdk::near;
 
 use crate::{
     hash::{double_sha256, H256},
     u256::U256,
 };
+
 pub type Target = U256;
 pub type Work = U256;
 
 pub const BLOCKS_PER_ADJUSTMENT: u64 = 2016;
 pub const TARGET_BLOCK_TIME_SECS: u64 = 10 * 60;
-pub const EXPECTED_TIME: u64 = BLOCKS_PER_ADJUSTMENT as u64 * TARGET_BLOCK_TIME_SECS;
+pub const EXPECTED_TIME: u64 = BLOCKS_PER_ADJUSTMENT * TARGET_BLOCK_TIME_SECS;
 pub const MAX_ADJUSTMENT_FACTOR: u64 = 4;
 pub const POW_LIMIT: U256 = U256::new(
     0x0000_0000_ffff_ffff_ffff_ffff_ffff_ffff,
@@ -23,7 +23,8 @@ pub mod testnet {
     pub const POW_TARGET_TIME_BETWEEN_BLOCKS_SECS: u32 = 10 * 60;
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Header {
     /// Block version, now repurposed for soft fork signalling.
     pub version: i32,
@@ -91,7 +92,8 @@ impl Header {
 }
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExtendedHeader {
     pub block_header: Header,
     /// Below, state contains additional fields not presented in the standard blockchain header

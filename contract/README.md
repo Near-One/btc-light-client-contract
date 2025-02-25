@@ -4,12 +4,18 @@ Bitcoin Light Client Contract for NEAR Protocol.
 
 ## How to Build Locally?
 
-Install [`cargo-near`](https://github.com/near/cargo-near) to support some additional feature.
+Install [`cargo-near`](https://github.com/near/cargo-near) to build contract and some additional features.
 
-Use this command to build a wasm binary
+Use this command to build a reproducible wasm binary
 
 ```bash
-RUSTFLAGS='-C link-arg=-s' cargo build --target wasm32-unknown-unknown --release
+cargo near build reproducible-wasm
+```
+
+It's better to use `non-reproducible-wasm` build during development
+
+```bash
+cargo near build non-reproducible-wasm --features testnet
 ```
 
 ## How to Test Locally?
