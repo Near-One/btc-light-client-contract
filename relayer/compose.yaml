@@ -1,0 +1,19 @@
+services:
+  bitcoind:
+    image: ruimarinho/bitcoin-core:24.0.1
+    command:
+      -prune=550
+      -rpcuser=bitcoin
+      -rpcpassword=bitcoin
+      -rpcallowip=0.0.0.0/0
+      -rpcbind=0.0.0.0
+      -assumevalid=00000000000000000000b417eaf1b6d670fdabb4996d8902f8ea05aafc88d158
+    ports:
+      - "8333:8333"
+  relayer:
+    image: btc-relayer
+    build:
+      context: ../
+      dockerfile: ./relayer/Dockerfile
+    depends_on:
+      - bitcoind
