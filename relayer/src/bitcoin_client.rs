@@ -1,3 +1,4 @@
+use bitcoin::Amount;
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
@@ -79,6 +80,10 @@ impl Client {
         block_hash: &BlockHash,
     ) -> Result<bitcoincore_rpc::bitcoin::Block, bitcoincore_rpc::Error> {
         self.inner.get_block(block_hash)
+    }
+
+    pub fn estimate_fee_rate(&self, conf_target: u16) -> Result<Option<Amount>, bitcoincore_rpc::Error> {
+        Ok(self.inner.estimate_smart_fee(conf_target, None)?.fee_rate)
     }
 
     /// Get block by block height
