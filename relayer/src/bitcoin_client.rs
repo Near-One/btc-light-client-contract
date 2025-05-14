@@ -38,13 +38,13 @@ impl CustomMinreqHttpTransport {
         match resp.json() {
             Ok(json) => Ok(json),
             Err(minreq_err) => {
-                if resp.status_code != 200 {
+                if resp.status_code == 200 {
+                    Err(jsonrpc::minreq_http::Error::Minreq(minreq_err))
+                } else {
                     Err(jsonrpc::minreq_http::Error::Http(HttpError {
                         status_code: resp.status_code,
                         body: resp.as_str().unwrap_or("").to_string(),
                     }))
-                } else {
-                    Err(jsonrpc::minreq_http::Error::Minreq(minreq_err))
                 }
             }
         }
@@ -53,7 +53,7 @@ impl CustomMinreqHttpTransport {
     pub fn basic_auth(user: String, pass: Option<String>) -> String {
         let mut s = user;
         s.push(':');
-        if let Some(ref pass) = pass {
+        if let Some(pass) = pass {
             s.push_str(pass.as_ref());
         }
         format!("Basic {}", &jsonrpc::base64::encode(s.as_bytes()))
