@@ -1,6 +1,6 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{ExtendedHeader, Header, MAX_ADJUSTMENT_FACTOR};
+use btc_types::header::{ExtendedHeader, Header};
 use btc_types::network::{Network, NetworkConfig};
 use btc_types::u256::U256;
 use near_plugins::{
@@ -253,7 +253,7 @@ impl BtcLightClient {
 
         // Check requested confirmations. No need to compute proof if insufficient confirmations.
         require!(
-            (heaviest_block_header.block_height).saturating_sub(target_block_height)
+            (heaviest_block_header.block_height).saturating_sub(target_block_height) + 1
                 >= args.confirmations,
             "Not enough blocks confirmed"
         );
@@ -512,6 +512,8 @@ impl BtcLightClient {
             prev_block_time.saturating_sub(interval_tail_extend_header.block_header.time),
         );
 
+        pub const MAX_ADJUSTMENT_FACTOR: u64 = 4;
+
         if actual_time_taken < config.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
             actual_time_taken = config.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
         }
@@ -524,6 +526,10 @@ impl BtcLightClient {
         let (mut new_target, new_target_overflow) = last_target.overflowing_mul(actual_time_taken);
         require!(!new_target_overflow, "new target overflow");
         new_target = new_target / U256::from(config.expected_time_secs);
+
+        if new_target > config.pow_limt {
+            new_target = config.pow_limt;
+        }
 
         let expected_bits = new_target.target_to_bits();
 
