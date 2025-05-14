@@ -58,10 +58,8 @@ enum StorageKey {
 
 /// Contract implementing Bitcoin light client.
 /// See README.md for more details about features and implementation logic behind the code.
-
 /// This contract could work in a pairing with an external off-chain relay service. To learn more about
 /// relay, take a look at the relay service documentation.
-
 #[access_control(role_type(Role))]
 #[near(contract_state)]
 #[derive(Pausable, Upgradable, PanicOnDefault)]
