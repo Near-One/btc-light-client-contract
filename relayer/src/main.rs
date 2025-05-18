@@ -70,7 +70,7 @@ impl Synchronizer {
 
             let last_block_hash = blocks_to_submit[blocks_to_submit.len() - 1].block_hash();
 
-            let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(last_block_hash).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
+            let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(last_block_hash.to_string()).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
             if block_already_submitted {
                 info!(target: "relay", "Skip block submission: blocks [{} - {}] already on chain", first_block_height_to_submit, first_block_height_to_submit + number_of_blocks_to_submit - 1);
                 first_block_height_to_submit += number_of_blocks_to_submit;
@@ -139,7 +139,7 @@ impl Synchronizer {
     fn get_bitcoin_block_hash_by_height(
         &self,
         height: u64,
-    ) -> Result<String, bitcoincore_rpc::Error> {
+    ) -> Result<String, Box<dyn std::error::Error>> {
         let block_from_bitcoin_node = self.bitcoin_client.get_block_header_by_height(height)?;
 
         Ok(block_from_bitcoin_node.block_hash().to_string())

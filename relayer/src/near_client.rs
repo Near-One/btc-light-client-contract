@@ -8,9 +8,6 @@ use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
 
-use bitcoin::BlockHash;
-use bitcoincore_rpc::bitcoin::block::Header;
-use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
 use log::info;
 use near_crypto::InMemorySigner;
@@ -44,17 +41,6 @@ pub struct NearClient {
     signer: InMemorySigner,
     btc_light_client_account_id: AccountId,
     transaction_timeout_sec: u64,
-}
-
-fn get_btc_header(header: Header) -> btc_types::header::Header {
-    btc_types::header::Header {
-        version: header.version.to_consensus(),
-        prev_block_hash: header.prev_blockhash.to_byte_array().into(),
-        merkle_root: header.merkle_root.to_byte_array().into(),
-        time: header.time,
-        bits: header.bits.to_consensus(),
-        nonce: header.nonce,
-    }
 }
 
 impl NearClient {
@@ -111,18 +97,14 @@ impl NearClient {
     /// * Connection issue
     pub async fn submit_blocks(
         &self,
-        headers: Vec<Header>,
+        headers: Vec<btc_types::header::Header>,
     ) -> Result<Result<RpcTransactionResponse, CustomError>, Box<dyn std::error::Error>> {
-        let args: Vec<_> = headers
-            .iter()
-            .map(|header| {
-                println!("Submit block {}", header.block_hash());
-                get_btc_header(*header)
-            })
-            .collect();
+        for header in &headers {
+            println!("Submit block {}", header.block_hash());
+        }
 
         let sent_at = time::Instant::now();
-        let tx_hash = self.submit_tx(SUBMIT_BLOCKS, to_vec(&args)?).await?;
+        let tx_hash = self.submit_tx(SUBMIT_BLOCKS, to_vec(&headers)?).await?;
         info!("Blocks submitted: tx_hash = {:?}", tx_hash);
 
         loop {
@@ -197,7 +179,7 @@ impl NearClient {
     /// * Connection issue
     pub async fn is_block_hash_exists(
         &self,
-        block_hash: BlockHash,
+        block_hash: String,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let args = json!({
             "blockhash": block_hash,
