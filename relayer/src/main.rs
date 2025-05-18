@@ -54,6 +54,8 @@ impl Synchronizer {
                 let block_hash = continue_on_fail!(self.bitcoin_client.get_block_hash(current_height), "Bitcoin Client: Error on get_block_hash", sleep_time_on_fail_sec,  'main_loop);
                 let block_header = continue_on_fail!(self.bitcoin_client.get_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop);
                 blocks_to_submit.push(block_header);
+
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
 
             let number_of_blocks_to_submit: u64 = blocks_to_submit.len().try_into().unwrap();
