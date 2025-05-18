@@ -578,8 +578,8 @@ impl BtcLightClient {
             // If the new block's timestamp is more than 6 * block interval minutes
             // then allow mining of a min-difficulty block.
             if prev_block_header.block_height >= pow_allow_min_difficulty_blocks_after_height {
-                if u64::from(block_header.time)
-                    > u64::from(prev_block_header.block_header.time)
+                if i64::from(block_header.time)
+                    > i64::from(prev_block_header.block_header.time)
                         + config.pow_target_spacing(prev_block_header.block_height + 1) * 6
                 {
                     let expected_bits = config.proof_of_work_limit_bits;
@@ -612,13 +612,16 @@ impl BtcLightClient {
                 require!(!overflow, "Addition of U256 values overflowed");
                 total_target = sum;
 
-                current_header = self
+                current_header = match self
                     .headers_pool
                     .get(&current_header.block_header.prev_block_hash)
-                    .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+                {
+                    Some(item) => item,
+                    None => return, // TODO: improve this check
+                };
             }
 
-            median_time.sort();
+            median_time.sort_unstable();
             median_time[median_time.len() / 2]
         };
 
@@ -626,24 +629,27 @@ impl BtcLightClient {
             for i in 0..MEDIAN_TIME_SPAN {
                 median_time[i] = current_header.block_header.time;
 
-                current_header = self
+                current_header = match self
                     .headers_pool
                     .get(&current_header.block_header.prev_block_hash)
-                    .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+                {
+                    Some(item) => item,
+                    None => return, // TODO: improve this check
+                };
             }
-            median_time.sort();
+            median_time.sort_unstable();
             median_time[median_time.len() / 2]
         };
 
-        let average_target = total_target / U256::from(config.pow_averaging_window);
+        let average_target = total_target / U256::from(config.pow_averaging_window as u64);
         let next_height = prev_block_header.block_height + 1;
         let averaging_window_timespan = config.averaging_window_timespan(next_height);
-        let min_actual_timespan = config.max_actual_timespan(next_height);
+        let min_actual_timespan = config.min_actual_timespan(next_height);
         let max_actual_timespan = config.max_actual_timespan(next_height);
 
         // Limit adjustment step
         // Use medians to prevent time-warp attacks
-        let mut actual_timespan: u64 =
+        let mut actual_timespan: i64 =
             (prev_block_median_time_past - first_block_in_interval_median_time_past).into();
 
         actual_timespan =
@@ -657,8 +663,9 @@ impl BtcLightClient {
         }
 
         // Retarget
-        let new_target = average_target / U256::from(averaging_window_timespan);
-        let (mut new_target, new_target_overflow) = new_target.overflowing_mul(actual_timespan);
+        let new_target = average_target / U256::from(averaging_window_timespan as u64);
+        let (mut new_target, new_target_overflow) =
+            new_target.overflowing_mul(actual_timespan as u64);
         require!(!new_target_overflow, "new target overflow");
 
         if new_target > config.pow_limt {

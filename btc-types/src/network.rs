@@ -75,8 +75,8 @@ pub fn get_zcash_config(network: Network) -> ZcashConfig {
             blossom_activation_height: 653600,
             pre_blossom_pow_target_spacing: 150,
             post_blossom_pow_target_spacing: 75,
-            pow_max_adjust_up: 32,   // 32% adjustment down
-            pow_max_adjust_down: 16, // 16% adjustment up
+            pow_max_adjust_down: 32, // 32% adjustment down
+            pow_max_adjust_up: 16,   // 16% adjustment up
             pow_allow_min_difficulty_blocks_after_height: None,
         },
         Network::Testnet => ZcashConfig {
@@ -89,8 +89,8 @@ pub fn get_zcash_config(network: Network) -> ZcashConfig {
             blossom_activation_height: 584000,
             pre_blossom_pow_target_spacing: 150,
             post_blossom_pow_target_spacing: 75,
-            pow_max_adjust_up: 0,
             pow_max_adjust_down: 0,
+            pow_max_adjust_up: 0,
             pow_allow_min_difficulty_blocks_after_height: Some(299187),
         },
     }
@@ -110,17 +110,17 @@ pub struct NetworkConfig {
 pub struct ZcashConfig {
     pub proof_of_work_limit_bits: u32,
     pub pow_limt: U256,
-    pub pow_averaging_window: u64,
+    pub pow_averaging_window: i64,
     pub blossom_activation_height: u64,
-    pub pre_blossom_pow_target_spacing: u64,
-    pub post_blossom_pow_target_spacing: u64,
-    pub pow_max_adjust_up: u64,
-    pub pow_max_adjust_down: u64,
+    pub pre_blossom_pow_target_spacing: i64,
+    pub post_blossom_pow_target_spacing: i64,
+    pub pow_max_adjust_down: i64,
+    pub pow_max_adjust_up: i64,
     pub pow_allow_min_difficulty_blocks_after_height: Option<u64>,
 }
 
 impl ZcashConfig {
-    pub fn pow_target_spacing(&self, height: u64) -> u64 {
+    pub fn pow_target_spacing(&self, height: u64) -> i64 {
         let blossom_active = height >= self.blossom_activation_height;
         if blossom_active {
             self.post_blossom_pow_target_spacing
@@ -129,15 +129,15 @@ impl ZcashConfig {
         }
     }
 
-    pub fn averaging_window_timespan(&self, height: u64) -> u64 {
+    pub fn averaging_window_timespan(&self, height: u64) -> i64 {
         self.pow_averaging_window * self.pow_target_spacing(height)
     }
 
-    pub fn min_actual_timespan(&self, height: u64) -> u64 {
+    pub fn min_actual_timespan(&self, height: u64) -> i64 {
         return (self.averaging_window_timespan(height) * (100 - self.pow_max_adjust_up)) / 100;
     }
 
-    pub fn max_actual_timespan(&self, height: u64) -> u64 {
+    pub fn max_actual_timespan(&self, height: u64) -> i64 {
         return (self.averaging_window_timespan(height) * (100 + self.pow_max_adjust_down)) / 100;
     }
 }
