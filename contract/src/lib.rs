@@ -1,7 +1,7 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
 use btc_types::header::{ExtendedHeader, Header};
-use btc_types::network::{Network, NetworkConfig};
+use btc_types::network::Network;
 use btc_types::u256::U256;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
@@ -90,6 +90,9 @@ pub struct BtcLightClient {
 
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
     gc_threshold: u64,
+
+    // Network type Mainnet/Testnet
+    network: Network,
 }
 
 #[near]
@@ -111,6 +114,7 @@ impl BtcLightClient {
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
+            network: args.network,
         };
 
         // Make the contract itself super admin. This allows us to grant any role in the
@@ -317,39 +321,48 @@ impl BtcLightClient {
         }
     }
 
-    pub fn get_config() -> NetworkConfig {
-        NetworkConfig::new(Self::get_network())
+    #[cfg(feature = "bitcoin")]
+    pub fn get_config(&self) -> btc_types::network::NetworkConfig {
+        btc_types::network::get_bitcoin_config(self.network)
     }
 
-    pub fn get_network() -> Network {
+    #[cfg(feature = "litecoin")]
+    pub fn get_config(&self) -> btc_types::network::NetworkConfig {
+        btc_types::network::get_litecoin_config(self.network)
+    }
+
+    #[cfg(feature = "zcash")]
+    pub fn get_config(&self) -> btc_types::network::ZcashConfig {
+        btc_types::network::get_zcash_config(self.network)
+    }
+
+    pub fn get_network(&self) -> (String, Network) {
         #[cfg(feature = "bitcoin")]
         {
-            Network::Bitcoin
-        }
-        #[cfg(feature = "bitcoin_testnet")]
-        {
-            Network::BitcoinTestnet
+            ("Bitcoin".to_owned(), self.network)
         }
         #[cfg(feature = "litecoin")]
         {
-            Network::Litecoin
+            ("Litecoin".to_owned(), self.network)
         }
-        #[cfg(feature = "litecoin_testnet")]
+        #[cfg(feature = "zcash")]
         {
-            Network::LitecoinTestnet
+            ("Zcash".to_owned(), self.network)
         }
     }
 }
 
 impl BtcLightClient {
     fn init_genesis(&mut self, block_header: Header, block_hash: &H256, block_height: u64) {
-        let config = Self::get_config();
-
         env::log_str(&format!(
             "Init with block hash {block_hash} at height {block_height}"
         ));
 
-        require!(block_height % config.blocks_per_adjustment == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.blocks_per_adjustment));
+        #[cfg(any(feature = "bitcoin", feature = "litecoin"))]
+        {
+            let config = self.get_config();
+            require!(block_height % config.blocks_per_adjustment == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.blocks_per_adjustment));
+        }
 
         let current_block_hash = block_header.block_hash();
         require!(&current_block_hash == block_hash, "Invalid block hash");
@@ -440,11 +453,20 @@ impl BtcLightClient {
         }
     }
 
+    fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
+        #[cfg(any(feature = "bitcoin", feature = "litecoin"))]
+        self.btc_check_target(block_header, prev_block_header);
+
+        #[cfg(feature = "zcash")]
+        self.zcash_check_pow_and_equihash(block_header, prev_block_header);
+    }
+
+    #[cfg(any(feature = "bitcoin", feature = "litecoin"))]
     fn check_target_testnet(
         &self,
         block_header: &Header,
         prev_block_header: &ExtendedHeader,
-        config: NetworkConfig,
+        config: btc_types::network::NetworkConfig,
     ) {
         let time_diff = block_header
             .time
@@ -479,8 +501,9 @@ impl BtcLightClient {
         }
     }
 
-    fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
-        let config = Self::get_config();
+    #[cfg(any(feature = "bitcoin", feature = "litecoin"))]
+    fn btc_check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
+        let config = self.get_config();
 
         if (prev_block_header.block_height + 1) % config.blocks_per_adjustment != 0 {
             if config.pow_allow_min_difficulty_blocks {
@@ -538,6 +561,129 @@ impl BtcLightClient {
                 expected_bits, block_header.bits
             )
         );
+    }
+
+    #[cfg(feature = "zcash")]
+    fn zcash_check_pow_and_equihash(
+        &self,
+        block_header: &Header,
+        prev_block_header: &ExtendedHeader,
+    ) {
+        let config = self.get_config();
+
+        if let Some(pow_allow_min_difficulty_blocks_after_height) =
+            config.pow_allow_min_difficulty_blocks_after_height
+        {
+            // Special difficulty rule for testnet:
+            // If the new block's timestamp is more than 6 * block interval minutes
+            // then allow mining of a min-difficulty block.
+            if prev_block_header.block_height >= pow_allow_min_difficulty_blocks_after_height {
+                if u64::from(block_header.time)
+                    > u64::from(prev_block_header.block_header.time)
+                        + config.pow_target_spacing(prev_block_header.block_height + 1) * 6
+                {
+                    let expected_bits = config.proof_of_work_limit_bits;
+                    require!(
+                        expected_bits == block_header.bits,
+                        format!(
+                            "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
+                            expected_bits, block_header.bits
+                        )
+                    );
+                }
+            }
+        }
+
+        // Find the first block in the averaging interval
+        // and the median time past for the first and last blocks in the interval
+        let mut current_header = prev_block_header.clone();
+        const MEDIAN_TIME_SPAN: usize = 11;
+        let mut total_target = U256::ZERO;
+        let mut median_time = [0u32; MEDIAN_TIME_SPAN];
+
+        let prev_block_median_time_past = {
+            for i in 0..usize::try_from(config.pow_averaging_window).unwrap() {
+                if i < MEDIAN_TIME_SPAN {
+                    median_time[i] = current_header.block_header.time;
+                }
+
+                let (sum, overflow) =
+                    total_target.overflowing_add(current_header.block_header.target());
+                require!(!overflow, "Addition of U256 values overflowed");
+                total_target = sum;
+
+                current_header = self
+                    .headers_pool
+                    .get(&current_header.block_header.prev_block_hash)
+                    .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+            }
+
+            median_time.sort();
+            median_time[median_time.len() / 2]
+        };
+
+        let first_block_in_interval_median_time_past = {
+            for i in 0..MEDIAN_TIME_SPAN {
+                median_time[i] = current_header.block_header.time;
+
+                current_header = self
+                    .headers_pool
+                    .get(&current_header.block_header.prev_block_hash)
+                    .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+            }
+            median_time.sort();
+            median_time[median_time.len() / 2]
+        };
+
+        let average_target = total_target / U256::from(config.pow_averaging_window);
+        let next_height = prev_block_header.block_height + 1;
+        let averaging_window_timespan = config.averaging_window_timespan(next_height);
+        let min_actual_timespan = config.max_actual_timespan(next_height);
+        let max_actual_timespan = config.max_actual_timespan(next_height);
+
+        // Limit adjustment step
+        // Use medians to prevent time-warp attacks
+        let mut actual_timespan: u64 =
+            (prev_block_median_time_past - first_block_in_interval_median_time_past).into();
+
+        actual_timespan =
+            averaging_window_timespan + (actual_timespan - averaging_window_timespan) / 4;
+
+        if actual_timespan < min_actual_timespan {
+            actual_timespan = min_actual_timespan;
+        }
+        if actual_timespan > max_actual_timespan {
+            actual_timespan = max_actual_timespan;
+        }
+
+        // Retarget
+        let new_target = average_target / U256::from(averaging_window_timespan);
+        let (mut new_target, new_target_overflow) = new_target.overflowing_mul(actual_timespan);
+        require!(!new_target_overflow, "new target overflow");
+
+        if new_target > config.pow_limt {
+            new_target = config.pow_limt;
+        }
+
+        let expected_bits = new_target.target_to_bits();
+
+        require!(
+            expected_bits == block_header.bits,
+            format!(
+                "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
+                expected_bits, block_header.bits
+            )
+        );
+
+        // Check Equihash solution
+        let n = 200;
+        let k = 9;
+        let input = block_header.get_block_header_vec_for_equihash();
+
+        equihash::is_valid_solution(n, k, &input, &block_header.nonce.0, &block_header.solution)
+            .unwrap_or_else(|e| {
+                env::panic_str(&format!("Invalid Equihash solution: {}", e));
+            });
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
@@ -707,6 +853,7 @@ mod tests {
     fn get_default_init_args() -> InitArgs {
         let genesis_block = genesis_block_header();
         InitArgs {
+            network: Network::Mainnet,
             genesis_block_hash: genesis_block.block_hash(),
             genesis_block,
             genesis_block_height: 0,
@@ -718,6 +865,7 @@ mod tests {
     fn get_default_init_args_with_skip_pow() -> InitArgs {
         let genesis_block = genesis_block_header();
         InitArgs {
+            network: Network::Mainnet,
             genesis_block_hash: genesis_block.block_hash(),
             genesis_block,
             genesis_block_height: 0,
