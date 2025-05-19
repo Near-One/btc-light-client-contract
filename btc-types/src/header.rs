@@ -1,24 +1,21 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    hash::H256,
-    u256::U256,
-};
+use crate::{hash::H256, u256::U256};
 
 pub type Target = U256;
 pub type Work = U256;
 
 #[cfg(feature = "zcash_header")]
-pub use super::zcash_header::Header;
+pub use super::zcash_header::{Header, LightHeader};
 
 #[cfg(not(feature = "zcash_header"))]
-pub use super::btc_header::Header;
+pub use super::btc_header::{Header, LightHeader};
 
 #[allow(clippy::module_name_repetitions)]
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct ExtendedHeader {
-    pub block_header: Header,
+    pub block_header: LightHeader,
     /// Below, state contains additional fields not presented in the standard blockchain header
     /// those fields are used to represent additional information required for fork management
     /// and other utility functionality

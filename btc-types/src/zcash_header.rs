@@ -3,12 +3,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     hash::{double_sha256, H256},
-    u256::U256,
     utils::serd_u32_hex,
 };
 
-type Target = U256;
-type Work = U256;
 pub type Error = crate::utils::DecodeHeaderError;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -38,39 +35,7 @@ impl Header {
     /// The number of bytes that the block header contributes to the size of a block.
     // Serialized length of fields (version, prev_blockhash, merkle_root, time, bits, nonce, solution)
     pub const SIZE: usize = 4 + 32 + 32 + 32 + 4 + 4 + 32 + 3 + 1344; // 1400
-    pub const SIZE_FOR_EQUIHASH: usize = 4 + 32 + 32 + 32 + 4 + 4 + 32; // 140 excluding nonce and Equihash solution
-
-    /// Computes the target (range [0, T] inclusive) that a blockhash must land in to be valid.
-    #[must_use]
-    pub fn target(&self) -> Target {
-        // This is a floating-point "compact" encoding originally used by
-        // OpenSSL, which satoshi put into consensus code, so we're stuck
-        // with it. The exponent needs to have 3 subtracted from it, hence
-        // this goofy decoding code. 3 is due to 3 bytes in the mantissa.
-        let (mant, expt) = {
-            let unshifted_expt = self.bits >> 24;
-            if unshifted_expt <= 3 {
-                ((self.bits & 0x00FF_FFFF) >> (8 * (3 - unshifted_expt)), 0)
-            } else {
-                (self.bits & 0x00FF_FFFF, 8 * (unshifted_expt - 3))
-            }
-        };
-
-        // The mantissa is signed but may not be negative.
-        if mant > 0x7F_FFFF {
-            Target::ZERO
-        } else {
-            U256::from(mant) << expt
-        }
-    }
-
-    /// Returns the total work of the block.
-    /// "Work" is defined as the work done to mine a block with this target value (recorded in the
-    /// block header in compact form as nBits).
-    #[must_use]
-    pub fn work(&self) -> Work {
-        self.target().inverse()
-    }
+    pub const SIZE_FOR_EQUIHASH: usize = 4 + 32 + 32 + 32 + 4 + 4; // 108 excluding nonce and Equihash solution
 
     #[must_use]
     pub fn block_hash(&self) -> H256 {
@@ -151,6 +116,32 @@ impl Header {
             nonce,
             solution,
         })
+    }
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+// The header, excluding nonce and Equihash solution
+pub struct LightHeader {
+    pub version: i32,
+    pub prev_block_hash: H256,
+    pub merkle_root: H256,
+    pub block_commitments: H256,
+    pub time: u32,
+    #[serde(with = "serd_u32_hex")]
+    pub bits: u32,
+}
+
+impl From<Header> for LightHeader {
+    fn from(header: Header) -> Self {
+        Self {
+            version: header.version,
+            prev_block_hash: header.prev_block_hash,
+            merkle_root: header.merkle_root,
+            block_commitments: header.block_commitments,
+            time: header.time,
+            bits: header.bits,
+        }
     }
 }
 

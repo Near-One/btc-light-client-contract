@@ -3,6 +3,7 @@ use btc_types::hash::H256;
 use btc_types::header::{ExtendedHeader, Header};
 use btc_types::network::Network;
 use btc_types::u256::U256;
+use btc_types::utils::{target_from_bits, work_from_bits};
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
@@ -366,10 +367,10 @@ impl BtcLightClient {
 
         let current_block_hash = block_header.block_hash();
         require!(&current_block_hash == block_hash, "Invalid block hash");
-        let chain_work = block_header.work();
+        let chain_work = work_from_bits(block_header.bits);
 
         let header = ExtendedHeader {
-            block_header,
+            block_header: block_header.into(),
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
@@ -403,17 +404,18 @@ impl BtcLightClient {
         let pow_hash = block_header.block_hash_pow();
 
         require!(
-            self.skip_pow_verification || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
+            self.skip_pow_verification
+                || U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
             format!("block should have correct pow")
         );
 
         let (current_block_computed_chain_work, overflow) = prev_block_header
             .chain_work
-            .overflowing_add(block_header.work());
+            .overflowing_add(work_from_bits(block_header.bits));
         require!(!overflow, "Addition of U256 values overflowed");
 
         let current_header = ExtendedHeader {
-            block_header,
+            block_header: block_header.into(),
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
@@ -542,7 +544,7 @@ impl BtcLightClient {
             actual_time_taken = config.expected_time_secs * max_adjustment_factor;
         }
 
-        let last_target = prev_block_header.block_header.target();
+        let last_target = target_from_bits(prev_block_header.block_header.bits);
 
         let (mut new_target, new_target_overflow) = last_target.overflowing_mul(actual_time_taken);
         require!(!new_target_overflow, "new target overflow");
@@ -607,8 +609,8 @@ impl BtcLightClient {
                     median_time[i] = current_header.block_header.time;
                 }
 
-                let (sum, overflow) =
-                    total_target.overflowing_add(current_header.block_header.target());
+                let (sum, overflow) = total_target
+                    .overflowing_add(target_from_bits(current_header.block_header.bits));
                 require!(!overflow, "Addition of U256 values overflowed");
                 total_target = sum;
 
@@ -903,7 +905,7 @@ mod tests {
         assert_eq!(
             received_header,
             ExtendedHeader {
-                block_header: header,
+                block_header: header.into(),
                 block_hash: decode_hex(
                     "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048"
                 ),
@@ -929,7 +931,7 @@ mod tests {
         assert_eq!(
             received_header,
             ExtendedHeader {
-                block_header: header,
+                block_header: header.into(),
                 block_hash: decode_hex(
                     "62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"
                 ),
@@ -957,7 +959,7 @@ mod tests {
         assert_eq!(
             received_header,
             ExtendedHeader {
-                block_header: header,
+                block_header: header.into(),
                 block_hash: decode_hex(
                     "62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"
                 ),
@@ -1021,7 +1023,7 @@ mod tests {
         assert_eq!(
             received_header,
             ExtendedHeader {
-                block_header: fork_block_header_example_2(),
+                block_header: fork_block_header_example_2().into(),
                 block_hash: decode_hex(
                     "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd"
                 ),

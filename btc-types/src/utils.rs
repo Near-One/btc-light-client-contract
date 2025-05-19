@@ -1,3 +1,5 @@
+use crate::u256::U256;
+
 pub mod serd_u32_hex {
     pub fn serialize<S>(num: &u32, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -32,3 +34,28 @@ impl std::fmt::Display for DecodeHeaderError {
 }
 
 impl std::error::Error for DecodeHeaderError {}
+
+/// Computes the target (range [0, T] inclusive) that a blockhash must land in to be valid.
+#[must_use]
+pub fn target_from_bits(bits: u32) -> U256 {
+    let (mant, expt) = {
+        let unshifted_expt = bits >> 24;
+        if unshifted_expt <= 3 {
+            ((bits & 0x00FF_FFFF) >> (8 * (3 - unshifted_expt)), 0)
+        } else {
+            (bits & 0x00FF_FFFF, 8 * (unshifted_expt - 3))
+        }
+    };
+
+    if mant > 0x7F_FFFF {
+        U256::ZERO
+    } else {
+        U256::from(mant) << expt
+    }
+}
+
+/// Returns the total work of the block.
+#[must_use]
+pub fn work_from_bits(bits: u32) -> U256 {
+    target_from_bits(bits).inverse()
+}

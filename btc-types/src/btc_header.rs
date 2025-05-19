@@ -3,12 +3,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     hash::{double_sha256, H256},
-    u256::U256,
     utils::serd_u32_hex,
 };
 
-type Target = U256;
-type Work = U256;
 pub type Error = crate::utils::DecodeHeaderError;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -29,42 +26,12 @@ pub struct Header {
     pub nonce: u32,
 }
 
+pub type LightHeader = Header;
+
 impl Header {
     /// The number of bytes that the block header contributes to the size of a block.
     // Serialized length of fields (version, prev_blockhash, merkle_root, time, bits, nonce)
     pub const SIZE: usize = 4 + 32 + 32 + 4 + 4 + 4; // 80
-
-    /// Computes the target (range [0, T] inclusive) that a blockhash must land in to be valid.
-    #[must_use]
-    pub fn target(&self) -> Target {
-        // This is a floating-point "compact" encoding originally used by
-        // OpenSSL, which satoshi put into consensus code, so we're stuck
-        // with it. The exponent needs to have 3 subtracted from it, hence
-        // this goofy decoding code. 3 is due to 3 bytes in the mantissa.
-        let (mant, expt) = {
-            let unshifted_expt = self.bits >> 24;
-            if unshifted_expt <= 3 {
-                ((self.bits & 0x00FF_FFFF) >> (8 * (3 - unshifted_expt)), 0)
-            } else {
-                (self.bits & 0x00FF_FFFF, 8 * (unshifted_expt - 3))
-            }
-        };
-
-        // The mantissa is signed but may not be negative.
-        if mant > 0x7F_FFFF {
-            Target::ZERO
-        } else {
-            U256::from(mant) << expt
-        }
-    }
-
-    /// Returns the total work of the block.
-    /// "Work" is defined as the work done to mine a block with this target value (recorded in the
-    /// block header in compact form as nBits).
-    #[must_use]
-    pub fn work(&self) -> Work {
-        self.target().inverse()
-    }
 
     #[must_use]
     pub fn block_hash(&self) -> H256 {
