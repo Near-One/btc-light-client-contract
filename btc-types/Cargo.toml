@@ -38,6 +38,6 @@ panic = "abort"
 overflow-checks = true
 
 [features]
-default = ["zcash_header"]
+default = []
 scrypt_hash = ["scrypt"]
 zcash_header = []
