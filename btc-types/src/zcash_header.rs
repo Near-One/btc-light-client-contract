@@ -9,7 +9,6 @@ use crate::{
 pub type Error = crate::utils::DecodeHeaderError;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
 pub struct Header {
     /// Block version, now repurposed for soft fork signalling.
     pub version: i32,
@@ -22,7 +21,6 @@ pub struct Header {
     /// The timestamp of the block, as claimed by the miner.
     pub time: u32,
     /// The target value below which the blockhash must lie.
-    #[serde(with = "serd_u32_hex")]
     pub bits: u32,
     // The block's nonce (Zcash: 32 bytes)
     pub nonce: H256,

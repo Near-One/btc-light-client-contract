@@ -1,15 +1,12 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    hash::{double_sha256, H256},
-    utils::serd_u32_hex,
-};
+use crate::hash::{double_sha256, H256};
 
 pub type Error = crate::utils::DecodeHeaderError;
 
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+
 pub struct Header {
     /// Block version, now repurposed for soft fork signalling.
     pub version: i32,
@@ -20,7 +17,6 @@ pub struct Header {
     /// The timestamp of the block, as claimed by the miner.
     pub time: u32,
     /// The target value below which the blockhash must lie.
-    #[serde(with = "serd_u32_hex")]
     pub bits: u32,
     /// The nonce, selected to obtain a low enough blockhash.
     pub nonce: u32,
