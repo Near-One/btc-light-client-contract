@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::u256::U256;
 
-
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub enum Network {
     Bitcoin,
@@ -12,7 +11,6 @@ pub enum Network {
     LitecoinTestnet,
     Dogecoin,
     DogecoinTestnet,
-
 }
 
 #[derive(Copy, Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
