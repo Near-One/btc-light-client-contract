@@ -1,8 +1,13 @@
+use bitcoin::hashes::Hash;
+use bitcoin::BlockHash;
+use btc_types::contract_args::InitArgs;
+use btc_types::network::Network;
 use log::{debug, info, trace, warn};
 
 use crate::bitcoin_client::Client as BitcoinClient;
 use crate::config::Config;
 use crate::near_client::{CustomError, NearClient};
+use clap::Parser;
 
 mod bitcoin_client;
 mod config;
@@ -146,17 +151,65 @@ impl Synchronizer {
     }
 }
 
+// TODO: cleanup this code
+async fn init_contract(bitcoin_client: &BitcoinClient, near_client: &NearClient, init_height: u64) {
+    info!("Init contract");
+    let num_of_blcoks_to_submit = 28;
+    let header_hash = bitcoin_client.get_block_hash(init_height).unwrap();
+    let mut header = bitcoin_client.get_block_header(&header_hash).unwrap();
+
+    let mut headers = vec![header.clone()];
+    for _ in 0..num_of_blcoks_to_submit {
+        header = bitcoin_client
+            .get_block_header(&BlockHash::from_byte_array(header.prev_block_hash.0))
+            .unwrap();
+
+        headers.push(header.clone());
+    }
+
+    headers.reverse();
+
+    let genesis_block_height = init_height - num_of_blcoks_to_submit;
+
+    let args: InitArgs = InitArgs {
+        genesis_block: headers[0].clone(),
+        genesis_block_hash: headers[0].block_hash(),
+        genesis_block_height,
+        skip_pow_verification: false,
+        gc_threshold: 10000,
+        network: Network::Mainnet,
+        submit_blocks: Some(headers[1..].to_vec()),
+    };
+
+    info!("Init args: {}", serde_json::to_string(&args).unwrap());
+    near_client.init_contract(&args).await.unwrap();
+}
+
+#[derive(Parser)]
+struct CliArgs {
+    /// Path to the configuration file
+    #[clap(short, long, default_value = "config.toml")]
+    config: String,
+    #[clap(long)]
+    init_height: Option<u64>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
+    let args = CliArgs::parse();
 
-    let config = Config::new().expect("we expect config.toml to be next to executable in `./`");
+    let config =
+        Config::new(args.config).expect("we expect config.toml to be next to executable in `./`");
 
     debug!("Configuration loaded: {:?}", config);
 
     let bitcoin_client = BitcoinClient::new(&config);
     let near_client = NearClient::new(&config.near);
 
+    if let Some(init_height) = args.init_height {
+        init_contract(&bitcoin_client, &near_client, init_height).await;
+    }
     // RUNNING IN BLOCK RELAY MODE
     info!("run block header sync");
     let mut synchronizer = Synchronizer::new(bitcoin_client, near_client.clone(), config);

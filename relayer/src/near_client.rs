@@ -1,3 +1,4 @@
+use btc_types::contract_args::InitArgs;
 use btc_types::header::ExtendedHeader;
 use merkle_tools::H256;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
@@ -89,6 +90,30 @@ impl NearClient {
         }
     }
 
+    pub async fn init_contract(
+        &self,
+        args: &InitArgs,
+    ) -> Result<RpcTransactionResponse, Box<dyn std::error::Error>> {
+        let tx_hash = self
+            .submit_tx("init", json!({"args": args}).to_string().into_bytes(), 0)
+            .await?;
+
+        self.get_tx_status(tx_hash)
+            .await
+            .map_err(|e| e.into())
+            .map(|response| {
+                if let Some(final_execution_outcome) = response.final_execution_outcome.clone() {
+                    if let near_primitives::views::FinalExecutionStatus::Failure(err) =
+                        final_execution_outcome.into_outcome().status
+                    {
+                        Err(format!("Transaction failed with error: {err:?}"))?
+                    }
+                }
+                Ok(response)
+            })
+            .and_then(|result| result)
+    }
+
     /// Submitting block header to the smart contract.
     /// This method supports retries internally.
     ///
@@ -104,7 +129,9 @@ impl NearClient {
         }
 
         let sent_at = time::Instant::now();
-        let tx_hash = self.submit_tx(SUBMIT_BLOCKS, to_vec(&headers)?).await?;
+        let tx_hash = self
+            .submit_tx(SUBMIT_BLOCKS, to_vec(&headers)?, 5 * 10_u128.pow(23))
+            .await?;
         info!("Blocks submitted: tx_hash = {:?}", tx_hash);
 
         loop {
@@ -239,7 +266,7 @@ impl NearClient {
         };
 
         let tx_hash = self
-            .submit_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args)?)
+            .submit_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args)?, 0)
             .await?;
         let response = self.get_tx_status(tx_hash).await?;
 
@@ -281,6 +308,7 @@ impl NearClient {
         &self,
         method_name: &str,
         args: Vec<u8>,
+        deposit: u128,
     ) -> Result<RpcBroadcastTxAsyncResponse, Box<dyn std::error::Error>> {
         let access_key_query_response = self
             .client
@@ -307,8 +335,8 @@ impl NearClient {
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: method_name.to_string(),
                 args,
-                gas: 300_000_000_000_000,     // 300 TeraGas
-                deposit: 5 * 10_u128.pow(23), // 0.5 Near
+                gas: 300_000_000_000_000, // 300 TeraGas
+                deposit,
             }))],
         };
 

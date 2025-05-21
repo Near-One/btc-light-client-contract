@@ -550,6 +550,7 @@ dependencies = [
  "bitcoincore-rpc",
  "borsh 1.5.0",
  "btc-types",
+ "clap",
  "env_logger",
  "hex",
  "lazy_static",

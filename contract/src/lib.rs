@@ -129,6 +129,7 @@ impl BtcLightClient {
             args.genesis_block,
             &args.genesis_block_hash,
             args.genesis_block_height,
+            args.submit_blocks,
         );
 
         contract
@@ -145,7 +146,7 @@ impl BtcLightClient {
         let num_of_headers = headers.len().try_into().unwrap();
 
         for header in headers {
-            self.submit_block_header(header);
+            self.submit_block_header(header, self.skip_pow_verification);
         }
 
         self.run_mainchain_gc(num_of_headers);
@@ -354,15 +355,29 @@ impl BtcLightClient {
 }
 
 impl BtcLightClient {
-    fn init_genesis(&mut self, block_header: Header, block_hash: &H256, block_height: u64) {
+    fn init_genesis(
+        &mut self,
+        block_header: Header,
+        block_hash: &H256,
+        block_height: u64,
+        submit_blocks: Option<Vec<Header>>,
+    ) {
         env::log_str(&format!(
             "Init with block hash {block_hash} at height {block_height}"
         ));
 
+        let config = self.get_config();
         #[cfg(any(feature = "bitcoin", feature = "litecoin"))]
         {
-            let config = self.get_config();
             require!(block_height % config.blocks_per_adjustment == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.blocks_per_adjustment));
+        }
+        #[cfg(feature = "zcash")]
+        {
+            require!(
+                btc_types::network::ZCASH_MEDIAN_TIME_SPAN + config.pow_averaging_window as usize
+                    == submit_blocks.as_ref().map_or(0, |v| v.len()),
+                "ERR_NOT_ENOUGH_BLOCKS_FOR_ZCASH"
+            );
         }
 
         let current_block_hash = block_header.block_hash();
@@ -380,9 +395,15 @@ impl BtcLightClient {
         self.mainchain_initial_blockhash
             .clone_from(&current_block_hash);
         self.mainchain_tip_blockhash = current_block_hash;
+
+        if let Some(submit_blocks) = submit_blocks {
+            for block_header in submit_blocks {
+                self.submit_block_header(block_header, true);
+            }
+        }
     }
 
-    fn submit_block_header(&mut self, block_header: Header) {
+    fn submit_block_header(&mut self, block_header: Header, skip_pow_verification: bool) {
         // We do not have a previous block in the headers_pool, there is a high probability
         // it means we are starting to receive a new fork,
         // so what we do now is we are returning the error code
@@ -398,16 +419,17 @@ impl BtcLightClient {
             .get(&block_header.prev_block_hash)
             .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"));
 
-        self.check_target(&block_header, &prev_block_header);
-
         let current_block_hash = block_header.block_hash();
         let pow_hash = block_header.block_hash_pow();
 
-        require!(
-            self.skip_pow_verification
-                || U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
-            format!("block should have correct pow")
-        );
+        if !skip_pow_verification {
+            self.check_target(&block_header, &prev_block_header);
+            // Check if the block hash is less than or equal to the target
+            require!(
+                U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
+                format!("block should have correct pow")
+            );
+        }
 
         let (current_block_computed_chain_work, overflow) = prev_block_header
             .chain_work
@@ -571,6 +593,8 @@ impl BtcLightClient {
         block_header: &Header,
         prev_block_header: &ExtendedHeader,
     ) {
+        use btc_types::network::ZCASH_MEDIAN_TIME_SPAN;
+
         let config = self.get_config();
 
         if let Some(pow_allow_min_difficulty_blocks_after_height) =
@@ -599,13 +623,12 @@ impl BtcLightClient {
         // Find the first block in the averaging interval
         // and the median time past for the first and last blocks in the interval
         let mut current_header = prev_block_header.clone();
-        const MEDIAN_TIME_SPAN: usize = 11;
         let mut total_target = U256::ZERO;
-        let mut median_time = [0u32; MEDIAN_TIME_SPAN];
+        let mut median_time = [0u32; ZCASH_MEDIAN_TIME_SPAN];
 
         let prev_block_median_time_past = {
             for i in 0..usize::try_from(config.pow_averaging_window).unwrap() {
-                if i < MEDIAN_TIME_SPAN {
+                if i < ZCASH_MEDIAN_TIME_SPAN {
                     median_time[i] = current_header.block_header.time;
                 }
 
@@ -614,13 +637,7 @@ impl BtcLightClient {
                 require!(!overflow, "Addition of U256 values overflowed");
                 total_target = sum;
 
-                current_header = match self
-                    .headers_pool
-                    .get(&current_header.block_header.prev_block_hash)
-                {
-                    Some(item) => item,
-                    None => return, // TODO: improve this check
-                };
+                current_header = self.get_prev_header(&current_header);
             }
 
             median_time.sort_unstable();
@@ -628,16 +645,9 @@ impl BtcLightClient {
         };
 
         let first_block_in_interval_median_time_past = {
-            for i in 0..MEDIAN_TIME_SPAN {
+            for i in 0..ZCASH_MEDIAN_TIME_SPAN {
                 median_time[i] = current_header.block_header.time;
-
-                current_header = match self
-                    .headers_pool
-                    .get(&current_header.block_header.prev_block_hash)
-                {
-                    Some(item) => item,
-                    None => return, // TODO: improve this check
-                };
+                current_header = self.get_prev_header(&current_header);
             }
             median_time.sort_unstable();
             median_time[median_time.len() / 2]
@@ -693,6 +703,12 @@ impl BtcLightClient {
             .unwrap_or_else(|e| {
                 env::panic_str(&format!("Invalid Equihash solution: {}", e));
             });
+    }
+
+    fn get_prev_header(&self, current_header: &ExtendedHeader) -> ExtendedHeader {
+        self.headers_pool
+            .get(&current_header.block_header.prev_block_hash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
@@ -868,6 +884,7 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
+            submit_blocks: None,
         }
     }
 
@@ -880,6 +897,7 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 3,
+            submit_blocks: None,
         }
     }
 
@@ -890,7 +908,7 @@ mod tests {
 
         let mut contract = BtcLightClient::init(get_default_init_args());
 
-        contract.submit_block_header(header);
+        contract.submit_block_header(header, contract.skip_pow_verification);
     }
 
     #[test]
@@ -898,7 +916,7 @@ mod tests {
         let header = fork_block_header_example();
         let mut contract = BtcLightClient::init(get_default_init_args());
 
-        contract.submit_block_header(header.clone());
+        contract.submit_block_header(header.clone(), contract.skip_pow_verification);
 
         let received_header = contract.get_last_block_header();
 
@@ -924,7 +942,7 @@ mod tests {
 
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(header.clone());
+        contract.submit_block_header(header.clone(), contract.skip_pow_verification);
 
         let received_header = contract.get_last_block_header();
 
@@ -950,9 +968,9 @@ mod tests {
 
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(header.clone());
+        contract.submit_block_header(header.clone(), contract.skip_pow_verification);
 
-        contract.submit_block_header(fork_block_header_example());
+        contract.submit_block_header(fork_block_header_example(), contract.skip_pow_verification);
 
         let received_header = contract.get_last_block_header();
 
@@ -977,7 +995,7 @@ mod tests {
     fn test_getting_block_by_height() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example(), contract.skip_pow_verification);
 
         assert_eq!(
             contract.get_block_hash_by_height(0).unwrap(),
@@ -993,7 +1011,7 @@ mod tests {
     fn test_getting_height_by_block() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example(), contract.skip_pow_verification);
 
         assert_eq!(
             contract
@@ -1013,10 +1031,13 @@ mod tests {
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example(), contract.skip_pow_verification);
 
-        contract.submit_block_header(fork_block_header_example());
-        contract.submit_block_header(fork_block_header_example_2());
+        contract.submit_block_header(fork_block_header_example(), contract.skip_pow_verification);
+        contract.submit_block_header(
+            fork_block_header_example_2(),
+            contract.skip_pow_verification,
+        );
 
         let received_header = contract.get_last_block_header();
 
@@ -1042,7 +1063,7 @@ mod tests {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
         let mut next_header = block_header_example();
         next_header.bits += 1;
-        contract.submit_block_header(next_header);
+        contract.submit_block_header(next_header, contract.skip_pow_verification);
     }
 
     #[test]
@@ -1050,6 +1071,9 @@ mod tests {
     fn test_getting_an_error_if_submitting_unattached_block() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(fork_block_header_example_2());
+        contract.submit_block_header(
+            fork_block_header_example_2(),
+            contract.skip_pow_verification,
+        );
     }
 }

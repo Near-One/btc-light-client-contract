@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::u256::U256;
 
+pub const ZCASH_MEDIAN_TIME_SPAN: usize = 11;
+
 #[derive(Copy, Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub enum Network {
     Mainnet,

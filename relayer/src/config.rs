@@ -41,8 +41,8 @@ impl Config {
     /// # Errors
     /// * config file not exists
     /// * incorrect config
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let config_toml = fs::read_to_string("./config.toml")?;
+    pub fn new(file: String) -> Result<Self, Box<dyn std::error::Error>> {
+        let config_toml = fs::read_to_string(file)?;
         let config: Config = toml::from_str(&config_toml)?;
         Ok(config)
     }
