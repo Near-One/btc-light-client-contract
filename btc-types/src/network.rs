@@ -17,7 +17,7 @@ pub fn get_bitcoin_config(network: Network) -> NetworkConfig {
             proof_of_work_limit_bits: 0x1d00ffff,
             pow_target_time_between_blocks_secs: 600, // 10 minutes
             pow_allow_min_difficulty_blocks: false,
-            pow_limt: U256::new(
+            pow_limit: U256::new(
                 0x0000_0000_ffff_ffff_ffff_ffff_ffff_ffff,
                 0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
             ),
@@ -28,7 +28,7 @@ pub fn get_bitcoin_config(network: Network) -> NetworkConfig {
             proof_of_work_limit_bits: 0x1d00ffff,
             pow_target_time_between_blocks_secs: 600, // 10 minutes
             pow_allow_min_difficulty_blocks: true,
-            pow_limt: U256::new(
+            pow_limit: U256::new(
                 0x0000_0000_ffff_ffff_ffff_ffff_ffff_ffff,
                 0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
             ),
@@ -44,7 +44,7 @@ pub fn get_litecoin_config(network: Network) -> NetworkConfig {
             proof_of_work_limit_bits: 0x1e0fffff,
             pow_target_time_between_blocks_secs: 150, // 2.5 minutes
             pow_allow_min_difficulty_blocks: false,
-            pow_limt: U256::new(
+            pow_limit: U256::new(
                 0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
                 0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
             ),
@@ -55,7 +55,7 @@ pub fn get_litecoin_config(network: Network) -> NetworkConfig {
             proof_of_work_limit_bits: 0x1e0fffff,
             pow_target_time_between_blocks_secs: 150, // 2.5 minutes
             pow_allow_min_difficulty_blocks: true,
-            pow_limt: U256::new(
+            pow_limit: U256::new(
                 0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
                 0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
             ),
@@ -67,7 +67,7 @@ pub fn get_zcash_config(network: Network) -> ZcashConfig {
     match network {
         Network::Mainnet => ZcashConfig {
             proof_of_work_limit_bits: 0x1f07ffff,
-            pow_limt: U256::new(
+            pow_limit: U256::new(
                 0x0007_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
                 0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
             ),
@@ -81,7 +81,7 @@ pub fn get_zcash_config(network: Network) -> ZcashConfig {
         },
         Network::Testnet => ZcashConfig {
             proof_of_work_limit_bits: 0x200f0f0f,
-            pow_limt: U256::new(
+            pow_limit: U256::new(
                 0x07ff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
                 0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
             ),
@@ -103,13 +103,13 @@ pub struct NetworkConfig {
     pub proof_of_work_limit_bits: u32,
     pub pow_target_time_between_blocks_secs: u32,
     pub pow_allow_min_difficulty_blocks: bool,
-    pub pow_limt: U256,
+    pub pow_limit: U256,
 }
 
 #[derive(Copy, Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct ZcashConfig {
     pub proof_of_work_limit_bits: u32,
-    pub pow_limt: U256,
+    pub pow_limit: U256,
     pub pow_averaging_window: i64,
     pub blossom_activation_height: u64,
     pub pre_blossom_pow_target_spacing: i64,

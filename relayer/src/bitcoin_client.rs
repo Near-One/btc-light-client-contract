@@ -133,8 +133,8 @@ impl Client {
         Ok(Header::from_block_header_vec(&decoded_hex)?)
     }
 
-    ///
     /// Get block header by bock height
+    ///
     /// # Errors
     /// * issue with connection to the Bitcoin Node
     pub fn get_block_header_by_height(

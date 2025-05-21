@@ -550,8 +550,8 @@ impl BtcLightClient {
         require!(!new_target_overflow, "new target overflow");
         new_target = new_target / U256::from(config.expected_time_secs);
 
-        if new_target > config.pow_limt {
-            new_target = config.pow_limt;
+        if new_target > config.pow_limit {
+            new_target = config.pow_limit;
         }
 
         let expected_bits = new_target.target_to_bits();
@@ -670,8 +670,8 @@ impl BtcLightClient {
             new_target.overflowing_mul(actual_timespan as u64);
         require!(!new_target_overflow, "new target overflow");
 
-        if new_target > config.pow_limt {
-            new_target = config.pow_limt;
+        if new_target > config.pow_limit {
+            new_target = config.pow_limit;
         }
 
         let expected_bits = new_target.target_to_bits();
