@@ -123,7 +123,7 @@ impl NearClient {
 
         let sent_at = time::Instant::now();
         let tx_hash = self.submit_tx(SUBMIT_BLOCKS, to_vec(&args)?).await?;
-        info!("Blocks submitted: tx_hash = {:?}", tx_hash);
+        info!("Blocks submitted: tx_hash = {tx_hash:?}");
 
         loop {
             let response = self.get_tx_status(tx_hash).await;
