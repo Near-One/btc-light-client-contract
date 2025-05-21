@@ -61,10 +61,8 @@ enum StorageKey {
 
 /// Contract implementing Bitcoin light client.
 /// See README.md for more details about features and implementation logic behind the code.
-
 /// This contract could work in a pairing with an external off-chain relay service. To learn more about
 /// relay, take a look at the relay service documentation.
-
 #[access_control(role_type(Role))]
 #[near(contract_state)]
 #[derive(Pausable, Upgradable, PanicOnDefault)]
@@ -269,7 +267,7 @@ impl BtcLightClient {
 
         // Check requested confirmations. No need to compute proof if insufficient confirmations.
         require!(
-            (heaviest_block_header.block_height).saturating_sub(target_block_height)
+            (heaviest_block_header.block_height).saturating_sub(target_block_height) + 1
                 >= args.confirmations,
             "Not enough blocks confirmed"
         );
@@ -535,7 +533,7 @@ impl BtcLightClient {
                     "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
                     config.proof_of_work_limit_bits, block_header.bits
                 )
-            )
+            );
         } else {
             let mut current_block_header = prev_block_header.clone();
             while current_block_header.block_header.bits == config.proof_of_work_limit_bits
@@ -554,7 +552,7 @@ impl BtcLightClient {
                     "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
                     last_bits, block_header.bits
                 )
-            )
+            );
         }
     }
 
@@ -603,6 +601,10 @@ impl BtcLightClient {
         let (mut new_target, new_target_overflow) = last_target.overflowing_mul(modulated_time);
         require!(!new_target_overflow, "new target overflow");
         new_target = new_target / U256::from(config.expected_time_secs);
+
+        if new_target > config.pow_limt {
+            new_target = config.pow_limt;
+        }
 
         let expected_bits = new_target.target_to_bits();
 

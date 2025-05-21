@@ -167,7 +167,6 @@ impl NearClient {
                         | RpcTransactionError::UnknownTransaction { .. },
                     ) => {
                         time::sleep(time::Duration::from_secs(2)).await;
-                        continue;
                     }
                     _ => Err(err)?,
                 },
