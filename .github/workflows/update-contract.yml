@@ -41,7 +41,7 @@ jobs:
           SAFE_TAG="${RAW_TAG//./-}"
           ZIP_NAME="${SAFE_TAG}.zip"
           mkdir -p artifacts
-          find ./target/near -name "*.wasm" -exec cp {} artifacts/ \;
+          find ./contract/target/near -name "*.wasm" -exec cp {} artifacts/ \;
           zip -j "$ZIP_NAME" artifacts/*
         shell: bash
       - name: Create Release
