@@ -21,6 +21,10 @@ jobs:
         with:
           lfs: true
 
+      - name: Install cargo-near
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh
+
       - name: Run rustfmt
         uses: actions-rs/cargo@v1
         with:
