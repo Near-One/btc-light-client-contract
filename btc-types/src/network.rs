@@ -9,8 +9,11 @@ pub enum Network {
     BitcoinTestnet,
     Litecoin,
     LitecoinTestnet,
+    Dogecoin,
+    DogecoinTestnet,
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Copy, Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct NetworkConfig {
     pub expected_time_secs: u64,
@@ -22,7 +25,7 @@ pub struct NetworkConfig {
 }
 
 impl NetworkConfig {
-    pub fn new(network: Network) -> Self {
+    pub fn new(network: &Network) -> Self {
         match network {
             Network::Bitcoin => NetworkConfig {
                 blocks_per_adjustment: 2016,
@@ -62,6 +65,28 @@ impl NetworkConfig {
                 expected_time_secs: 2016 * 150,
                 proof_of_work_limit_bits: 0x1e0fffff,
                 pow_target_time_between_blocks_secs: 150, // 2.5 minutes
+                pow_allow_min_difficulty_blocks: true,
+                pow_limt: U256::new(
+                    0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
+                    0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
+                ),
+            },
+            Network::Dogecoin => NetworkConfig {
+                blocks_per_adjustment: 1,
+                expected_time_secs: 60,
+                proof_of_work_limit_bits: 0x1e0fffff,
+                pow_target_time_between_blocks_secs: 60, // 1 minute
+                pow_allow_min_difficulty_blocks: false,
+                pow_limt: U256::new(
+                    0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
+                    0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
+                ),
+            },
+            Network::DogecoinTestnet => NetworkConfig {
+                blocks_per_adjustment: 1,
+                expected_time_secs: 60,
+                proof_of_work_limit_bits: 0x1e0fffff,
+                pow_target_time_between_blocks_secs: 60, // 1 minute
                 pow_allow_min_difficulty_blocks: true,
                 pow_limt: U256::new(
                     0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
