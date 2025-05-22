@@ -502,7 +502,7 @@ impl BtcLightClient {
         require!(
             coinbase_tx
                 .input
-                .get(0)
+                .first()
                 .unwrap()
                 .script_sig
                 .to_hex_string()
@@ -562,16 +562,15 @@ impl BtcLightClient {
         if (prev_block_header.block_height + 1) % config.blocks_per_adjustment != 0 {
             if config.pow_allow_min_difficulty_blocks {
                 return self.check_target_testnet(block_header, prev_block_header, config);
-            } else {
-                require!(
-                    block_header.bits == prev_block_header.block_header.bits,
-                    format!(
-                        "Error: Incorrect bits. Expected bits: {}; Actual bits: {}.",
-                        prev_block_header.block_header.bits, block_header.bits
-                    )
-                );
-                return;
             }
+            require!(
+                block_header.bits == prev_block_header.block_header.bits,
+                format!(
+                    "Error: Incorrect bits. Expected bits: {}; Actual bits: {}.",
+                    prev_block_header.block_header.bits, block_header.bits
+                )
+            );
+            return;
         }
 
         #[cfg(not(any(feature = "dogecoin", feature = "dogecoin_testnet")))]
@@ -594,7 +593,7 @@ impl BtcLightClient {
         let actual_time_taken = u64::from(
             prev_block_time.saturating_sub(interval_tail_extend_header.block_header.time),
         );
-        let modulated_time = self.get_modulated_time(actual_time_taken);
+        let modulated_time = Self::get_modulated_time(actual_time_taken);
 
         let last_target = prev_block_header.block_header.target();
 
@@ -618,7 +617,7 @@ impl BtcLightClient {
     }
 
     #[cfg(not(any(feature = "dogecoin", feature = "dogecoin_testnet")))]
-    fn get_modulated_time(&self, actual_time_taken: u64) -> u64 {
+    fn get_modulated_time(actual_time_taken: u64) -> u64 {
         use btc_types::header::MAX_ADJUSTMENT_FACTOR;
 
         let config = Self::get_config();
@@ -635,7 +634,7 @@ impl BtcLightClient {
     }
 
     #[cfg(any(feature = "dogecoin", feature = "dogecoin_testnet"))]
-    fn get_modulated_time(&self, actual_time_taken: u64) -> u64 {
+    fn get_modulated_time( actual_time_taken: u64) -> u64 {
         let config = Self::get_config();
 
         let mut modulated_time = (config.expected_time_secs as i64
@@ -738,8 +737,8 @@ impl BtcLightClient {
 
     /// Remove block header and meta information
     fn remove_block_header(&mut self, header_block_hash: &H256) {
-        self.mainchain_header_to_height.remove(&header_block_hash);
-        if let Some(header) = self.headers_pool.remove(&header_block_hash) {
+        self.mainchain_header_to_height.remove(header_block_hash);
+        if let Some(header) = self.headers_pool.remove(header_block_hash) {
             if let Some(aux_parent_blockhash) = header.aux_parent_block {
                 self.used_aux_parent_blocks.remove(&aux_parent_blockhash);
             }
@@ -875,6 +874,7 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
+                aux_parent_block: None,
             }
         );
     }
@@ -901,6 +901,7 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
+                aux_parent_block: None,
             }
         );
     }
@@ -929,6 +930,7 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
+                aux_parent_block: None,
             }
         );
     }
@@ -993,6 +995,7 @@ mod tests {
                     0, 3, 0, 3, 0, 3
                 ]),
                 block_height: 2,
+                aux_parent_block: None,
             }
         );
     }
