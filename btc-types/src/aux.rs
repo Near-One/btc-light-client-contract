@@ -5,6 +5,7 @@ use bitcoin::consensus::deserialize;
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct AuxData {
     pub coinbase_tx: Vec<u8>,

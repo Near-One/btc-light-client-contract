@@ -127,16 +127,13 @@ impl U256 {
     }
 
     pub fn overflowing_mul(self, rhs: u64) -> (Self, bool) {
-        #[allow(clippy::as_conversions)]
-        let (high, overflow) = self.0.overflowing_mul(rhs as u128);
-        #[allow(clippy::as_conversions)]
-        let (low, overflow_low) = self.1.overflowing_mul(rhs as u128);
+        let (high, overflow) = self.0.overflowing_mul(u128::from(rhs));
+        let (low, overflow_low) = self.1.overflowing_mul(u128::from(rhs));
 
         if !overflow_low {
             return (Self(high, low), overflow);
         }
-        #[allow(clippy::as_conversions)]
-        let carry = ((self.1 >> 64) * (rhs as u128)) >> 64;
+        let carry = ((self.1 >> 64) * u128::from(rhs)) >> 64;
         let (high, overflow_add) = high.overflowing_add(carry);
 
         (Self(high, low), overflow | overflow_add)

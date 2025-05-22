@@ -13,6 +13,7 @@ pub enum Network {
     DogecoinTestnet,
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Copy, Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct NetworkConfig {
     pub expected_time_secs: u64,
@@ -24,7 +25,7 @@ pub struct NetworkConfig {
 }
 
 impl NetworkConfig {
-    pub fn new(network: Network) -> Self {
+    pub fn new(network: &Network) -> Self {
         match network {
             Network::Bitcoin => NetworkConfig {
                 blocks_per_adjustment: 2016,
