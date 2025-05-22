@@ -17,7 +17,6 @@ use log::info;
 use near_crypto::InMemorySigner;
 use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncResponse;
 use near_primitives::borsh;
-use serde::Serialize;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
 
@@ -75,7 +74,7 @@ fn get_aux_data(aux_data: Option<AuxData>) -> Option<btc_types::aux::AuxData> {
                 .iter()
                 .map(|h| H256::from(h.to_raw_hash().to_byte_array()))
                 .collect(),
-            chain_id: aux_data.chain_index as usize,
+            chain_id: aux_data.chain_index.try_into().unwrap(),
             parent_block: get_btc_header(aux_data.parent_block),
         }),
     }
@@ -139,12 +138,7 @@ impl NearClient {
     ) -> Result<Result<RpcTransactionResponse, CustomError>, Box<dyn std::error::Error>> {
         let args: Vec<_> = headers
             .iter()
-            .map(|header| {
-                (
-                    get_btc_header((*header).0),
-                    get_aux_data((*header).1.clone()),
-                )
-            })
+            .map(|header| (get_btc_header(header.0), get_aux_data(header.1.clone())))
             .collect();
 
         let sent_at = time::Instant::now();

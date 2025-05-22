@@ -1,5 +1,4 @@
 use bitcoin::consensus::encode;
-use bitcoin::hashes::sha256d;
 use bitcoin::{Transaction, TxMerkleNode};
 use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
@@ -8,9 +7,11 @@ use bitcoincore_rpc::jsonrpc::minreq_http::HttpError;
 use bitcoincore_rpc::jsonrpc::Transport;
 use bitcoincore_rpc::{jsonrpc, RpcApi};
 use jsonrpc::{Request, Response};
+use std::error::Error;
 
 use crate::config::Config;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AuxData {
     pub(crate) coinbase_tx: bitcoin::Transaction,
@@ -52,19 +53,19 @@ impl CustomMinreqHttpTransport {
         match resp.json() {
             Ok(json) => Ok(json),
             Err(minreq_err) => {
-                if resp.status_code != 200 {
+                if resp.status_code == 200 {
+                    Err(jsonrpc::minreq_http::Error::Minreq(minreq_err))
+                } else {
                     Err(jsonrpc::minreq_http::Error::Http(HttpError {
                         status_code: resp.status_code,
                         body: resp.as_str().unwrap_or("").to_string(),
                     }))
-                } else {
-                    Err(jsonrpc::minreq_http::Error::Minreq(minreq_err))
                 }
             }
         }
     }
 
-    pub fn basic_auth(user: String, pass: Option<String>) -> String {
+    pub fn basic_auth(user: String, pass: Option<&str>) -> String {
         let mut s = user;
         s.push(':');
         if let Some(ref pass) = pass {
@@ -105,7 +106,7 @@ impl Client {
             timeout: std::time::Duration::from_secs(15),
             basic_auth: Some(CustomMinreqHttpTransport::basic_auth(
                 config.bitcoin.node_user.clone(),
-                Some(config.bitcoin.node_password.clone()),
+                Some(&config.bitcoin.node_password.clone()),
             )),
             headers: config.bitcoin.node_headers.clone().unwrap_or_default(),
         };
@@ -142,56 +143,57 @@ impl Client {
         self.inner.get_block_header(block_hash)
     }
 
+    /// Get aux block header
+    ///
+    /// # Errors
+    /// * issue with connection to the Bitcoin Node
     pub fn get_aux_block_header(
         &self,
         block_hash: &BlockHash,
-    ) -> Result<(Header, Option<AuxData>), bitcoincore_rpc::Error> {
+    ) -> Result<(Header, Option<AuxData>), Box<dyn Error>> {
         let hex: String = self
             .inner
             .call("getblockheader", &[into_json(block_hash)?, false.into()])?;
         if hex.len() == 160 {
             let block1: Header = encode::deserialize_hex(&hex)?;
             return Ok((block1, None));
-        } else {
-            let data_bytes = hex::decode(&hex).unwrap();
-            let mut cursor = 0;
-            let (block1, readed_len): (Header, usize) =
-                encode::deserialize_partial(&data_bytes).unwrap();
-            cursor += readed_len;
-            let (coinbase_tx, readed_len): (Transaction, usize) =
-                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
-            cursor += readed_len;
-            let (parent_block_hash, reader_len): (BlockHash, usize) =
-                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
-            cursor += reader_len;
-            let (merkle_branch, reader_len): (Vec<TxMerkleNode>, usize) =
-                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
-            cursor += reader_len;
-            let (merkle_index, reader_len): (u32, usize) =
-                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
-            cursor += reader_len;
-            let (chainmerkle_branch, reader_len): (Vec<TxMerkleNode>, usize) =
-                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
-            cursor += reader_len;
-            let (chain_index, reader_len): (u32, usize) =
-                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
-            cursor += reader_len;
-            let (parent_block, reader_len): (Header, usize) =
-                encode::deserialize_partial(&data_bytes[cursor..]).unwrap();
-            cursor += reader_len;
-
-            let aux_data = AuxData {
-                coinbase_tx: coinbase_tx.clone(),
-                parent_block_hash,
-                merkle_branch: merkle_branch.clone(),
-                merkle_index,
-                chainmerkle_branch: chainmerkle_branch.clone(),
-                chain_index,
-                parent_block,
-            };
-
-            return Ok((block1, Some(aux_data)));
         }
+        let data_bytes = hex::decode(&hex)?;
+        let mut cursor = 0;
+        let (block1, readed_len): (Header, usize) = encode::deserialize_partial(&data_bytes)?;
+        cursor += readed_len;
+        let (coinbase_tx, readed_len): (Transaction, usize) =
+            encode::deserialize_partial(&data_bytes[cursor..])?;
+        cursor += readed_len;
+        let (parent_block_hash, readed_len): (BlockHash, usize) =
+            encode::deserialize_partial(&data_bytes[cursor..])?;
+        cursor += readed_len;
+        let (merkle_branch, readed_len): (Vec<TxMerkleNode>, usize) =
+            encode::deserialize_partial(&data_bytes[cursor..])?;
+        cursor += readed_len;
+        let (merkle_index, readed_len): (u32, usize) =
+            encode::deserialize_partial(&data_bytes[cursor..])?;
+        cursor += readed_len;
+        let (chainmerkle_branch, readed_len): (Vec<TxMerkleNode>, usize) =
+            encode::deserialize_partial(&data_bytes[cursor..])?;
+        cursor += readed_len;
+        let (chain_index, readed_len): (u32, usize) =
+            encode::deserialize_partial(&data_bytes[cursor..])?;
+        cursor += readed_len;
+        let (parent_block, _readed_len): (Header, usize) =
+            encode::deserialize_partial(&data_bytes[cursor..])?;
+
+        let aux_data = AuxData {
+            coinbase_tx: coinbase_tx.clone(),
+            parent_block_hash,
+            merkle_branch: merkle_branch.clone(),
+            merkle_index,
+            chainmerkle_branch: chainmerkle_branch.clone(),
+            chain_index,
+            parent_block,
+        };
+
+        Ok((block1, Some(aux_data)))
     }
 
     /// Get block header by bock height
