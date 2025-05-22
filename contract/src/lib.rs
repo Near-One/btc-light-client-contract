@@ -634,7 +634,7 @@ impl BtcLightClient {
     }
 
     #[cfg(any(feature = "dogecoin", feature = "dogecoin_testnet"))]
-    fn get_modulated_time( actual_time_taken: u64) -> u64 {
+    fn get_modulated_time(actual_time_taken: u64) -> u64 {
         let config = Self::get_config();
 
         let mut modulated_time = (config.expected_time_secs as i64
