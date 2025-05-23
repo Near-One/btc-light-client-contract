@@ -1,10 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    hash::{double_sha256, H256},
-    utils::serd_u32_hex,
-};
+use crate::hash::{double_sha256, H256};
 
 pub type Error = crate::utils::DecodeHeaderError;
 
@@ -126,7 +123,6 @@ pub struct LightHeader {
     pub merkle_root: H256,
     pub block_commitments: H256,
     pub time: u32,
-    #[serde(with = "serd_u32_hex")]
     pub bits: u32,
 }
 
