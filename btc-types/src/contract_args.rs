@@ -1,7 +1,7 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
-use crate::{hash::H256, header::Header};
+use crate::{hash::H256, header::Header, network::Network};
 
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
 pub struct InitArgs {
@@ -10,6 +10,8 @@ pub struct InitArgs {
     pub genesis_block_height: u64,
     pub skip_pow_verification: bool,
     pub gc_threshold: u64,
+    pub network: Network,
+    pub submit_blocks: Option<Vec<Header>>,
 }
 
 #[derive(Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]

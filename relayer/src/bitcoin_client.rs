@@ -1,9 +1,9 @@
-use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::jsonrpc::minreq_http::HttpError;
 use bitcoincore_rpc::jsonrpc::Transport;
 use bitcoincore_rpc::{jsonrpc, RpcApi};
+use btc_types::header::Header;
 use jsonrpc::{Request, Response};
 
 use crate::config::Config;
@@ -124,8 +124,13 @@ impl Client {
     pub fn get_block_header(
         &self,
         block_hash: &BlockHash,
-    ) -> Result<Header, bitcoincore_rpc::Error> {
-        self.inner.get_block_header(block_hash)
+    ) -> Result<Header, Box<dyn std::error::Error>> {
+        let hex: String = self.inner.call(
+            "getblockheader",
+            &[serde_json::to_value(block_hash)?, false.into()],
+        )?;
+        let decoded_hex = hex::decode(hex)?;
+        Ok(Header::from_block_header_vec(&decoded_hex)?)
     }
 
     /// Get block header by bock height
@@ -135,7 +140,7 @@ impl Client {
     pub fn get_block_header_by_height(
         &self,
         height: u64,
-    ) -> Result<Header, bitcoincore_rpc::Error> {
+    ) -> Result<Header, Box<dyn std::error::Error>> {
         let block_hash = self.get_block_hash(height)?;
         self.get_block_header(&block_hash)
     }
