@@ -591,7 +591,8 @@ impl BtcLightClient {
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let prev_block_time = prev_block_header.block_header.time;
 
-        let actual_time_taken: i64 = (prev_block_time as i64) - (interval_tail_extend_header.block_header.time as i64);
+        let actual_time_taken: i64 =
+            (prev_block_time as i64) - (interval_tail_extend_header.block_header.time as i64);
         let modulated_time = Self::get_modulated_time(actual_time_taken);
 
         let last_target = prev_block_header.block_header.target();
@@ -625,8 +626,7 @@ impl BtcLightClient {
         use btc_types::header::MAX_ADJUSTMENT_FACTOR;
 
         let config = Self::get_config();
-        let mut modulated_time: u64 = u64::try_from(actual_time_taken)
-            .unwrap_or(0);
+        let mut modulated_time: u64 = u64::try_from(actual_time_taken).unwrap_or(0);
 
         if modulated_time < config.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
             modulated_time = config.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
@@ -642,11 +642,14 @@ impl BtcLightClient {
     fn get_modulated_time(actual_time_taken: i64) -> u64 {
         let config = Self::get_config();
 
-        let mut modulated_time: u64 = u64::try_from(config.expected_time_secs as i64
-            + (actual_time_taken - config.expected_time_secs as i64) / 8).unwrap_or(0);
+        let mut modulated_time: u64 = u64::try_from(
+            config.expected_time_secs as i64
+                + (actual_time_taken - config.expected_time_secs as i64) / 8,
+        )
+        .unwrap_or(0);
 
         if modulated_time < (config.expected_time_secs - (config.expected_time_secs / 4)) {
-            modulated_time = config.expected_time_secs - (config.expected_time_secs / 4) ;
+            modulated_time = config.expected_time_secs - (config.expected_time_secs / 4);
         }
         if modulated_time > (config.expected_time_secs + (config.expected_time_secs * 2)) {
             modulated_time = config.expected_time_secs + (config.expected_time_secs * 2);
