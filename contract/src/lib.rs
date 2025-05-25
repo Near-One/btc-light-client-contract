@@ -590,9 +590,8 @@ impl BtcLightClient {
             .get(&interval_tail_header_hash)
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let prev_block_time = prev_block_header.block_header.time;
-        let actual_time_taken = u64::from(
-            prev_block_time.saturating_sub(interval_tail_extend_header.block_header.time),
-        );
+
+        let actual_time_taken: i64 = (prev_block_time as i64) - (interval_tail_extend_header.block_header.time as i64);
         let modulated_time = Self::get_modulated_time(actual_time_taken);
 
         let last_target = prev_block_header.block_header.target();
@@ -602,6 +601,11 @@ impl BtcLightClient {
         new_target = new_target / U256::from(config.expected_time_secs);
 
         if new_target > config.pow_limt {
+            new_target = config.pow_limt;
+        }
+
+        #[cfg(any(feature = "dogecoin_testnet"))]
+        if (block_header.time as u64) > (prev_block_time as u64) + config.expected_time_secs * 2 {
             new_target = config.pow_limt;
         }
 
@@ -617,7 +621,7 @@ impl BtcLightClient {
     }
 
     #[cfg(not(any(feature = "dogecoin", feature = "dogecoin_testnet")))]
-    fn get_modulated_time(actual_time_taken: u64) -> u64 {
+    fn get_modulated_time(actual_time_taken: i64) -> u64 {
         use btc_types::header::MAX_ADJUSTMENT_FACTOR;
 
         let config = Self::get_config();
@@ -630,25 +634,24 @@ impl BtcLightClient {
             modulated_time = config.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
         }
 
-        modulated_time
+        modulated_time as u64
     }
 
     #[cfg(any(feature = "dogecoin", feature = "dogecoin_testnet"))]
-    fn get_modulated_time(actual_time_taken: u64) -> u64 {
+    fn get_modulated_time(actual_time_taken: i64) -> u64 {
         let config = Self::get_config();
 
-        let mut modulated_time = (config.expected_time_secs as i64
-            + (actual_time_taken as i64 - config.expected_time_secs as i64) / 8)
-            as u64;
+        let mut modulated_time: i64 = (config.expected_time_secs as i64
+            + (actual_time_taken as i64 - config.expected_time_secs as i64) / 8);
 
-        if modulated_time < config.expected_time_secs - config.expected_time_secs / 4 {
-            modulated_time = config.expected_time_secs - config.expected_time_secs / 4;
+        if modulated_time < (config.expected_time_secs as i64 - ((config.expected_time_secs / 4) as i64)) {
+            modulated_time = (config.expected_time_secs as i64 - ((config.expected_time_secs / 4) as i64));
         }
-        if modulated_time > config.expected_time_secs + config.expected_time_secs * 2 {
-            modulated_time = config.expected_time_secs + config.expected_time_secs * 2;
+        if modulated_time > (config.expected_time_secs as i64 + ((config.expected_time_secs * 2) as i64)) {
+            modulated_time = (config.expected_time_secs as i64 + ((config.expected_time_secs * 2) as i64));
         }
 
-        modulated_time
+        modulated_time as u64
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
