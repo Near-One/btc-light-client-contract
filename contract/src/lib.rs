@@ -625,7 +625,8 @@ impl BtcLightClient {
         use btc_types::header::MAX_ADJUSTMENT_FACTOR;
 
         let config = Self::get_config();
-        let mut modulated_time = actual_time_taken;
+        let mut modulated_time: u64 = u64::try_from(actual_time_taken)
+            .unwrap_or(0);
 
         if modulated_time < config.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
             modulated_time = config.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
@@ -634,24 +635,24 @@ impl BtcLightClient {
             modulated_time = config.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
         }
 
-        modulated_time as u64
+        modulated_time
     }
 
     #[cfg(any(feature = "dogecoin", feature = "dogecoin_testnet"))]
     fn get_modulated_time(actual_time_taken: i64) -> u64 {
         let config = Self::get_config();
 
-        let mut modulated_time: i64 = (config.expected_time_secs as i64
-            + (actual_time_taken as i64 - config.expected_time_secs as i64) / 8);
+        let mut modulated_time: u64 = u64::try_from(config.expected_time_secs as i64
+            + (actual_time_taken - config.expected_time_secs as i64) / 8).unwrap_or(0);
 
-        if modulated_time < (config.expected_time_secs as i64 - ((config.expected_time_secs / 4) as i64)) {
-            modulated_time = (config.expected_time_secs as i64 - ((config.expected_time_secs / 4) as i64));
+        if modulated_time < (config.expected_time_secs - (config.expected_time_secs / 4)) {
+            modulated_time = config.expected_time_secs - (config.expected_time_secs / 4) ;
         }
-        if modulated_time > (config.expected_time_secs as i64 + ((config.expected_time_secs * 2) as i64)) {
-            modulated_time = (config.expected_time_secs as i64 + ((config.expected_time_secs * 2) as i64));
+        if modulated_time > (config.expected_time_secs + (config.expected_time_secs * 2)) {
+            modulated_time = config.expected_time_secs + (config.expected_time_secs * 2);
         }
 
-        modulated_time as u64
+        modulated_time
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
