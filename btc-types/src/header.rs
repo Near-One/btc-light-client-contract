@@ -9,6 +9,8 @@ use crate::{
 pub type Target = U256;
 pub type Work = U256;
 
+pub const MAX_ADJUSTMENT_FACTOR: u64 = 4;
+
 #[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Header {
     /// Block version, now repurposed for soft fork signalling.
@@ -112,6 +114,9 @@ pub struct ExtendedHeader {
     pub chain_work: Work,
     /// Block height in the Bitcoin network
     pub block_height: u64,
+
+    // The parent block if AuxPow is used (for Dogecoin)
+    pub aux_parent_block: Option<H256>,
 }
 
 #[cfg(test)]

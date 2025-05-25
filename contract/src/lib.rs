@@ -1,3 +1,5 @@
+use bitcoin::hashes::Hash;
+use btc_types::aux::AuxData;
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
 use btc_types::header::{ExtendedHeader, Header};
@@ -7,7 +9,7 @@ use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::LookupMap;
+use near_sdk::collections::{LookupMap, LookupSet};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
@@ -54,6 +56,7 @@ enum StorageKey {
     MainchainHeightToHeader,
     MainchainHeaderToHeight,
     HeadersPool,
+    AuxParentBlocks,
 }
 
 /// Contract implementing Bitcoin light client.
@@ -90,6 +93,9 @@ pub struct BtcLightClient {
 
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
     gc_threshold: u64,
+
+    // Used only for networks with AuxPoW (Dogecoin). These are the hashes of already used parent blocks (Litecoin blocks for Dogecoin)
+    used_aux_parent_blocks: LookupSet<H256>,
 }
 
 #[near]
@@ -111,6 +117,7 @@ impl BtcLightClient {
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
+            used_aux_parent_blocks: LookupSet::new(StorageKey::AuxParentBlocks),
         };
 
         // Make the contract itself super admin. This allows us to grant any role in the
@@ -135,12 +142,21 @@ impl BtcLightClient {
         &mut self,
         #[serializer(borsh)] headers: Vec<Header>,
     ) -> PromiseOrValue<()> {
+        self.submit_blocks_aux(headers.into_iter().map(|h| (h, None::<AuxData>)).collect())
+    }
+
+    #[payable]
+    #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
+    pub fn submit_blocks_aux(
+        &mut self,
+        #[serializer(borsh)] headers: Vec<(Header, Option<AuxData>)>,
+    ) -> PromiseOrValue<()> {
         let amount = env::attached_deposit();
         let initial_storage = env::storage_usage();
         let num_of_headers = headers.len().try_into().unwrap();
 
         for header in headers {
-            self.submit_block_header(header);
+            self.submit_block_header(header.0, header.1);
         }
 
         self.run_mainchain_gc(num_of_headers);
@@ -305,8 +321,7 @@ impl BtcLightClient {
                     .get(&height)
                     .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
 
-                self.headers_pool.remove(blockhash);
-                self.mainchain_header_to_height.remove(blockhash);
+                self.remove_block_header(blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
 
@@ -318,7 +333,7 @@ impl BtcLightClient {
     }
 
     pub fn get_config() -> NetworkConfig {
-        NetworkConfig::new(Self::get_network())
+        NetworkConfig::new(&Self::get_network())
     }
 
     pub fn get_network() -> Network {
@@ -337,6 +352,14 @@ impl BtcLightClient {
         #[cfg(feature = "litecoin_testnet")]
         {
             Network::LitecoinTestnet
+        }
+        #[cfg(feature = "dogecoin")]
+        {
+            Network::Dogecoin
+        }
+        #[cfg(feature = "dogecoin_testnet")]
+        {
+            Network::DogecoinTestnet
         }
     }
 }
@@ -360,6 +383,7 @@ impl BtcLightClient {
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
+            aux_parent_block: None,
         };
 
         self.store_block_header(&header);
@@ -368,7 +392,7 @@ impl BtcLightClient {
         self.mainchain_tip_blockhash = current_block_hash;
     }
 
-    fn submit_block_header(&mut self, block_header: Header) {
+    fn submit_block_header(&mut self, block_header: Header, aux_data: Option<AuxData>) {
         // We do not have a previous block in the headers_pool, there is a high probability
         // it means we are starting to receive a new fork,
         // so what we do now is we are returning the error code
@@ -387,12 +411,22 @@ impl BtcLightClient {
         self.check_target(&block_header, &prev_block_header);
 
         let current_block_hash = block_header.block_hash();
-        let pow_hash = block_header.block_hash_pow();
 
-        require!(
-            self.skip_pow_verification || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
-            format!("block should have correct pow")
-        );
+        let aux_parent_block = match aux_data {
+            None => {
+                let pow_hash = block_header.block_hash_pow();
+                require!(
+                    self.skip_pow_verification
+                        || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
+                    format!("block should have correct pow")
+                );
+                None
+            }
+            Some(aux_data) => {
+                self.check_aux(&block_header, &aux_data);
+                Some(aux_data.parent_block.block_hash())
+            }
+        };
 
         let (current_block_computed_chain_work, overflow) = prev_block_header
             .chain_work
@@ -404,6 +438,7 @@ impl BtcLightClient {
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
+            aux_parent_block,
         };
 
         // Main chain submission
@@ -438,6 +473,48 @@ impl BtcLightClient {
                 self.reorg_chain(current_header, last_main_chain_block_height);
             }
         }
+    }
+
+    fn check_aux(&mut self, block_header: &Header, aux_data: &AuxData) {
+        let parent_block_hash = aux_data.parent_block.block_hash();
+        require!(
+            self.used_aux_parent_blocks.insert(&parent_block_hash),
+            "parent block already used"
+        );
+
+        let coinbase_tx = aux_data.get_coinbase_tx();
+        let coinbase_tx_hash = coinbase_tx.compute_txid();
+
+        require!(
+            merkle_tools::compute_root_from_merkle_proof(
+                H256::from(coinbase_tx_hash.to_raw_hash().to_byte_array()),
+                0,
+                &aux_data.merkle_proof,
+            ) == aux_data.parent_block.merkle_root
+        );
+
+        let chain_root = merkle_tools::compute_root_from_merkle_proof(
+            block_header.block_hash(),
+            aux_data.chain_id,
+            &aux_data.chain_merkle_proof,
+        );
+
+        require!(
+            coinbase_tx
+                .input
+                .first()
+                .unwrap()
+                .script_sig
+                .to_hex_string()
+                .contains(&chain_root.to_string()),
+            "coinbase_tx don't contain chain_root"
+        );
+
+        let pow_hash = aux_data.parent_block.block_hash_pow();
+        require!(
+            self.skip_pow_verification || U256::from_le_bytes(&pow_hash.0) <= block_header.target(),
+            format!("block should have correct pow")
+        );
     }
 
     fn check_target_testnet(
@@ -486,7 +563,6 @@ impl BtcLightClient {
             if config.pow_allow_min_difficulty_blocks {
                 return self.check_target_testnet(block_header, prev_block_header, config);
             }
-
             require!(
                 block_header.bits == prev_block_header.block_header.bits,
                 format!(
@@ -497,35 +573,40 @@ impl BtcLightClient {
             return;
         }
 
-        let interval_tail_header_hash = self
-            .mainchain_height_to_header
-            .get(&(prev_block_header.block_height + 1 - config.blocks_per_adjustment))
-            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        #[cfg(not(any(feature = "dogecoin", feature = "dogecoin_testnet")))]
+        let first_block_height = prev_block_header.block_height + 1 - config.blocks_per_adjustment;
+
+        #[cfg(any(feature = "dogecoin", feature = "dogecoin_testnet"))]
+        let first_block_height = prev_block_header.block_height - config.blocks_per_adjustment;
+
+        let interval_tail_header_hash =
+            match self.mainchain_height_to_header.get(&first_block_height) {
+                None => return,
+                Some(header_hash) => header_hash,
+            };
+
         let interval_tail_extend_header = self
             .headers_pool
             .get(&interval_tail_header_hash)
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let prev_block_time = prev_block_header.block_header.time;
-        let mut actual_time_taken = u64::from(
-            prev_block_time.saturating_sub(interval_tail_extend_header.block_header.time),
-        );
 
-        let max_adjustment_factor: u64 = 4;
-
-        if actual_time_taken < config.expected_time_secs / max_adjustment_factor {
-            actual_time_taken = config.expected_time_secs / max_adjustment_factor;
-        }
-        if actual_time_taken > config.expected_time_secs * max_adjustment_factor {
-            actual_time_taken = config.expected_time_secs * max_adjustment_factor;
-        }
+        let actual_time_taken: i64 =
+            i64::from(prev_block_time) - i64::from(interval_tail_extend_header.block_header.time);
+        let modulated_time = Self::get_modulated_time(actual_time_taken);
 
         let last_target = prev_block_header.block_header.target();
 
-        let (mut new_target, new_target_overflow) = last_target.overflowing_mul(actual_time_taken);
+        let (mut new_target, new_target_overflow) = last_target.overflowing_mul(modulated_time);
         require!(!new_target_overflow, "new target overflow");
         new_target = new_target / U256::from(config.expected_time_secs);
 
         if new_target > config.pow_limt {
+            new_target = config.pow_limt;
+        }
+
+        #[cfg(feature = "dogecoin_testnet")]
+        if (block_header.time as u64) > (prev_block_time as u64) + config.expected_time_secs * 2 {
             new_target = config.pow_limt;
         }
 
@@ -538,6 +619,43 @@ impl BtcLightClient {
                 expected_bits, block_header.bits
             )
         );
+    }
+
+    #[cfg(not(any(feature = "dogecoin", feature = "dogecoin_testnet")))]
+    fn get_modulated_time(actual_time_taken: i64) -> u64 {
+        use btc_types::header::MAX_ADJUSTMENT_FACTOR;
+
+        let config = Self::get_config();
+        let mut modulated_time: u64 = u64::try_from(actual_time_taken).unwrap_or(0);
+
+        if modulated_time < config.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
+            modulated_time = config.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
+        }
+        if modulated_time > config.expected_time_secs * MAX_ADJUSTMENT_FACTOR {
+            modulated_time = config.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
+        }
+
+        modulated_time
+    }
+
+    #[cfg(any(feature = "dogecoin", feature = "dogecoin_testnet"))]
+    fn get_modulated_time(actual_time_taken: i64) -> u64 {
+        let config = Self::get_config();
+
+        let mut modulated_time: u64 = u64::try_from(
+            config.expected_time_secs as i64
+                + (actual_time_taken - config.expected_time_secs as i64) / 8,
+        )
+        .unwrap_or(0);
+
+        if modulated_time < (config.expected_time_secs - (config.expected_time_secs / 4)) {
+            modulated_time = config.expected_time_secs - (config.expected_time_secs / 4);
+        }
+        if modulated_time > (config.expected_time_secs + (config.expected_time_secs * 2)) {
+            modulated_time = config.expected_time_secs + (config.expected_time_secs * 2);
+        }
+
+        modulated_time
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
@@ -557,9 +675,7 @@ impl BtcLightClient {
                     .mainchain_height_to_header
                     .get(&height)
                     .unwrap_or_else(|| env::panic_str("cannot get a block"));
-                self.mainchain_header_to_height
-                    .remove(&current_main_chain_blockhash);
-                self.headers_pool.remove(&current_main_chain_blockhash);
+                self.remove_block_header(&current_main_chain_blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
         }
@@ -603,9 +719,7 @@ impl BtcLightClient {
             // If we found a mainchain block at the current height than remove this block from the
             // header pool and from the header -> height map
             if let Some(current_main_chain_blockhash) = main_chain_block {
-                self.mainchain_header_to_height
-                    .remove(&current_main_chain_blockhash);
-                self.headers_pool.remove(&current_main_chain_blockhash);
+                self.remove_block_header(&current_main_chain_blockhash);
             }
 
             // Switch iterator cursor to the previous block in fork
@@ -626,6 +740,16 @@ impl BtcLightClient {
         self.mainchain_header_to_height
             .insert(&header.block_hash, &header.block_height);
         self.headers_pool.insert(&header.block_hash, header);
+    }
+
+    /// Remove block header and meta information
+    fn remove_block_header(&mut self, header_block_hash: &H256) {
+        self.mainchain_header_to_height.remove(header_block_hash);
+        if let Some(header) = self.headers_pool.remove(header_block_hash) {
+            if let Some(aux_parent_blockhash) = header.aux_parent_block {
+                self.used_aux_parent_blocks.remove(&aux_parent_blockhash);
+            }
+        }
     }
 
     /// Stores and handles fork submissions
@@ -733,7 +857,7 @@ mod tests {
 
         let mut contract = BtcLightClient::init(get_default_init_args());
 
-        contract.submit_block_header(header);
+        contract.submit_block_header(header, None);
     }
 
     #[test]
@@ -741,7 +865,7 @@ mod tests {
         let header = fork_block_header_example();
         let mut contract = BtcLightClient::init(get_default_init_args());
 
-        contract.submit_block_header(header.clone());
+        contract.submit_block_header(header.clone(), None);
 
         let received_header = contract.get_last_block_header();
 
@@ -757,6 +881,7 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
+                aux_parent_block: None,
             }
         );
     }
@@ -767,7 +892,7 @@ mod tests {
 
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(header.clone());
+        contract.submit_block_header(header.clone(), None);
 
         let received_header = contract.get_last_block_header();
 
@@ -783,6 +908,7 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
+                aux_parent_block: None,
             }
         );
     }
@@ -793,9 +919,9 @@ mod tests {
 
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(header.clone());
+        contract.submit_block_header(header.clone(), None);
 
-        contract.submit_block_header(fork_block_header_example());
+        contract.submit_block_header(fork_block_header_example(), None);
 
         let received_header = contract.get_last_block_header();
 
@@ -811,6 +937,7 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
+                aux_parent_block: None,
             }
         );
     }
@@ -820,7 +947,7 @@ mod tests {
     fn test_getting_block_by_height() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example(), None);
 
         assert_eq!(
             contract.get_block_hash_by_height(0).unwrap(),
@@ -836,7 +963,7 @@ mod tests {
     fn test_getting_height_by_block() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example(), None);
 
         assert_eq!(
             contract
@@ -856,10 +983,10 @@ mod tests {
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(block_header_example());
+        contract.submit_block_header(block_header_example(), None);
 
-        contract.submit_block_header(fork_block_header_example());
-        contract.submit_block_header(fork_block_header_example_2());
+        contract.submit_block_header(fork_block_header_example(), None);
+        contract.submit_block_header(fork_block_header_example_2(), None);
 
         let received_header = contract.get_last_block_header();
 
@@ -875,6 +1002,7 @@ mod tests {
                     0, 3, 0, 3, 0, 3
                 ]),
                 block_height: 2,
+                aux_parent_block: None,
             }
         );
     }
@@ -885,7 +1013,7 @@ mod tests {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
         let mut next_header = block_header_example();
         next_header.bits += 1;
-        contract.submit_block_header(next_header);
+        contract.submit_block_header(next_header, None);
     }
 
     #[test]
@@ -893,6 +1021,6 @@ mod tests {
     fn test_getting_an_error_if_submitting_unattached_block() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(fork_block_header_example_2());
+        contract.submit_block_header(fork_block_header_example_2(), None);
     }
 }
