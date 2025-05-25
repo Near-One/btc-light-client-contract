@@ -591,7 +591,8 @@ impl BtcLightClient {
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let prev_block_time = prev_block_header.block_header.time;
 
-        let actual_time_taken: i64 = i64::from(prev_block_time) - i64::from(interval_tail_extend_header.block_header.time);
+        let actual_time_taken: i64 =
+            i64::from(prev_block_time) - i64::from(interval_tail_extend_header.block_header.time);
         let modulated_time = Self::get_modulated_time(actual_time_taken);
 
         let last_target = prev_block_header.block_header.target();
