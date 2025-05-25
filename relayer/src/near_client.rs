@@ -1,3 +1,4 @@
+use btc_types::contract_args::InitArgs;
 use btc_types::header::ExtendedHeader;
 use merkle_tools::H256;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
@@ -9,8 +10,6 @@ use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
 
 use bitcoin::consensus::serialize;
-use bitcoin::BlockHash;
-use bitcoincore_rpc::bitcoin::block::Header;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
 use log::info;
@@ -48,17 +47,6 @@ pub struct NearClient {
     transaction_timeout_sec: u64,
 }
 
-fn get_btc_header(header: Header) -> btc_types::header::Header {
-    btc_types::header::Header {
-        version: header.version.to_consensus(),
-        prev_block_hash: header.prev_blockhash.to_byte_array().into(),
-        merkle_root: header.merkle_root.to_byte_array().into(),
-        time: header.time,
-        bits: header.bits.to_consensus(),
-        nonce: header.nonce,
-    }
-}
-
 fn get_aux_data(aux_data: Option<AuxData>) -> Option<btc_types::aux::AuxData> {
     match aux_data {
         None => None,
@@ -75,7 +63,7 @@ fn get_aux_data(aux_data: Option<AuxData>) -> Option<btc_types::aux::AuxData> {
                 .map(|h| H256::from(h.to_raw_hash().to_byte_array()))
                 .collect(),
             chain_id: aux_data.chain_index.try_into().unwrap(),
-            parent_block: get_btc_header(aux_data.parent_block),
+            parent_block: aux_data.parent_block,
         }),
     }
 }
@@ -126,6 +114,30 @@ impl NearClient {
         }
     }
 
+    pub async fn init_contract(
+        &self,
+        args: &InitArgs,
+    ) -> Result<RpcTransactionResponse, Box<dyn std::error::Error>> {
+        let tx_hash = self
+            .submit_tx("init", json!({"args": args}).to_string().into_bytes(), 0)
+            .await?;
+
+        self.get_tx_status(tx_hash)
+            .await
+            .map_err(|e| e.into())
+            .map(|response| {
+                if let Some(final_execution_outcome) = response.final_execution_outcome.clone() {
+                    if let near_primitives::views::FinalExecutionStatus::Failure(err) =
+                        final_execution_outcome.into_outcome().status
+                    {
+                        Err(format!("Transaction failed with error: {err:?}"))?
+                    }
+                }
+                Ok(response)
+            })
+            .and_then(|result| result)
+    }
+
     /// Submitting block header to the smart contract.
     /// This method supports retries internally.
     ///
@@ -134,15 +146,21 @@ impl NearClient {
     /// * Connection issue
     pub async fn submit_blocks(
         &self,
-        headers: Vec<(Header, Option<AuxData>)>,
+        headers: Vec<(btc_types::header::Header, Option<AuxData>)>,
     ) -> Result<Result<RpcTransactionResponse, CustomError>, Box<dyn std::error::Error>> {
+        for header in &headers {
+            println!("Submit block {}", header.0.block_hash());
+        }
+
         let args: Vec<_> = headers
             .iter()
-            .map(|header| (get_btc_header(header.0), get_aux_data(header.1.clone())))
+            .map(|header| (header.0.clone(), get_aux_data(header.1.clone())))
             .collect();
 
         let sent_at = time::Instant::now();
-        let tx_hash = self.submit_tx(SUBMIT_BLOCKS, to_vec(&args)?).await?;
+        let tx_hash = self
+            .submit_tx(SUBMIT_BLOCKS, to_vec(&args)?, 5 * 10_u128.pow(23))
+            .await?;
         info!("Blocks submitted: tx_hash = {:?}", tx_hash);
 
         loop {
@@ -217,7 +235,7 @@ impl NearClient {
     /// * Connection issue
     pub async fn is_block_hash_exists(
         &self,
-        block_hash: BlockHash,
+        block_hash: String,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         let args = json!({
             "blockhash": block_hash,
@@ -277,7 +295,7 @@ impl NearClient {
         };
 
         let tx_hash = self
-            .submit_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args)?)
+            .submit_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args)?, 0)
             .await?;
         let response = self.get_tx_status(tx_hash).await?;
 
@@ -319,6 +337,7 @@ impl NearClient {
         &self,
         method_name: &str,
         args: Vec<u8>,
+        deposit: u128,
     ) -> Result<RpcBroadcastTxAsyncResponse, Box<dyn std::error::Error>> {
         let access_key_query_response = self
             .client
@@ -345,8 +364,8 @@ impl NearClient {
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: method_name.to_string(),
                 args,
-                gas: 300_000_000_000_000,     // 300 TeraGas
-                deposit: 5 * 10_u128.pow(23), // 0.5 Near
+                gas: 300_000_000_000_000, // 300 TeraGas
+                deposit,
             }))],
         };
 

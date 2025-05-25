@@ -1,11 +1,12 @@
-use bitcoin::consensus::encode;
+use bitcoin::consensus::{encode, serialize};
 use bitcoin::{Transaction, TxMerkleNode};
-use bitcoincore_rpc::bitcoin::block::Header;
+use bitcoincore_rpc::bitcoin::block::Header as BitcoinHeader;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::jsonrpc::minreq_http::HttpError;
 use bitcoincore_rpc::jsonrpc::Transport;
 use bitcoincore_rpc::{jsonrpc, RpcApi};
+use btc_types::header::Header;
 use jsonrpc::{Request, Response};
 use std::error::Error;
 
@@ -139,8 +140,13 @@ impl Client {
     pub fn get_block_header(
         &self,
         block_hash: &BlockHash,
-    ) -> Result<Header, bitcoincore_rpc::Error> {
-        self.inner.get_block_header(block_hash)
+    ) -> Result<Header, Box<dyn std::error::Error>> {
+        let hex: String = self.inner.call(
+            "getblockheader",
+            &[serde_json::to_value(block_hash)?, false.into()],
+        )?;
+        let decoded_hex = hex::decode(hex)?;
+        Ok(Header::from_block_header_vec(&decoded_hex)?)
     }
 
     /// Get aux block header
@@ -155,12 +161,13 @@ impl Client {
             .inner
             .call("getblockheader", &[into_json(block_hash)?, false.into()])?;
         if hex.len() == 160 {
-            let block1: Header = encode::deserialize_hex(&hex)?;
+            let decoded_hex = hex::decode(hex)?;
+            let block1: Header = Header::from_block_header_vec(&decoded_hex)?;
             return Ok((block1, None));
         }
         let data_bytes = hex::decode(&hex)?;
         let mut cursor = 0;
-        let (block1, readed_len): (Header, usize) = encode::deserialize_partial(&data_bytes)?;
+        let (block1, readed_len): (BitcoinHeader, usize) = encode::deserialize_partial(&data_bytes)?;
         cursor += readed_len;
         let (coinbase_tx, readed_len): (Transaction, usize) =
             encode::deserialize_partial(&data_bytes[cursor..])?;
@@ -180,8 +187,9 @@ impl Client {
         let (chain_index, readed_len): (u32, usize) =
             encode::deserialize_partial(&data_bytes[cursor..])?;
         cursor += readed_len;
-        let (parent_block, _readed_len): (Header, usize) =
+        let (parent_block, _readed_len): (BitcoinHeader, usize) =
             encode::deserialize_partial(&data_bytes[cursor..])?;
+        let parent_block: Header = Header::from_block_header_vec(&serialize(&parent_block))?;
 
         let aux_data = AuxData {
             coinbase_tx: coinbase_tx.clone(),
@@ -193,6 +201,7 @@ impl Client {
             parent_block,
         };
 
+        let block1: Header = Header::from_block_header_vec(&serialize(&block1))?;
         Ok((block1, Some(aux_data)))
     }
 
@@ -203,7 +212,7 @@ impl Client {
     pub fn get_block_header_by_height(
         &self,
         height: u64,
-    ) -> Result<Header, bitcoincore_rpc::Error> {
+    ) -> Result<Header, Box<dyn std::error::Error>> {
         let block_hash = self.get_block_hash(height)?;
         self.get_block_header(&block_hash)
     }

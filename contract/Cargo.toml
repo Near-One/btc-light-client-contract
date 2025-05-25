@@ -21,11 +21,12 @@ merkle-tools = { path = "../merkle-tools" }
 serde = { version = "1.0.200", features = ["derive"] }
 btc-types = { path = "../btc-types" }
 bitcoin = "0.32.5"
+equihash = { version = "0.2.2", optional = true }
 
 [dev-dependencies]
 near-sdk = { version = "5.1.0", features = ["unit-testing"] }
 near-workspaces = { version = "0.10.0", features = ["unstable"] }
-tokio = { version = "1.12.0", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 serde_json = "1"
 
 [profile.release]
@@ -38,13 +39,13 @@ panic = "abort"
 # Opt into extra safety checks on arithmetic operations https://stackoverflow.com/a/64136471/249801
 overflow-checks = true
 
-[profile.bitcoin-testnet]
+[profile.bitcoin]
 inherits = "release"
 
 [profile.litecoin]
 inherits = "release"
 
-[profile.litecoin-testnet]
+[profile.zcash]
 inherits = "release"
 
 [profile.dogecoin]
@@ -57,8 +58,6 @@ inherits = "release"
 default = ["bitcoin"]
 scrypt_hash = ["btc-types/scrypt_hash"]
 dogecoin = ["scrypt_hash"]
-dogecoin_testnet = ["scrypt_hash"]
 bitcoin = []
-bitcoin_testnet = []
 litecoin = ["scrypt_hash"]
-litecoin_testnet = ["scrypt_hash"]
+zcash = ["btc-types/zcash_header", "equihash"]

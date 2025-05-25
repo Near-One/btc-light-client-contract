@@ -22,6 +22,8 @@ async fn init_contract() -> Result<(Contract, Account), Box<dyn std::error::Erro
         genesis_block_height: 0,
         skip_pow_verification: true,
         gc_threshold: 5,
+        network: btc_types::network::Network::Mainnet,
+        submit_blocks: None,
     };
     // Call the init method on the contract
     let outcome = contract
@@ -54,6 +56,8 @@ async fn init_contract_from_file(
         genesis_block_height: 685_440,
         skip_pow_verification: false,
         gc_threshold,
+        network: btc_types::network::Network::Mainnet,
+        submit_blocks: None,
     };
     // Call the init method on the contract
     let outcome = contract
@@ -81,7 +85,7 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
 
     assert_eq!(
         outcome.json::<ExtendedHeader>()?.block_header,
-        genesis_block_header().clone()
+        genesis_block_header().clone().into()
     );
 
     Ok(())
@@ -138,7 +142,7 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
 
     assert_eq!(
         outcome.json::<ExtendedHeader>()?.block_header,
-        fork_block_header_example_2()
+        fork_block_header_example_2().into()
     );
 
     Ok(())

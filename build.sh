@@ -14,18 +14,13 @@ docker run \
      rust:1.78 \
      /bin/bash -c "apt update && apt install -y clang curl build-essential pkg-config libssl-dev; \
      rustup target add wasm32-unknown-unknown; \
-     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --release; \
-     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features bitcoin_testnet --profile bitcoin-testnet; \
+     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features bitcoin --profile bitcoin; \
      cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features litecoin --profile litecoin; \
-     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features litecoin_testnet  --profile litecoin-testnet; \
      cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features dogecoin --profile dogecoin; \
-     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features dogecoin_testnet  --profile dogecoin-testnet"
-
+     cargo build --manifest-path contract/Cargo.toml --target wasm32-unknown-unknown --no-default-features --features zcash --profile zcash;"
 
 mkdir -p res
-cp $DIR/contract/target/wasm32-unknown-unknown/release/btc_light_client_contract.wasm $DIR/res/btc_light_client_mainnet.wasm
-cp $DIR/contract/target/wasm32-unknown-unknown/bitcoin-testnet/btc_light_client_contract.wasm $DIR/res/btc_light_client_testnet.wasm
-cp $DIR/contract/target/wasm32-unknown-unknown/litecoin/btc_light_client_contract.wasm $DIR/res/btc_light_client_litecoin.wasm
-cp $DIR/contract/target/wasm32-unknown-unknown/litecoin-testnet/btc_light_client_contract.wasm $DIR/res/btc_light_client_litecoin_testnet.wasm
-cp $DIR/contract/target/wasm32-unknown-unknown/dogecoin/btc_light_client_contract.wasm $DIR/res/btc_light_client_dogecoin.wasm
-cp $DIR/contract/target/wasm32-unknown-unknown/dogecoin-testnet/btc_light_client_contract.wasm $DIR/res/btc_light_client_dogecoin_testnet.wasm
+cp $DIR/contract/target/wasm32-unknown-unknown/bitcoin/btc_light_client_contract.wasm $DIR/res/btc_clinet.wasm
+cp $DIR/contract/target/wasm32-unknown-unknown/litecoin/btc_light_client_contract.wasm $DIR/res/litecoin_client.wasm
+cp $DIR/contract/target/wasm32-unknown-unknown/dogecoin/btc_light_client_contract.wasm $DIR/res/dogecoin_client.wasm
+cp $DIR/contract/target/wasm32-unknown-unknown/zcash/btc_light_client_contract.wasm $DIR/res/zcash_client.wasm

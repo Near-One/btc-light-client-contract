@@ -36,6 +36,7 @@ sha2 = "0.10"
 merkle-tools = { path = "../merkle-tools" }
 hex = "0.4"
 minreq = { version = "2.12.0", features = ["https"] }
+clap = { version = "4.5", features = ["derive"] }
 
 [dev-dependencies]
 lazy_static = "1.4"
@@ -48,3 +49,4 @@ required-features = ["integration_tests"]
 
 [features]
 integration_tests = []
+zcash = ["btc-types/zcash_header"]
