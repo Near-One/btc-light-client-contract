@@ -17,7 +17,6 @@ borsh = { version = "1.*", features = ["derive"] }
 serde = { version = "1.*", features = ["derive"] }
 hex = { version = "0.4", features = ["serde"] }
 scrypt = { version = "0.11.0", default-features = false, optional = true }
-blake2b_simd = "1.0.3"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 sha2 = "0.*"
