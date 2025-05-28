@@ -156,34 +156,51 @@ async fn init_contract(
     init_config: InitConfig,
 ) {
     info!("Init contract");
-    let header_hash = bitcoin_client.get_block_hash(init_config.init_height).unwrap();
-    let mut header = bitcoin_client.get_block_header(&header_hash).unwrap();
 
-    let mut headers = vec![header.clone()];
+    let header_hash = bitcoin_client
+        .get_block_hash(init_config.init_height)
+        .expect("Failed to get block hash");
+
+    let mut headers = Vec::with_capacity(init_config.num_of_blcoks_to_submit as usize + 1);
+    let mut current_header = bitcoin_client
+        .get_block_header(&header_hash)
+        .expect("Failed to get initial block header");
+
+    headers.push(current_header.clone());
+
     for _ in 0..init_config.num_of_blcoks_to_submit {
-        header = bitcoin_client
-            .get_block_header(&BlockHash::from_byte_array(header.prev_block_hash.0))
-            .unwrap();
-
-        headers.push(header.clone());
+        let prev_hash = BlockHash::from_byte_array(current_header.prev_block_hash.0);
+        current_header = bitcoin_client
+            .get_block_header(&prev_hash)
+            .expect("Failed to get previous block header");
+        headers.push(current_header.clone());
     }
 
     headers.reverse();
 
     let genesis_block_height = init_config.init_height - init_config.num_of_blcoks_to_submit;
 
-    let args: InitArgs = InitArgs {
+    let submit_blocks = (headers.len() > 1).then(|| headers[1..].to_vec());
+
+    let args = InitArgs {
         genesis_block: headers[0].clone(),
         genesis_block_hash: headers[0].block_hash(),
         genesis_block_height,
         skip_pow_verification: init_config.skip_pow_verification,
         gc_threshold: init_config.gc_threshold,
         network: init_config.network,
-        submit_blocks: (headers.len() > 1).then(|| headers[1..].to_vec()),
+        submit_blocks,
     };
 
-    info!("Init args: {}", serde_json::to_string(&args).unwrap());
-    near_client.init_contract(&args).await.unwrap();
+    info!(
+        "Init args: {}",
+        serde_json::to_string(&args).unwrap_or_else(|_| "<failed to serialize args>".into())
+    );
+
+    near_client
+        .init_contract(&args)
+        .await
+        .expect("Failed to init contract");
 }
 
 #[derive(Parser)]
