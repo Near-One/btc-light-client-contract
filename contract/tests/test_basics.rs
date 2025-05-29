@@ -398,7 +398,8 @@ async fn test_submit_blocks_for_period_incorrect_target() -> Result<(), Box<dyn 
 }
 
 #[tokio::test]
-async fn test_getting_an_error_if_submitting_unattached_block() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_getting_an_error_if_submitting_unattached_block(
+) -> Result<(), Box<dyn std::error::Error>> {
     let (contract, user_account) = init_contract().await?;
 
     let outcome = user_account
@@ -408,7 +409,10 @@ async fn test_getting_an_error_if_submitting_unattached_block() -> Result<(), Bo
         .transact()
         .await?;
 
-    assert!(!outcome.is_success(), "Expected transaction to fail, but it succeeded");
+    assert!(
+        !outcome.is_success(),
+        "Expected transaction to fail, but it succeeded"
+    );
 
     let failure_message = format!("{:?}", outcome.failures());
 
