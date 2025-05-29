@@ -157,11 +157,11 @@ impl ZcashConfig {
 
     //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/consensus/params.cpp#L410
     pub fn min_actual_timespan(&self, height: u64) -> i64 {
-        return (self.averaging_window_timespan(height) * (100 - self.pow_max_adjust_up)) / 100;
+        (self.averaging_window_timespan(height) * (100 - self.pow_max_adjust_up)) / 100
     }
 
     //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/consensus/params.cpp#L414
     pub fn max_actual_timespan(&self, height: u64) -> i64 {
-        return (self.averaging_window_timespan(height) * (100 + self.pow_max_adjust_down)) / 100;
+        (self.averaging_window_timespan(height) * (100 + self.pow_max_adjust_down)) / 100
     }
 }
