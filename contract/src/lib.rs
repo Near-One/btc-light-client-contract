@@ -688,7 +688,7 @@ impl BtcLightClient {
             prev_block_median_time_past,
             first_block_in_interval_median_time_past,
             prev_block_header.block_height + 1,
-        )
+        );
     }
 
     #[cfg(feature = "zcash")]
@@ -864,7 +864,6 @@ mod migrate {
                 network,
             }
         }
-
     }
 }
 
