@@ -1145,7 +1145,7 @@ mod tests {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
         let mut next_header = block_header_example();
         next_header.bits += 1;
-        contract.submit_block_header(next_header, contract.skip_pow_verification);
+        contract.submit_block_header(next_header, false);
     }
 
     #[test]
