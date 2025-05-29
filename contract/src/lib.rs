@@ -855,21 +855,21 @@ mod migrate {
 
     #[near]
     impl BtcLightClient {
-      /// Migrates the contract state from `BtcLightClientV1` to the current `BtcLightClient` version.
-      ///
-      /// This function reads the old contract state and constructs the new contract instance
-      /// with updated fields.
-      ///
-      /// # Arguments
-      /// * `network` - The network identifier (e.g., Mainnet, Testnet) to use in the new state.
-      ///
-      /// # Returns
-      /// A new `BtcLightClient` instance containing the migrated state.
-      ///
-      /// # Panics
-      /// This function will panic if:
-      /// - Reading the old state from storage (`env::state_read()`) fails, i.e., if no previous state is found or if deserialization fails.
-      #[private]
+        /// Migrates the contract state from `BtcLightClientV1` to the current `BtcLightClient` version.
+        ///
+        /// This function reads the old contract state and constructs the new contract instance
+        /// with updated fields.
+        ///
+        /// # Arguments
+        /// * `network` - The network identifier (e.g., Mainnet, Testnet) to use in the new state.
+        ///
+        /// # Returns
+        /// A new `BtcLightClient` instance containing the migrated state.
+        ///
+        /// # Panics
+        /// This function will panic if:
+        /// - Reading the old state from storage (`env::state_read()`) fails, i.e., if no previous state is found or if deserialization fails.
+        #[private]
         #[init(ignore_state)]
         pub fn migrate(network: Network) -> Self {
             let old_state: BtcLightClientV1 = env::state_read().expect("failed");
