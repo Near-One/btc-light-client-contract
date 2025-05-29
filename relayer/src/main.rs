@@ -161,7 +161,11 @@ async fn init_contract(
         .get_block_hash(init_config.init_height)
         .expect("Failed to get block hash");
 
-    let mut headers = Vec::with_capacity(init_config.num_of_blcoks_to_submit as usize + 1);
+    let mut headers = Vec::with_capacity(
+        usize::try_from(init_config.num_of_blcoks_to_submit)
+            .expect("Error on converting num_of_blocks_to_submit to usize")
+            + 1,
+    );
     let mut current_header = bitcoin_client
         .get_block_header(&header_hash)
         .expect("Failed to get initial block header");
