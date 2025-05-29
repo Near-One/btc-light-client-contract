@@ -385,6 +385,7 @@ impl BtcLightClient {
         let chain_work = work_from_bits(block_header.bits);
 
         let header = ExtendedHeader {
+            #[allow(clippy::useless_conversion)]
             block_header: block_header.into(),
             block_height,
             block_hash: current_block_hash.clone(),
@@ -437,6 +438,7 @@ impl BtcLightClient {
         require!(!overflow, "Addition of U256 values overflowed");
 
         let current_header = ExtendedHeader {
+            #[allow(clippy::useless_conversion)]
             block_header: block_header.into(),
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
@@ -733,6 +735,7 @@ impl BtcLightClient {
         new_target.target_to_bits()
     }
 
+    #[cfg(feature = "zcash")]
     fn get_prev_header(&self, current_header: &ExtendedHeader) -> ExtendedHeader {
         self.headers_pool
             .get(&current_header.block_header.prev_block_hash)
@@ -834,7 +837,10 @@ impl BtcLightClient {
 }
 
 mod migrate {
-    use crate::*;
+    use crate::{
+        borsh, env, near, BorshDeserialize, BorshSerialize, BtcLightClient, BtcLightClientExt,
+        ExtendedHeader, LookupMap, Network, PanicOnDefault, H256,
+    };
 
     #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
     pub struct BtcLightClientV1 {
@@ -849,7 +855,21 @@ mod migrate {
 
     #[near]
     impl BtcLightClient {
-        #[private]
+      /// Migrates the contract state from `BtcLightClientV1` to the current `BtcLightClient` version.
+      ///
+      /// This function reads the old contract state and constructs the new contract instance
+      /// with updated fields.
+      ///
+      /// # Arguments
+      /// * `network` - The network identifier (e.g., Mainnet, Testnet) to use in the new state.
+      ///
+      /// # Returns
+      /// A new `BtcLightClient` instance containing the migrated state.
+      ///
+      /// # Panics
+      /// This function will panic if:
+      /// - Reading the old state from storage (`env::state_read()`) fails, i.e., if no previous state is found or if deserialization fails.
+      #[private]
         #[init(ignore_state)]
         pub fn migrate(network: Network) -> Self {
             let old_state: BtcLightClientV1 = env::state_read().expect("failed");
@@ -985,7 +1005,7 @@ mod tests {
         assert_eq!(
             received_header,
             ExtendedHeader {
-                block_header: header.into(),
+                block_header: header,
                 block_hash: decode_hex(
                     "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048"
                 ),
@@ -1011,7 +1031,7 @@ mod tests {
         assert_eq!(
             received_header,
             ExtendedHeader {
-                block_header: header.into(),
+                block_header: header,
                 block_hash: decode_hex(
                     "62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"
                 ),
@@ -1039,7 +1059,7 @@ mod tests {
         assert_eq!(
             received_header,
             ExtendedHeader {
-                block_header: header.into(),
+                block_header: header,
                 block_hash: decode_hex(
                     "62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345"
                 ),
@@ -1106,7 +1126,7 @@ mod tests {
         assert_eq!(
             received_header,
             ExtendedHeader {
-                block_header: fork_block_header_example_2().into(),
+                block_header: fork_block_header_example_2(),
                 block_hash: decode_hex(
                     "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd"
                 ),

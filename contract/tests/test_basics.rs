@@ -85,7 +85,7 @@ async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> 
 
     assert_eq!(
         outcome.json::<ExtendedHeader>()?.block_header,
-        genesis_block_header().clone().into()
+        genesis_block_header().clone()
     );
 
     Ok(())
@@ -142,7 +142,7 @@ async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
 
     assert_eq!(
         outcome.json::<ExtendedHeader>()?.block_header,
-        fork_block_header_example_2().into()
+        fork_block_header_example_2()
     );
 
     Ok(())
