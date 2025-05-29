@@ -86,7 +86,7 @@ pub fn get_zcash_config(network: Network) -> ZcashConfig {
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L429
             pow_max_adjust_down: 32, // 32% adjustment down
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L430
-            pow_max_adjust_up: 16,   // 16% adjustment up
+            pow_max_adjust_up: 16, // 16% adjustment up
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L110
             pow_allow_min_difficulty_blocks_after_height: None,
         },
