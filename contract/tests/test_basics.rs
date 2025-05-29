@@ -397,6 +397,30 @@ async fn test_submit_blocks_for_period_incorrect_target() -> Result<(), Box<dyn 
     Ok(())
 }
 
+#[tokio::test]
+async fn test_getting_an_error_if_submitting_unattached_block() -> Result<(), Box<dyn std::error::Error>> {
+    let (contract, user_account) = init_contract().await?;
+
+    let outcome = user_account
+        .call(contract.id(), "submit_blocks")
+        .args_borsh([fork_block_header_example_2()].to_vec())
+        .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+        .transact()
+        .await?;
+
+    assert!(!outcome.is_success(), "Expected transaction to fail, but it succeeded");
+
+    let failure_message = format!("{:?}", outcome.failures());
+
+    assert!(
+        failure_message.contains("PrevBlockNotFound"),
+        "Expected failure message to contain 'PrevBlockNotFound', but got: {}",
+        failure_message
+    );
+
+    Ok(())
+}
+
 fn genesis_block_header() -> Header {
     let json_value = serde_json::json!({
         "version": 1,

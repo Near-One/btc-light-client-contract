@@ -1147,15 +1147,4 @@ mod tests {
         next_header.bits += 1;
         contract.submit_block_header(next_header, false);
     }
-
-    #[test]
-    #[should_panic(expected = "PrevBlockNotFound")]
-    fn test_getting_an_error_if_submitting_unattached_block() {
-        let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
-
-        contract.submit_block_header(
-            fork_block_header_example_2(),
-            contract.skip_pow_verification,
-        );
-    }
 }
