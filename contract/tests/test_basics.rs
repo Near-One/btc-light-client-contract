@@ -418,8 +418,7 @@ async fn test_getting_an_error_if_submitting_unattached_block(
 
     assert!(
         failure_message.contains("PrevBlockNotFound"),
-        "Expected failure message to contain 'PrevBlockNotFound', but got: {}",
-        failure_message
+        "Expected failure message to contain 'PrevBlockNotFound', but got: {failure_message}",
     );
 
     Ok(())
