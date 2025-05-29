@@ -592,7 +592,7 @@ impl BtcLightClient {
         &self,
         block_header: &Header,
         prev_block_header: &ExtendedHeader,
-    ) { 
+    ) {
         let expected_bits = self.zcash_get_next_work_required(block_header, prev_block_header);
 
         require!(
@@ -830,6 +830,41 @@ impl BtcLightClient {
     /// Stores and handles fork submissions
     fn store_fork_header(&mut self, header: &ExtendedHeader) {
         self.headers_pool.insert(&header.block_hash, header);
+    }
+}
+
+mod migrate {
+    use crate::*;
+
+    #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+    pub struct BtcLightClientV1 {
+        mainchain_height_to_header: LookupMap<u64, H256>,
+        mainchain_header_to_height: LookupMap<H256, u64>,
+        mainchain_tip_blockhash: H256,
+        mainchain_initial_blockhash: H256,
+        headers_pool: LookupMap<H256, ExtendedHeader>,
+        skip_pow_verification: bool,
+        gc_threshold: u64,
+    }
+
+    #[near]
+    impl BtcLightClient {
+        #[private]
+        #[init(ignore_state)]
+        pub fn migrate(network: Network) -> Self {
+            let old_state: BtcLightClientV1 = env::state_read().expect("failed");
+            Self {
+                mainchain_height_to_header: old_state.mainchain_height_to_header,
+                mainchain_header_to_height: old_state.mainchain_header_to_height,
+                mainchain_tip_blockhash: old_state.mainchain_tip_blockhash,
+                mainchain_initial_blockhash: old_state.mainchain_initial_blockhash,
+                headers_pool: old_state.headers_pool,
+                skip_pow_verification: old_state.skip_pow_verification,
+                gc_threshold: old_state.gc_threshold,
+                network,
+            }
+        }
+
     }
 }
 
