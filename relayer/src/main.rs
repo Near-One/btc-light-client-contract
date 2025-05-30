@@ -30,6 +30,22 @@ macro_rules! continue_on_fail {
     };
 }
 
+async fn get_block_header(
+    bitcoin_client: Arc<BitcoinClient>,
+    current_height: u64,
+) -> Result<(u64, bitcoin::blockdata::block::Header), u64> {
+    let Ok(block_hash) = bitcoin_client.get_block_hash(current_height) else {
+        warn!("Failed to get block hash at height {}", current_height);
+        return Err(current_height);
+    };
+    let Ok(block_header) = bitcoin_client.get_block_header(&block_hash) else {
+        warn!("Failed to get block header at height {}", current_height);
+        return Err(current_height);
+    };
+
+    Ok((current_height, block_header))
+}
+
 impl Synchronizer {
     pub fn new(
         bitcoin_client: Arc<BitcoinClient>,
@@ -57,19 +73,10 @@ impl Synchronizer {
                 ..=latest_height
                     .min(first_block_height_to_submit.saturating_add(self.config.fetch_batch_size))
             {
-                let bitcoin_client = self.bitcoin_client.clone();
-                handlers.push(tokio::spawn(async move {
-                    let Ok(block_hash) = bitcoin_client.get_block_hash(current_height) else {
-                        warn!("Failed to get block hash at height {}", current_height);
-                        return Err(current_height);
-                    };
-                    let Ok(block_header) = bitcoin_client.get_block_header(&block_hash) else {
-                        warn!("Failed to get block header at height {}", current_height);
-                        return Err(current_height);
-                    };
-
-                    Ok((current_height, block_header))
-                }));
+                handlers.push(tokio::spawn(get_block_header(
+                    self.bitcoin_client.clone(),
+                    current_height,
+                )));
             }
 
             let mut blocks_to_submit = Vec::new();
