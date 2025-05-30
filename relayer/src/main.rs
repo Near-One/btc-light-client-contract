@@ -30,8 +30,8 @@ macro_rules! continue_on_fail {
     };
 }
 
-async fn get_block_header(
-    bitcoin_client: Arc<BitcoinClient>,
+fn get_block_header(
+    bitcoin_client: &Arc<BitcoinClient>,
     current_height: u64,
 ) -> Result<(u64, bitcoin::blockdata::block::Header), u64> {
     let Ok(block_hash) = bitcoin_client.get_block_hash(current_height) else {
@@ -73,10 +73,10 @@ impl Synchronizer {
                 ..=latest_height
                     .min(first_block_height_to_submit.saturating_add(self.config.fetch_batch_size))
             {
-                handlers.push(tokio::spawn(get_block_header(
-                    self.bitcoin_client.clone(),
-                    current_height,
-                )));
+                handlers.push(tokio::spawn({
+                    let bitcoin_client = self.bitcoin_client.clone();
+                    async move { get_block_header(&bitcoin_client, current_height) }
+                }));
             }
 
             let mut blocks_to_submit = Vec::new();
