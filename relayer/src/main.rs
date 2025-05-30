@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use log::{debug, info, trace, warn};
 
 use crate::bitcoin_client::Client as BitcoinClient;
@@ -9,7 +11,7 @@ mod config;
 mod near_client;
 
 struct Synchronizer {
-    bitcoin_client: BitcoinClient,
+    bitcoin_client: Arc<BitcoinClient>,
     near_client: NearClient,
     config: Config,
 }
@@ -29,13 +31,18 @@ macro_rules! continue_on_fail {
 }
 
 impl Synchronizer {
-    pub fn new(bitcoin_client: BitcoinClient, near_client: NearClient, config: Config) -> Self {
+    pub fn new(
+        bitcoin_client: Arc<BitcoinClient>,
+        near_client: NearClient,
+        config: Config,
+    ) -> Self {
         Self {
             bitcoin_client,
             near_client,
             config,
         }
     }
+
     async fn sync(&mut self) {
         let mut first_block_height_to_submit =
             self.get_last_correct_block_height().await.unwrap() + 1;
@@ -45,15 +52,52 @@ impl Synchronizer {
             // Get the latest block height from the Bitcoin client
             let latest_height = continue_on_fail!(self.bitcoin_client.get_block_count(), "Bitcoin Client: Error on get_block_count", sleep_time_on_fail_sec, 'main_loop);
 
-            let mut blocks_to_submit = vec![];
-            for current_height in first_block_height_to_submit..=latest_height {
-                if blocks_to_submit.len() >= self.config.batch_size {
-                    break;
-                }
+            let mut handlers = Vec::new();
+            for current_height in first_block_height_to_submit
+                ..=latest_height
+                    .min(first_block_height_to_submit.saturating_add(self.config.fetch_batch_size))
+            {
+                let bitcoin_client = self.bitcoin_client.clone();
+                handlers.push(tokio::spawn(async move {
+                    let Ok(block_hash) = bitcoin_client.get_block_hash(current_height) else {
+                        warn!("Failed to get block hash at height {}", current_height);
+                        return Err(current_height);
+                    };
+                    let Ok(block_header) = bitcoin_client.get_block_header(&block_hash) else {
+                        warn!("Failed to get block header at height {}", current_height);
+                        return Err(current_height);
+                    };
 
-                let block_hash = continue_on_fail!(self.bitcoin_client.get_block_hash(current_height), "Bitcoin Client: Error on get_block_hash", sleep_time_on_fail_sec,  'main_loop);
-                let block_header = continue_on_fail!(self.bitcoin_client.get_block_header(&block_hash), "Bitcoin Client: Error on get_block_header", sleep_time_on_fail_sec,  'main_loop);
-                blocks_to_submit.push(block_header);
+                    Ok((current_height, block_header))
+                }));
+            }
+
+            let mut blocks_to_submit = Vec::new();
+            let mut min_failed_height = None;
+            for handler in handlers {
+                match handler.await {
+                    Ok(Ok((height, block_header))) => {
+                        blocks_to_submit.push((height, block_header));
+                    }
+                    Ok(Err(current_height)) => {
+                        warn!("Failed to process block at height {}", current_height);
+                        min_failed_height = Some(
+                            min_failed_height
+                                .map_or(current_height, |min: u64| min.min(current_height)),
+                        );
+                    }
+                    Err(e) => {
+                        warn!("Task failed with error: {:?}", e);
+                        tokio::time::sleep(std::time::Duration::from_secs(sleep_time_on_fail_sec))
+                            .await;
+                        break 'main_loop;
+                    }
+                }
+            }
+            blocks_to_submit.sort_by_key(|(height, _)| *height);
+
+            if let Some(min_failed_height) = min_failed_height {
+                blocks_to_submit.retain(|(height, _)| *height < min_failed_height);
             }
 
             let number_of_blocks_to_submit: u64 = blocks_to_submit.len().try_into().unwrap();
@@ -68,7 +112,7 @@ impl Synchronizer {
                 continue;
             }
 
-            let last_block_hash = blocks_to_submit[blocks_to_submit.len() - 1].block_hash();
+            let last_block_hash = blocks_to_submit[blocks_to_submit.len() - 1].1.block_hash();
 
             let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(last_block_hash).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
             if block_already_submitted {
@@ -77,25 +121,40 @@ impl Synchronizer {
                 continue 'main_loop;
             }
 
-            info!(
-                "Submit blocks with height: [{} - {}]",
-                first_block_height_to_submit,
-                first_block_height_to_submit + number_of_blocks_to_submit - 1
-            );
+            for blocks in blocks_to_submit.chunks(self.config.submit_batch_size) {
+                let Some(first_block_height) = blocks.first().map(|(height, _)| *height) else {
+                    warn!("No blocks to submit in the current chunk");
+                    continue 'main_loop;
+                };
 
-            match self.near_client.submit_blocks(blocks_to_submit).await {
-                Ok(Err(CustomError::PrevBlockNotFound)) => {
-                    // Contract cannot save block, because no previous block found, we are in fork
-                    first_block_height_to_submit = continue_on_fail!(self.get_last_correct_block_height().await, "Error on get_last_correct_block_height", sleep_time_on_fail_sec,  'main_loop)
-                        + 1;
-                }
-                Ok(val) => {
-                    let _ = continue_on_fail!(val, "Error on block submission.", sleep_time_on_fail_sec,  'main_loop);
-                    first_block_height_to_submit += number_of_blocks_to_submit;
-                }
-                err => {
-                    // network error after retries
-                    let _ = continue_on_fail!(err, "Off-chain relay panics after multiple attempts to submit blocks", sleep_time_on_fail_sec,  'main_loop);
+                let Some(last_block_height) = blocks.last().map(|(height, _)| *height) else {
+                    warn!("No last block height in the current chunk");
+                    continue 'main_loop;
+                };
+
+                info!(
+                    "Submit blocks with height: [{} - {}]",
+                    first_block_height, last_block_height,
+                );
+
+                match self
+                    .near_client
+                    .submit_blocks(blocks.iter().map(|(_, header)| *header).collect())
+                    .await
+                {
+                    Ok(Err(CustomError::PrevBlockNotFound)) => {
+                        // Contract cannot save block, because no previous block found, we are in fork
+                        first_block_height_to_submit = continue_on_fail!(self.get_last_correct_block_height().await, "Error on get_last_correct_block_height", sleep_time_on_fail_sec,  'main_loop)
+                            + 1;
+                    }
+                    Ok(val) => {
+                        let _ = continue_on_fail!(val, "Error on block submission.", sleep_time_on_fail_sec,  'main_loop);
+                        first_block_height_to_submit = last_block_height + 1;
+                    }
+                    err => {
+                        // network error after retries
+                        let _ = continue_on_fail!(err, "Off-chain relay panics after multiple attempts to submit blocks", sleep_time_on_fail_sec,  'main_loop);
+                    }
                 }
             }
 
@@ -154,7 +213,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     debug!("Configuration loaded: {:?}", config);
 
-    let bitcoin_client = BitcoinClient::new(&config);
+    let bitcoin_client = Arc::new(BitcoinClient::new(&config));
     let near_client = NearClient::new(&config.near);
 
     // RUNNING IN BLOCK RELAY MODE
