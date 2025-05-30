@@ -127,8 +127,8 @@ impl U256 {
     }
 
     pub fn overflowing_mul(self, rhs: u64) -> (Self, bool) {
-        let (high, overflow) = self.0.overflowing_mul(u128::from(rhs));
-        let (low, overflow_low) = self.1.overflowing_mul(u128::from(rhs));
+        let (high, overflow) = self.0.overflowing_mul(rhs.into());
+        let (low, overflow_low) = self.1.overflowing_mul(rhs.into());
 
         if !overflow_low {
             return (Self(high, low), overflow);

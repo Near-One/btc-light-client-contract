@@ -5,7 +5,7 @@ pub mod serd_u32_hex {
     where
         S: serde::Serializer,
     {
-        let hex = format!("{}", hex::encode(num.to_le_bytes()));
+        let hex = hex::encode(num.to_le_bytes()).to_string();
         serializer.serialize_str(&hex)
     }
 

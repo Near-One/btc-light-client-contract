@@ -114,6 +114,20 @@ impl NearClient {
         }
     }
 
+    /// Initializes the BTC Light Client
+    ///
+    /// # Arguments
+    /// * `args` - A reference to `InitArgs` containing the initialization parameters.
+    ///
+    /// # Returns
+    /// A `Result` containing the `RpcTransactionResponse` if successful, or an error.
+    ///
+    /// # Errors
+    /// This function can return an error in the following cases:
+    /// - If submitting the transaction (`submit_tx`) fails, e.g., due to network issues or RPC failures.
+    /// - If retrieving the transaction status (`get_tx_status`) fails, e.g., if the transaction is not found or the query times out.
+    /// - If the contract execution itself fails on the NEAR side, resulting in a `FinalExecutionStatus::Failure`.
+    ///   In this case, the function constructs and returns a formatted error with details from the contract failure.
     pub async fn init_contract(
         &self,
         args: &InitArgs,
@@ -124,13 +138,13 @@ impl NearClient {
 
         self.get_tx_status(tx_hash)
             .await
-            .map_err(|e| e.into())
+            .map_err(std::convert::Into::into)
             .map(|response| {
                 if let Some(final_execution_outcome) = response.final_execution_outcome.clone() {
                     if let near_primitives::views::FinalExecutionStatus::Failure(err) =
                         final_execution_outcome.into_outcome().status
                     {
-                        Err(format!("Transaction failed with error: {err:?}"))?
+                        Err(format!("Transaction failed with error: {err:?}"))?;
                     }
                 }
                 Ok(response)
