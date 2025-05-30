@@ -151,7 +151,8 @@ mod test_basics {
     }
 
     #[tokio::test]
-    async fn test_view_call_verify_transaction_inclusion() -> Result<(), Box<dyn std::error::Error>> {
+    async fn test_view_call_verify_transaction_inclusion() -> Result<(), Box<dyn std::error::Error>>
+    {
         let (contract, user_account) = init_contract().await?;
 
         let result: bool = user_account
@@ -321,9 +322,8 @@ mod test_basics {
             .transact()
             .await?;
 
-        assert!(
-            format!("{:?}", outcome.failures()[0].clone().into_result()).contains("Required deposit")
-        );
+        assert!(format!("{:?}", outcome.failures()[0].clone().into_result())
+            .contains("Required deposit"));
 
         for block_headers_batch in block_headers.iter().take(3).skip(1) {
             let outcome = user_account
@@ -369,8 +369,8 @@ mod test_basics {
     }
 
     #[tokio::test]
-    async fn test_submit_blocks_for_period_incorrect_target() -> Result<(), Box<dyn std::error::Error>>
-    {
+    async fn test_submit_blocks_for_period_incorrect_target(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let (contract, user_account, mut block_headers) = init_contract_from_file(2017).await?;
 
         for i in 0..block_headers.len() {
