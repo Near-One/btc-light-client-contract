@@ -167,7 +167,8 @@ impl Client {
         }
         let data_bytes = hex::decode(&hex)?;
         let mut cursor = 0;
-        let (block1, readed_len): (BitcoinHeader, usize) = encode::deserialize_partial(&data_bytes)?;
+        let (block1, readed_len): (BitcoinHeader, usize) =
+            encode::deserialize_partial(&data_bytes)?;
         cursor += readed_len;
         let (coinbase_tx, readed_len): (Transaction, usize) =
             encode::deserialize_partial(&data_bytes[cursor..])?;
