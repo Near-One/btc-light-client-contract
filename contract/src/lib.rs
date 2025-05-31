@@ -342,7 +342,7 @@ impl BtcLightClient {
         }
     }
 
-    #[cfg(feature = "bitcoin")]
+    #[cfg(any(feature = "bitcoin", feature = "litecoin", feature = "dogecoin"))]
     pub fn get_config(&self) -> btc_types::network::NetworkConfig {
         cfg_if! {
             if #[cfg(feature = "bitcoin")] {
