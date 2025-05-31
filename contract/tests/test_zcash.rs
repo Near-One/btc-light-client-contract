@@ -22,7 +22,7 @@ mod test_zcash {
             ..Default::default()
         })
         .unwrap_or_else(|e| panic!("building contract: {:?}", e));
-    
+
         let file = artifact.canonicalize().unwrap();
         std::fs::read(&file).unwrap()
     }
