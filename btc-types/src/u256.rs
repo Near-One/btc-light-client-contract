@@ -1,22 +1,9 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
 use std::ops::{Div, Not, Rem, Shl, Shr};
 
-#[derive(
-    BorshDeserialize,
-    BorshSerialize,
-    Serialize,
-    Deserialize,
-    Debug,
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Hash,
-    Default,
-)]
+use near_sdk::near;
+
+#[near(serializers = [borsh, json])]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct U256(u128, u128);
 
 impl U256 {
@@ -86,7 +73,7 @@ impl U256 {
     }
 
     pub fn target_to_bits(&self) -> u32 {
-        let mut n_size = (self.bits() + 7) / 8;
+        let mut n_size = self.bits().div_ceil(8);
         let mut n_compact: u32;
 
         if n_size <= 3 {
@@ -127,13 +114,13 @@ impl U256 {
     }
 
     pub fn overflowing_mul(self, rhs: u64) -> (Self, bool) {
-        let (high, overflow) = self.0.overflowing_mul(rhs.into());
-        let (low, overflow_low) = self.1.overflowing_mul(rhs.into());
+        let (high, overflow) = self.0.overflowing_mul(u128::from(rhs));
+        let (low, overflow_low) = self.1.overflowing_mul(u128::from(rhs));
 
         if !overflow_low {
             return (Self(high, low), overflow);
         }
-        let carry = ((self.1 >> 64) * (<u64 as std::convert::Into<u128>>::into(rhs))) >> 64;
+        let carry = ((self.1 >> 64) * (u128::from(rhs))) >> 64;
         let (high, overflow_add) = high.overflowing_add(carry);
 
         (Self(high, low), overflow | overflow_add)

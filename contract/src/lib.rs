@@ -4,6 +4,7 @@ use btc_types::header::{ExtendedHeader, Header};
 use btc_types::network::Network;
 use btc_types::u256::U256;
 use btc_types::utils::{target_from_bits, work_from_bits};
+use cfg_if::cfg_if;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
@@ -342,17 +343,16 @@ impl BtcLightClient {
     }
 
     pub fn get_network(&self) -> (String, Network) {
-        #[cfg(feature = "bitcoin")]
-        {
-            ("Bitcoin".to_owned(), self.network)
-        }
-        #[cfg(feature = "litecoin")]
-        {
-            ("Litecoin".to_owned(), self.network)
-        }
-        #[cfg(feature = "zcash")]
-        {
-            ("Zcash".to_owned(), self.network)
+        cfg_if! {
+            if #[cfg(feature = "bitcoin")] {
+                ("Bitcoin".to_owned(), self.network)
+            } else if #[cfg(feature = "litecoin")] {
+                ("Litecoin".to_owned(), self.network)
+            } else if #[cfg(feature = "zcash")] {
+                ("Zcash".to_owned(), self.network)
+            } else {
+                compile_error!("No valid network feature enabled.");
+            }
         }
     }
 }
