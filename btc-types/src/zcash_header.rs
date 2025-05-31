@@ -1,11 +1,11 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use near_sdk::near;
 
 use crate::hash::{double_sha256, H256};
 
 pub type Error = crate::utils::DecodeHeaderError;
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Header {
     /// Block version, now repurposed for soft fork signalling.
     pub version: i32,
@@ -22,7 +22,8 @@ pub struct Header {
     // The block's nonce (Zcash: 32 bytes)
     pub nonce: H256,
     /// The block solution (Zcash: Equihash solution)
-    #[serde(with = "hex::serde")]
+    #[serde(deserialize_with = "hex::serde::deserialize")]
+    #[serde(serialize_with = "hex::serde::serialize")]
     pub solution: Vec<u8>,
 }
 
@@ -114,7 +115,8 @@ impl Header {
     }
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 // The header, excluding nonce and Equihash solution
 pub struct LightHeader {
