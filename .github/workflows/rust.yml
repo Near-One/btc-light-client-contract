@@ -43,6 +43,11 @@ jobs:
           rustup target add wasm32-unknown-unknown
           RUST_BACKTRACE=1 cargo test -- --skip test_setting_genesis_block --skip test_setting_chain_reorg
 
+      - name: Run tests zcash
+        run: |
+          rustup target add wasm32-unknown-unknown
+          RUST_BACKTRACE=1 cargo test --features zcash --no-default-features
+
   relayer:
     name: "Relayer checks"
     runs-on: ubuntu-latest

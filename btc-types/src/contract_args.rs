@@ -1,6 +1,6 @@
 use near_sdk::near;
 
-use crate::{hash::H256, header::Header};
+use crate::{hash::H256, header::Header, network::Network};
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug)]
@@ -10,6 +10,8 @@ pub struct InitArgs {
     pub genesis_block_height: u64,
     pub skip_pow_verification: bool,
     pub gc_threshold: u64,
+    pub network: Network,
+    pub submit_blocks: Option<Vec<Header>>,
 }
 
 #[near(serializers = [borsh, json])]

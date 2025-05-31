@@ -10,6 +10,7 @@ Prerequisites: You should have access to a Bitcoin full node and a Near node. Al
 0. Set up Rust Logger `export RUST_LOG=info`
 1. Move config.example.toml to config.toml and fill in the required fields.
 2. Run the server with `cargo run --release` in release mode. Or you can just run with `cargo run` in debug mode.
+3. For Zcash, you need to pass the feature flag like this: `cargo run --features "zcash"`
 
 ## How to run tests
 ### Working with Bitcoin Prune Node
