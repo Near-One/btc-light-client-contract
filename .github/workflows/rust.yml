@@ -8,6 +8,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  checks: write
+
 jobs:
   contract:
     name: "Smart contract checks"
