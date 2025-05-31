@@ -3,6 +3,7 @@ use btc_types::hash::H256;
 use btc_types::header::{ExtendedHeader, Header};
 use btc_types::network::{Network, NetworkConfig};
 use btc_types::u256::U256;
+use cfg_if::cfg_if;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
@@ -322,21 +323,18 @@ impl BtcLightClient {
     }
 
     pub fn get_network() -> Network {
-        #[cfg(feature = "bitcoin")]
-        {
-            Network::Bitcoin
-        }
-        #[cfg(feature = "bitcoin_testnet")]
-        {
-            Network::BitcoinTestnet
-        }
-        #[cfg(feature = "litecoin")]
-        {
-            Network::Litecoin
-        }
-        #[cfg(feature = "litecoin_testnet")]
-        {
-            Network::LitecoinTestnet
+        cfg_if! {
+            if #[cfg(feature = "bitcoin")] {
+                Network::Bitcoin
+            } else if #[cfg(feature = "bitcoin_testnet")] {
+                Network::BitcoinTestnet
+            } else if #[cfg(feature = "litecoin")] {
+                Network::Litecoin
+            } else if #[cfg(feature = "litecoin_testnet")] {
+                Network::LitecoinTestnet
+            } else {
+                compile_error!("No valid network feature enabled.");
+            }
         }
     }
 }
@@ -449,7 +447,7 @@ impl BtcLightClient {
         let time_diff = block_header
             .time
             .saturating_sub(prev_block_header.block_header.time);
-        if time_diff >= 2 * config.pow_target_time_between_blocks_secs {
+        if time_diff > 2 * config.pow_target_time_between_blocks_secs {
             require!(
                 block_header.bits == config.proof_of_work_limit_bits,
                 format!(

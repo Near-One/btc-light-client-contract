@@ -218,7 +218,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = Config::new().expect("we expect config.toml to be next to executable in `./`");
 
-    debug!("Configuration loaded: {:?}", config);
+    debug!("Configuration loaded: {config:?}");
 
     let bitcoin_client = Arc::new(BitcoinClient::new(&config));
     let near_client = NearClient::new(&config.near);
