@@ -65,6 +65,33 @@ pub fn get_litecoin_config(network: Network) -> NetworkConfig {
     }
 }
 
+pub fn get_dogecoin_config(network: Network) -> NetworkConfig {
+    match network {
+        Network::Mainnet => NetworkConfig {
+            blocks_per_adjustment: 1,
+            expected_time_secs: 60,
+            proof_of_work_limit_bits: 0x1e0fffff,
+            pow_target_time_between_blocks_secs: 60, // 1 minute
+            pow_allow_min_difficulty_blocks: false,
+            pow_limit: U256::new(
+                0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
+                0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
+            ),
+        },
+        Network::Testnet => NetworkConfig {
+            blocks_per_adjustment: 1,
+            expected_time_secs: 60,
+            proof_of_work_limit_bits: 0x1e0fffff,
+            pow_target_time_between_blocks_secs: 60, // 1 minute
+            pow_allow_min_difficulty_blocks: true,
+            pow_limit: U256::new(
+                0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
+                0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
+            ),
+        },
+    }
+}
+
 pub fn get_zcash_config(network: Network) -> ZcashConfig {
     match network {
         Network::Mainnet => ZcashConfig {

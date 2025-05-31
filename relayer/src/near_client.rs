@@ -9,6 +9,8 @@ use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
 
+use bitcoin::consensus::serialize;
+use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
 use log::info;
 use near_crypto::InMemorySigner;
@@ -17,11 +19,12 @@ use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
 
+use crate::bitcoin_client::AuxData;
 use tokio::time;
 
 use crate::config::NearConfig;
 
-const SUBMIT_BLOCKS: &str = "submit_blocks";
+const SUBMIT_BLOCKS: &str = "submit_blocks_aux";
 const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 #[allow(dead_code)]
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
@@ -42,6 +45,27 @@ pub struct NearClient {
     signer: InMemorySigner,
     btc_light_client_account_id: AccountId,
     transaction_timeout_sec: u64,
+}
+
+fn get_aux_data(aux_data: Option<AuxData>) -> Option<btc_types::aux::AuxData> {
+    match aux_data {
+        None => None,
+        Some(aux_data) => Some(btc_types::aux::AuxData {
+            coinbase_tx: serialize(&aux_data.coinbase_tx),
+            merkle_proof: aux_data
+                .merkle_branch
+                .iter()
+                .map(|h| H256::from(h.to_raw_hash().to_byte_array()))
+                .collect(),
+            chain_merkle_proof: aux_data
+                .chainmerkle_branch
+                .iter()
+                .map(|h| H256::from(h.to_raw_hash().to_byte_array()))
+                .collect(),
+            chain_id: aux_data.chain_index.try_into().unwrap(),
+            parent_block: aux_data.parent_block,
+        }),
+    }
 }
 
 impl NearClient {
@@ -136,16 +160,21 @@ impl NearClient {
     /// * Connection issue
     pub async fn submit_blocks(
         &self,
-        headers: Vec<btc_types::header::Header>,
+        headers: Vec<(btc_types::header::Header, Option<AuxData>)>,
     ) -> Result<Result<RpcTransactionResponse, CustomError>, Box<dyn std::error::Error>> {
         for header in &headers {
-            println!("Submit block {}", header.block_hash());
+            println!("Submit block {}", header.0.block_hash());
         }
+
+        let args: Vec<_> = headers
+            .iter()
+            .map(|header| (header.0.clone(), get_aux_data(header.1.clone())))
+            .collect();
 
         let sent_at = time::Instant::now();
 
         let tx_hash = self
-            .submit_tx(SUBMIT_BLOCKS, to_vec(&headers)?, 5 * 10_u128.pow(23))
+            .submit_tx(SUBMIT_BLOCKS, to_vec(&args)?, 5 * 10_u128.pow(23))
             .await?;
         info!("Blocks submitted: tx_hash = {tx_hash:?}");
 

@@ -4,6 +4,8 @@ use crate::hash::{double_sha256, H256};
 
 pub type Error = crate::utils::DecodeHeaderError;
 
+pub const MAX_ADJUSTMENT_FACTOR: u64 = 4;
+
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Header {
