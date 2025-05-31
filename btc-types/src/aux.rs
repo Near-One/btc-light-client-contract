@@ -2,11 +2,11 @@ use crate::hash::H256;
 use crate::header::Header;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::deserialize;
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use near_sdk::near;
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuxData {
     pub coinbase_tx: Vec<u8>,
     pub merkle_proof: Vec<H256>,
