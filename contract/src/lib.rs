@@ -344,17 +344,15 @@ impl BtcLightClient {
 
     #[cfg(feature = "bitcoin")]
     pub fn get_config(&self) -> btc_types::network::NetworkConfig {
-        btc_types::network::get_bitcoin_config(self.network)
-    }
-
-    #[cfg(feature = "litecoin")]
-    pub fn get_config(&self) -> btc_types::network::NetworkConfig {
-        btc_types::network::get_litecoin_config(self.network)
-    }
-
-    #[cfg(feature = "dogecoin")]
-    pub fn get_config(&self) -> btc_types::network::NetworkConfig {
-        btc_types::network::get_dogecoin_config(self.network)
+        cfg_if! {
+            if #[cfg(feature = "bitcoin")] {
+                btc_types::network::get_bitcoin_config(self.network)
+            } else if #[cfg(feature = "litecoin")] {
+                btc_types::network::get_litecoin_config(self.network)
+            } else if #[cfg(feature = "dogecoin")] {
+                btc_types::network::get_dogecoin_config(self.network)
+            }
+        }
     }
 
     #[cfg(feature = "zcash")]
@@ -366,6 +364,8 @@ impl BtcLightClient {
         cfg_if! {
             if #[cfg(feature = "bitcoin")] {
                 ("Bitcoin".to_owned(), self.network)
+            } else if #[cfg(feature = "dogecoin")] {
+                ("Dogecoin".to_owned(), self.network)
             } else if #[cfg(feature = "litecoin")] {
                 ("Litecoin".to_owned(), self.network)
             } else if #[cfg(feature = "zcash")] {
@@ -373,10 +373,6 @@ impl BtcLightClient {
             } else {
                 compile_error!("No valid network feature enabled.");
             }
-        }
-        #[cfg(feature = "dogecoin")]
-        {
-            ("Dogecoin".to_owned(), self.network)
         }
     }
 }
@@ -664,11 +660,10 @@ impl BtcLightClient {
         }
 
         #[cfg(feature = "dogecoin")]
-        if config.pow_allow_min_difficulty_blocks {
-            if (block_header.time as u64) > (prev_block_time as u64) + config.expected_time_secs * 2
-            {
-                new_target = config.pow_limit;
-            }
+        if config.pow_allow_min_difficulty_blocks
+            && (block_header.time as u64) > (prev_block_time as u64) + config.expected_time_secs * 2
+        {
+            new_target = config.pow_limit;
         }
 
         let expected_bits = new_target.target_to_bits();
