@@ -35,11 +35,11 @@ fn get_block_header(
     current_height: u64,
 ) -> Result<(u64, bitcoin::blockdata::block::Header), u64> {
     let Ok(block_hash) = bitcoin_client.get_block_hash(current_height) else {
-        warn!("Failed to get block hash at height {}", current_height);
+        warn!("Failed to get block hash at height {current_height}");
         return Err(current_height);
     };
     let Ok(block_header) = bitcoin_client.get_block_header(&block_hash) else {
-        warn!("Failed to get block header at height {}", current_height);
+        warn!("Failed to get block header at height {current_height}");
         return Err(current_height);
     };
 
@@ -87,14 +87,14 @@ impl Synchronizer {
                         blocks_to_submit.push((height, block_header));
                     }
                     Ok(Err(current_height)) => {
-                        warn!("Failed to process block at height {}", current_height);
+                        warn!("Failed to process block at height {current_height}");
                         min_failed_height = Some(
                             min_failed_height
                                 .map_or(current_height, |min: u64| min.min(current_height)),
                         );
                     }
                     Err(e) => {
-                        warn!("Task failed with error: {:?}", e);
+                        warn!("Task failed with error: {e:?}");
                         tokio::time::sleep(std::time::Duration::from_secs(sleep_time_on_fail_sec))
                             .await;
                         break 'main_loop;
@@ -139,10 +139,7 @@ impl Synchronizer {
                     continue 'main_loop;
                 };
 
-                info!(
-                    "Submit blocks with height: [{} - {}]",
-                    first_block_height, last_block_height,
-                );
+                info!("Submit blocks with height: [{first_block_height} - {last_block_height}]");
 
                 match self
                     .near_client
