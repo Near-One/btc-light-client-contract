@@ -1,11 +1,11 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use near_sdk::near;
 
 use crate::u256::U256;
 
 pub const ZCASH_MEDIAN_TIME_SPAN: usize = 11;
 
-#[derive(Copy, Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, Debug)]
 pub enum Network {
     Mainnet,
     Testnet,
@@ -143,8 +143,8 @@ pub fn get_zcash_config(network: Network) -> ZcashConfig {
     }
 }
 
-#[allow(clippy::module_name_repetitions)]
-#[derive(Copy, Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, Debug)]
 pub struct NetworkConfig {
     pub expected_time_secs: u64,
     pub blocks_per_adjustment: u64,
@@ -154,7 +154,8 @@ pub struct NetworkConfig {
     pub pow_limit: U256,
 }
 
-#[derive(Copy, Clone, Debug, BorshDeserialize, BorshSerialize, Serialize, Deserialize)]
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Copy, Debug)]
 pub struct ZcashConfig {
     pub proof_of_work_limit_bits: u32,
     pub pow_limit: U256,

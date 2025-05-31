@@ -1,5 +1,4 @@
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
+use near_sdk::near;
 
 use crate::{hash::H256, u256::U256};
 
@@ -13,7 +12,8 @@ pub use super::zcash_header::{Header, LightHeader};
 pub use super::btc_header::{Header, LightHeader};
 
 #[allow(clippy::module_name_repetitions)]
-#[derive(BorshDeserialize, BorshSerialize, Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExtendedHeader {
     pub block_header: LightHeader,
     /// Below, state contains additional fields not presented in the standard blockchain header

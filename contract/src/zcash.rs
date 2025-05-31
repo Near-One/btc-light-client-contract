@@ -1,6 +1,10 @@
-use btc_types::{header::{ExtendedHeader, Header}, u256::U256, utils::target_from_bits};
-use near_sdk::{env,near, require};
 use crate::{BtcLightClient, BtcLightClientExt, ERR_KEY_NOT_EXIST};
+use btc_types::{
+    header::{ExtendedHeader, Header},
+    u256::U256,
+    utils::target_from_bits,
+};
+use near_sdk::{env, near, require};
 
 #[near]
 impl BtcLightClient {

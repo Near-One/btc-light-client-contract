@@ -172,6 +172,7 @@ impl NearClient {
             .collect();
 
         let sent_at = time::Instant::now();
+
         let tx_hash = self
             .submit_tx(SUBMIT_BLOCKS, to_vec(&args)?, 5 * 10_u128.pow(23))
             .await?;

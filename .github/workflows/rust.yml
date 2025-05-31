@@ -18,8 +18,10 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-        with:
-          lfs: true
+
+      - name: Install cargo-near
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh
 
       - name: Run rustfmt
         uses: actions-rs/cargo@v1
@@ -63,23 +65,3 @@ jobs:
       - name: Run tests
         run: |
           RUST_BACKTRACE=1 cargo test
-
-  test-build:
-    name: Build and diff
-    runs-on: ubuntu-latest
-    steps:
-      - name: Clone the repository
-        uses: actions/checkout@v4
-
-      - name: Build
-        run: ./build.sh
-
-      - name: Diff
-        run: |
-          git diff
-          git status
-          changed_files=$(git status --porcelain --untracked-files=no | wc -l)
-          if [ $changed_files -gt 0 ]; then
-            echo 'contract changed, please rebuild contract'
-            exit 1
-          fi
