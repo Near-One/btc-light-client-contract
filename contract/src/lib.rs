@@ -432,7 +432,12 @@ impl BtcLightClient {
         }
     }
 
-    fn submit_block_header(&mut self, block_header: Header, aux_data: Option<AuxData>, skip_pow_verification: bool) {
+    fn submit_block_header(
+        &mut self,
+        block_header: Header,
+        aux_data: Option<AuxData>,
+        skip_pow_verification: bool,
+    ) {
         // We do not have a previous block in the headers_pool, there is a high probability
         // it means we are starting to receive a new fork,
         // so what we do now is we are returning the error code
@@ -458,7 +463,8 @@ impl BtcLightClient {
                     // Check if the block hash is less than or equal to the target
                     require!(
                         U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
-                        format!("block should have correct pow"));
+                        format!("block should have correct pow")
+                    );
                 }
                 None
             }
@@ -553,7 +559,8 @@ impl BtcLightClient {
 
         let pow_hash = aux_data.parent_block.block_hash_pow();
         require!(
-            self.skip_pow_verification || U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
+            self.skip_pow_verification
+                || U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
             format!("block should have correct pow")
         );
     }
@@ -566,7 +573,7 @@ impl BtcLightClient {
         self.zcash_check_pow_and_equihash(block_header, prev_block_header);
     }
 
-    #[cfg(any(feature = "bitcoin", feature = "litecoin",  feature = "dogecoin"))]
+    #[cfg(any(feature = "bitcoin", feature = "litecoin", feature = "dogecoin"))]
     fn check_target_testnet(
         &self,
         block_header: &Header,
@@ -658,7 +665,8 @@ impl BtcLightClient {
 
         #[cfg(feature = "dogecoin")]
         if config.pow_allow_min_difficulty_blocks {
-            if (block_header.time as u64) > (prev_block_time as u64) + config.expected_time_secs * 2 {
+            if (block_header.time as u64) > (prev_block_time as u64) + config.expected_time_secs * 2
+            {
                 new_target = config.pow_limit;
             }
         }
@@ -699,7 +707,7 @@ impl BtcLightClient {
             config.expected_time_secs as i64
                 + (actual_time_taken - config.expected_time_secs as i64) / 8,
         )
-            .unwrap_or(0);
+        .unwrap_or(0);
 
         if modulated_time < (config.expected_time_secs - (config.expected_time_secs / 4)) {
             modulated_time = config.expected_time_secs - (config.expected_time_secs / 4);
@@ -814,7 +822,7 @@ impl BtcLightClient {
 mod migrate {
     use crate::{
         borsh, env, near, BorshDeserialize, BorshSerialize, BtcLightClient, BtcLightClientExt,
-        ExtendedHeader, LookupMap, LookupSet, Network, PanicOnDefault, H256, StorageKey
+        ExtendedHeader, LookupMap, LookupSet, Network, PanicOnDefault, StorageKey, H256,
     };
 
     #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
@@ -1030,7 +1038,11 @@ mod tests {
 
         contract.submit_block_header(header.clone(), None, contract.skip_pow_verification);
 
-        contract.submit_block_header(fork_block_header_example(), None, contract.skip_pow_verification);
+        contract.submit_block_header(
+            fork_block_header_example(),
+            None,
+            contract.skip_pow_verification,
+        );
 
         let received_header = contract.get_last_block_header();
 
@@ -1094,8 +1106,16 @@ mod tests {
 
         contract.submit_block_header(block_header_example(), None, contract.skip_pow_verification);
 
-        contract.submit_block_header(fork_block_header_example(), None, contract.skip_pow_verification);
-        contract.submit_block_header(fork_block_header_example_2(), None, contract.skip_pow_verification);
+        contract.submit_block_header(
+            fork_block_header_example(),
+            None,
+            contract.skip_pow_verification,
+        );
+        contract.submit_block_header(
+            fork_block_header_example_2(),
+            None,
+            contract.skip_pow_verification,
+        );
 
         let received_header = contract.get_last_block_header();
 
