@@ -33,6 +33,9 @@ jobs:
           
           cargo near build reproducible-wasm --variant litecoin_testnet
           mv ./target/near/btc_light_client_contract.wasm ./target/near/btc_light_client_contract_litecoin_testnet.wasm
+          
+          cargo near build reproducible-wasm --variant zcash
+          mv ./target/near/btc_light_client_contract.wasm ./target/near/btc_light_client_contract_zcash.wasm
         timeout-minutes: 60
       - name: Archive built WASM files
         env:
