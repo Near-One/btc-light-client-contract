@@ -3,16 +3,33 @@ mod test_zcash {
     use btc_types::contract_args::InitArgs;
     use btc_types::header::{ExtendedHeader, Header};
     use near_sdk::NearToken;
-    use near_workspaces::{Account, Contract};
+    use near_workspaces::{cargo_near_build, Account, Contract};
     use serde_json::json;
     use std::fs::File;
     use std::io::BufReader;
+    use std::str::FromStr;
 
     const STORAGE_DEPOSIT_PER_BLOCK: NearToken = NearToken::from_millinear(500);
 
+    async fn build_contract() -> Vec<u8> {
+        let artifact = cargo_near_build::build_with_cli(cargo_near_build::BuildOpts {
+            manifest_path: Some(
+                cargo_near_build::camino::Utf8PathBuf::from_str("./Cargo.toml")
+                    .expect("camino PathBuf from str"),
+            ),
+            no_default_features: true,
+            features: Some("zcash".to_string()),
+            ..Default::default()
+        })
+        .unwrap_or_else(|e| panic!("building contract: {:?}", e));
+    
+        let file = artifact.canonicalize().unwrap();
+        std::fs::read(&file).unwrap()
+    }
+
     async fn init_zcash_contract() -> Result<(Contract, Account), Box<dyn std::error::Error>> {
         let sandbox = near_workspaces::sandbox().await?;
-        let contract_wasm = near_workspaces::compile_project("./").await?;
+        let contract_wasm = build_contract().await;
 
         let contract = sandbox.dev_deploy(&contract_wasm).await?;
 
