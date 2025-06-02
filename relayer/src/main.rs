@@ -1,8 +1,12 @@
+use bitcoin::hashes::Hash;
+use bitcoin::BlockHash;
+use btc_types::contract_args::InitArgs;
 use log::{debug, info, trace, warn};
 
 use crate::bitcoin_client::Client as BitcoinClient;
-use crate::config::Config;
+use crate::config::{Config, InitConfig};
 use crate::near_client::{CustomError, NearClient};
+use clap::Parser;
 
 mod bitcoin_client;
 mod config;
@@ -70,7 +74,7 @@ impl Synchronizer {
 
             let last_block_hash = blocks_to_submit[blocks_to_submit.len() - 1].block_hash();
 
-            let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(last_block_hash).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
+            let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(last_block_hash.to_string()).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
             if block_already_submitted {
                 info!(target: "relay", "Skip block submission: blocks [{} - {}] already on chain", first_block_height_to_submit, first_block_height_to_submit + number_of_blocks_to_submit - 1);
                 first_block_height_to_submit += number_of_blocks_to_submit;
@@ -139,24 +143,94 @@ impl Synchronizer {
     fn get_bitcoin_block_hash_by_height(
         &self,
         height: u64,
-    ) -> Result<String, bitcoincore_rpc::Error> {
+    ) -> Result<String, Box<dyn std::error::Error>> {
         let block_from_bitcoin_node = self.bitcoin_client.get_block_header_by_height(height)?;
 
         Ok(block_from_bitcoin_node.block_hash().to_string())
     }
 }
 
+async fn init_contract(
+    bitcoin_client: &BitcoinClient,
+    near_client: &NearClient,
+    init_config: InitConfig,
+) {
+    info!("Init contract");
+
+    let header_hash = bitcoin_client
+        .get_block_hash(init_config.init_height)
+        .expect("Failed to get block hash");
+
+    let mut headers = Vec::with_capacity(
+        usize::try_from(init_config.num_of_blcoks_to_submit)
+            .expect("Error on converting num_of_blocks_to_submit to usize")
+            + 1,
+    );
+    let mut current_header = bitcoin_client
+        .get_block_header(&header_hash)
+        .expect("Failed to get initial block header");
+
+    headers.push(current_header.clone());
+
+    for _ in 0..init_config.num_of_blcoks_to_submit {
+        let prev_hash = BlockHash::from_byte_array(current_header.prev_block_hash.0);
+        current_header = bitcoin_client
+            .get_block_header(&prev_hash)
+            .expect("Failed to get previous block header");
+        headers.push(current_header.clone());
+    }
+
+    headers.reverse();
+
+    let genesis_block_height = init_config.init_height - init_config.num_of_blcoks_to_submit;
+
+    let args = InitArgs {
+        genesis_block_hash: headers[0].block_hash(),
+        genesis_block_height,
+        skip_pow_verification: init_config.skip_pow_verification,
+        gc_threshold: init_config.gc_threshold,
+        network: init_config.network,
+        submit_blocks: headers,
+    };
+
+    info!(
+        "Init args: {}",
+        serde_json::to_string(&args).unwrap_or_else(|_| "<failed to serialize args>".into())
+    );
+
+    near_client
+        .init_contract(&args)
+        .await
+        .expect("Failed to init contract");
+}
+
+#[derive(Parser)]
+struct CliArgs {
+    /// Path to the configuration file
+    #[clap(short, long, default_value = "config.toml")]
+    config: String,
+    /// Initialize contract
+    #[clap(long)]
+    init_contract: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
+    let args = CliArgs::parse();
 
-    let config = Config::new().expect("we expect config.toml to be next to executable in `./`");
+    let config =
+        Config::new(args.config).expect("we expect config.toml to be next to executable in `./`");
 
     debug!("Configuration loaded: {config:?}");
 
     let bitcoin_client = BitcoinClient::new(&config);
     let near_client = NearClient::new(&config.near);
 
+    if args.init_contract {
+        let init_config = config.init.clone().expect("Init Config not found");
+        init_contract(&bitcoin_client, &near_client, init_config).await;
+    }
     // RUNNING IN BLOCK RELAY MODE
     info!("run block header sync");
     let mut synchronizer = Synchronizer::new(bitcoin_client, near_client.clone(), config);

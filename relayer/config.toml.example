@@ -14,3 +14,10 @@ endpoint = "https://rpc.testnet.near.org"
 btc_light_client_account_id = "btc_light_client.testnet"
 near_credentials_path = "~/.near-credentials/testnet/account.testnet.json"
 transaction_timeout_sec = 120
+
+[init]
+network = "Testnet"
+num_of_blcoks_to_submit = 28
+gc_threshold = 10000
+skip_pow_verification = false
+init_height = 3417462
