@@ -34,6 +34,22 @@ macro_rules! continue_on_fail {
     };
 }
 
+fn get_block_header(
+    bitcoin_client: &Arc<BitcoinClient>,
+    current_height: u64,
+) -> Result<(u64, btc_types::header::Header), u64> {
+    let Ok(block_hash) = bitcoin_client.get_block_hash(current_height) else {
+        warn!("Failed to get block hash at height {current_height}");
+        return Err(current_height);
+    };
+    let Ok(block_header) = bitcoin_client.get_block_header(&block_hash) else {
+        warn!("Failed to get block header at height {current_height}");
+        return Err(current_height);
+    };
+
+    Ok((current_height, block_header))
+}
+
 impl Synchronizer {
     pub fn new(
         bitcoin_client: Arc<BitcoinClient>,
@@ -63,18 +79,7 @@ impl Synchronizer {
             {
                 handlers.push(tokio::spawn({
                     let bitcoin_client = self.bitcoin_client.clone();
-                    async move {
-                        let Ok(block_hash) = bitcoin_client.get_block_hash(current_height) else {
-                            warn!("Failed to get block hash at height {current_height}");
-                            return Err(current_height);
-                        };
-                        let Ok(block_header) = bitcoin_client.get_block_header(&block_hash) else {
-                            warn!("Failed to get block header at height {current_height}");
-                            return Err(current_height);
-                        };
-
-                        Ok((current_height, block_header))
-                    }
+                    async move { get_block_header(&bitcoin_client, current_height) }
                 }));
             }
 
