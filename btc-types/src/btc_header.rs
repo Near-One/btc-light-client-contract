@@ -104,6 +104,7 @@ impl Header {
         })
     }
 
+    #[must_use]
     pub fn into_light(self) -> LightHeader {
         self
     }

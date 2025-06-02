@@ -367,7 +367,7 @@ impl BtcLightClient {
             "Init with block hash {block_hash} at height {block_height}"
         ));
         require!(
-            submit_blocks.len() > 0,
+            !submit_blocks.is_empty(),
             "At least one block header must be submitted"
         );
 
