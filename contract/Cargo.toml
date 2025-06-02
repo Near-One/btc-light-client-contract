@@ -23,10 +23,10 @@ passed_env = []
 container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked"]
 
 [package.metadata.near.reproducible_build.variant.litecoin]
-container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked", "--features", "litecoin"]
+container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked", "--no-default-features", "--features", "litecoin"]
 
 [package.metadata.near.reproducible_build.variant.zcash]
-container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked", "--features", "zcash"]
+container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked", "--no-default-features", "--features", "zcash"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
