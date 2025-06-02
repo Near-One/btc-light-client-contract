@@ -23,7 +23,7 @@ passed_env = []
 container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked"]
 
 [package.metadata.near.reproducible_build.variant.dogecoin]
-container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked", "--features", "dogecoin"]
+container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked", "--no-default-features", "--features", "dogecoin"]
 
 [package.metadata.near.reproducible_build.variant.litecoin]
 container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked", "--no-default-features", "--features", "litecoin"]
