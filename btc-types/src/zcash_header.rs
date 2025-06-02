@@ -4,6 +4,7 @@ use crate::hash::{double_sha256, H256};
 
 pub type Error = crate::utils::DecodeHeaderError;
 
+// Represents a Zcash block header, which contains metadata about the block
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Header {
@@ -112,6 +113,10 @@ impl Header {
             nonce,
             solution,
         })
+    }
+
+    pub fn into_light(self) -> LightHeader {
+        self.into()
     }
 }
 

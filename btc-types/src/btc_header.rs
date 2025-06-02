@@ -4,6 +4,7 @@ use crate::hash::{double_sha256, H256};
 
 pub type Error = crate::utils::DecodeHeaderError;
 
+// Represents a Bitcoin/Litecoin/Dogecoin block header, which contains metadata about the block
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Header {
@@ -101,6 +102,10 @@ impl Header {
             bits,
             nonce,
         })
+    }
+
+    pub fn into_light(self) -> LightHeader {
+        self
     }
 }
 

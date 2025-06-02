@@ -388,8 +388,7 @@ impl BtcLightClient {
         let chain_work = work_from_bits(block_header.bits);
 
         let header = ExtendedHeader {
-            #[allow(clippy::useless_conversion)]
-            block_header: block_header.into(),
+            block_header: block_header.into_light(),
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
@@ -441,8 +440,7 @@ impl BtcLightClient {
         require!(!overflow, "Addition of U256 values overflowed");
 
         let current_header = ExtendedHeader {
-            #[allow(clippy::useless_conversion)]
-            block_header: block_header.into(),
+            block_header: block_header.into_light(),
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
