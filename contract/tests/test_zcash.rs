@@ -37,13 +37,12 @@ mod test_zcash {
         let genesis_block = initial_blocks[0].clone();
 
         let args = InitArgs {
-            genesis_block: genesis_block.clone(),
             genesis_block_hash: genesis_block.block_hash(),
             genesis_block_height: 2940821,
             skip_pow_verification: false,
             gc_threshold: 2000,
             network: btc_types::network::Network::Mainnet,
-            submit_blocks: Some(initial_blocks[1..29].to_vec()),
+            submit_blocks: initial_blocks[..29].to_vec(),
         };
 
         let outcome = contract

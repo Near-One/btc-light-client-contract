@@ -130,7 +130,6 @@ impl BtcLightClient {
         );
 
         contract.init_genesis(
-            args.genesis_block,
             &args.genesis_block_hash,
             args.genesis_block_height,
             args.submit_blocks,
@@ -360,14 +359,17 @@ impl BtcLightClient {
 impl BtcLightClient {
     fn init_genesis(
         &mut self,
-        block_header: Header,
         block_hash: &H256,
         block_height: u64,
-        submit_blocks: Option<Vec<Header>>,
+        mut submit_blocks: Vec<Header>,
     ) {
         env::log_str(&format!(
             "Init with block hash {block_hash} at height {block_height}"
         ));
+        require!(
+            submit_blocks.len() > 0,
+            "At least one block header must be submitted"
+        );
 
         let config = self.get_config();
         #[cfg(any(feature = "bitcoin", feature = "litecoin"))]
@@ -378,11 +380,12 @@ impl BtcLightClient {
         {
             require!(
                 btc_types::network::ZCASH_MEDIAN_TIME_SPAN + config.pow_averaging_window as usize
-                    == submit_blocks.as_ref().map_or(0, |v| v.len()),
+                    == submit_blocks.len() - 1,
                 "ERR_NOT_ENOUGH_BLOCKS_FOR_ZCASH"
             );
         }
 
+        let block_header = submit_blocks.remove(0);
         let current_block_hash = block_header.block_hash();
         require!(&current_block_hash == block_hash, "Invalid block hash");
         let chain_work = work_from_bits(block_header.bits);
@@ -399,10 +402,8 @@ impl BtcLightClient {
             .clone_from(&current_block_hash);
         self.mainchain_tip_blockhash = current_block_hash;
 
-        if let Some(submit_blocks) = submit_blocks {
-            for block_header in submit_blocks {
-                self.submit_block_header(block_header, true);
-            }
+        for block_header in submit_blocks {
+            self.submit_block_header(block_header, true);
         }
     }
 
@@ -811,11 +812,10 @@ mod tests {
         InitArgs {
             network: Network::Mainnet,
             genesis_block_hash: genesis_block.block_hash(),
-            genesis_block,
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
-            submit_blocks: None,
+            submit_blocks: [genesis_block].to_vec(),
         }
     }
 
@@ -824,11 +824,10 @@ mod tests {
         InitArgs {
             network: Network::Mainnet,
             genesis_block_hash: genesis_block.block_hash(),
-            genesis_block,
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 3,
-            submit_blocks: None,
+            submit_blocks: [genesis_block].to_vec(),
         }
     }
 
