@@ -67,8 +67,7 @@ fn zcash_get_next_work_required(
             // If the new block's timestamp is more than 6 * block interval minutes
             // then allow mining of a min-difficulty block.
             if i64::from(block_header.time)
-                > i64::from(prev_block_header.block_header.time)
-                    + config.pow_target_spacing(prev_block_header.block_height + 1) * 6
+                > i64::from(prev_block_header.block_header.time) + config.pow_target_spacing() * 6
             {
                 return config.proof_of_work_limit_bits;
             }
@@ -121,7 +120,6 @@ fn zcash_get_next_work_required(
         average_target,
         prev_block_median_time_past,
         first_block_in_interval_median_time_past,
-        prev_block_header.block_height + 1,
     );
 }
 
@@ -130,11 +128,10 @@ fn zcash_calculate_next_work_required(
     average_target: U256,
     last_interval_block_median_time_past: u32,
     first_interval_block_median_time_past: u32,
-    next_height: u64,
 ) -> u32 {
-    let averaging_window_timespan = config.averaging_window_timespan(next_height);
-    let min_actual_timespan = config.min_actual_timespan(next_height);
-    let max_actual_timespan = config.max_actual_timespan(next_height);
+    let averaging_window_timespan = config.averaging_window_timespan();
+    let min_actual_timespan = config.min_actual_timespan();
+    let max_actual_timespan = config.max_actual_timespan();
 
     // Limit adjustment step
     // Use medians to prevent time-warp attacks

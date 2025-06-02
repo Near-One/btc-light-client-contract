@@ -77,10 +77,6 @@ pub fn get_zcash_config(network: Network) -> ZcashConfig {
             ),
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L104
             pow_averaging_window: 17,
-            //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L127
-            blossom_activation_height: 653600,
-            //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/consensus/params.h#L243
-            pre_blossom_pow_target_spacing: 150,
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/consensus/params.h#L244
             post_blossom_pow_target_spacing: 75,
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L429
@@ -100,10 +96,6 @@ pub fn get_zcash_config(network: Network) -> ZcashConfig {
             ),
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L427
             pow_averaging_window: 17,
-            //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L450
-            blossom_activation_height: 584000,
-            //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/consensus/params.h#L243
-            pre_blossom_pow_target_spacing: 150,
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/consensus/params.h#L244
             post_blossom_pow_target_spacing: 75,
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L429
@@ -133,8 +125,6 @@ pub struct ZcashConfig {
     pub proof_of_work_limit_bits: u32,
     pub pow_limit: U256,
     pub pow_averaging_window: i64,
-    pub blossom_activation_height: u64,
-    pub pre_blossom_pow_target_spacing: i64,
     pub post_blossom_pow_target_spacing: i64,
     pub pow_max_adjust_down: i64,
     pub pow_max_adjust_up: i64,
@@ -143,27 +133,22 @@ pub struct ZcashConfig {
 
 impl ZcashConfig {
     //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/consensus/params.cpp#L397
-    pub fn pow_target_spacing(&self, height: u64) -> i64 {
-        let blossom_active = height >= self.blossom_activation_height;
-        if blossom_active {
-            self.post_blossom_pow_target_spacing
-        } else {
-            self.pre_blossom_pow_target_spacing
-        }
+    pub fn pow_target_spacing(&self) -> i64 {
+        self.post_blossom_pow_target_spacing
     }
 
     //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/consensus/params.cpp#L406
-    pub fn averaging_window_timespan(&self, height: u64) -> i64 {
-        self.pow_averaging_window * self.pow_target_spacing(height)
+    pub fn averaging_window_timespan(&self) -> i64 {
+        self.pow_averaging_window * self.pow_target_spacing()
     }
 
     //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/consensus/params.cpp#L410
-    pub fn min_actual_timespan(&self, height: u64) -> i64 {
-        (self.averaging_window_timespan(height) * (100 - self.pow_max_adjust_up)) / 100
+    pub fn min_actual_timespan(&self) -> i64 {
+        (self.averaging_window_timespan() * (100 - self.pow_max_adjust_up)) / 100
     }
 
     //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/consensus/params.cpp#L414
-    pub fn max_actual_timespan(&self, height: u64) -> i64 {
-        (self.averaging_window_timespan(height) * (100 + self.pow_max_adjust_down)) / 100
+    pub fn max_actual_timespan(&self) -> i64 {
+        (self.averaging_window_timespan() * (100 + self.pow_max_adjust_down)) / 100
     }
 }
