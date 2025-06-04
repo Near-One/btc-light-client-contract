@@ -158,7 +158,7 @@ impl Synchronizer {
                             .submit_blocks(first_block_height_to_submit, blocks)
                             .await
                         {
-                            warn!(target: "relay", "Error on block submission: {:?}", err);
+                            warn!(target: "relay", "Error on block submission: {err:?}");
                         }
                     }
                 }));
@@ -204,7 +204,8 @@ impl Synchronizer {
             Ok(val) => {
                 if let Err(err) = val {
                     return Err(format!("Error on block submission, but not panic: {err:?}"));
-                };
+                }
+
                 first_block_height_to_submit
                     .store(last_block_height + 1, std::sync::atomic::Ordering::SeqCst);
             }
