@@ -1,4 +1,4 @@
-use crate::{BtcLightClient, BtcLightClientExt, ERR_KEY_NOT_EXIST};
+use crate::{utils::BlocksGetter, BtcLightClient, BtcLightClientExt};
 use btc_types::{
     header::{ExtendedHeader, Header},
     network::ZcashConfig,
@@ -6,18 +6,6 @@ use btc_types::{
     utils::target_from_bits,
 };
 use near_sdk::{env, near, require};
-
-trait PrevBlockGetter {
-    fn get_prev_header(&self, current_header: &ExtendedHeader) -> ExtendedHeader;
-}
-
-impl PrevBlockGetter for BtcLightClient {
-    fn get_prev_header(&self, current_header: &ExtendedHeader) -> ExtendedHeader {
-        self.headers_pool
-            .get(&current_header.block_header.prev_block_hash)
-            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
-    }
-}
 
 #[near]
 impl BtcLightClient {
@@ -54,7 +42,7 @@ fn zcash_get_next_work_required(
     config: &ZcashConfig,
     block_header: &Header,
     prev_block_header: &ExtendedHeader,
-    prev_block_getter: &impl PrevBlockGetter,
+    prev_block_getter: &impl BlocksGetter,
 ) -> u32 {
     use btc_types::network::ZCASH_MEDIAN_TIME_SPAN;
 

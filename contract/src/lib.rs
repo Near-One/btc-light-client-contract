@@ -13,7 +13,11 @@ use near_sdk::collections::{LookupMap, LookupSet};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
+use crate::utils::BlocksGetter;
+
 pub(crate) const ERR_KEY_NOT_EXIST: &str = "ERR_KEY_NOT_EXIST";
+
+mod utils;
 
 #[cfg(feature = "zcash")]
 mod zcash;
@@ -520,14 +524,18 @@ impl BtcLightClient {
     }
 
     fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
-        #[cfg(any(feature = "bitcoin", feature = "litecoin", feature = "dogecoin"))]
+        #[cfg(any(feature = "bitcoin", feature = "litecoin"))]
         self.btc_check_target(block_header, prev_block_header);
 
         #[cfg(feature = "zcash")]
         self.zcash_check_pow_and_equihash(block_header, prev_block_header);
+
+        #[cfg(feature = "dogecoin")]
+        self.dogecoin_check_pow(block_header, prev_block_header);
     }
 
-    #[cfg(any(feature = "bitcoin", feature = "litecoin", feature = "dogecoin"))]
+    // TODO: move this to a separate module
+    #[cfg(any(feature = "bitcoin", feature = "litecoin"))]
     fn check_target_testnet(
         &self,
         block_header: &Header,
@@ -567,13 +575,8 @@ impl BtcLightClient {
         }
     }
 
-    #[cfg(not(feature = "dogecoin"))]
-    fn get_first_block_height(&self, last_block_height: u64) -> u64 {
-        let config = self.get_config();
-        last_block_height + 1 - config.blocks_per_adjustment
-    }
-
-    #[cfg(any(feature = "bitcoin", feature = "litecoin", feature = "dogecoin"))]
+    // TODO: move this to a separate module
+    #[cfg(any(feature = "bitcoin", feature = "litecoin"))]
     fn btc_check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         let config = self.get_config();
 
@@ -591,8 +594,7 @@ impl BtcLightClient {
             return;
         }
 
-        let first_block_height = self.get_first_block_height(prev_block_header.block_height);
-
+        let first_block_height = prev_block_header.block_height + 1 - config.blocks_per_adjustment;
         let interval_tail_header_hash =
             match self.mainchain_height_to_header.get(&first_block_height) {
                 None => return,
@@ -605,21 +607,28 @@ impl BtcLightClient {
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         let prev_block_time = prev_block_header.block_header.time;
 
-        let actual_time_taken: i64 =
-            i64::from(prev_block_time) - i64::from(interval_tail_extend_header.block_header.time);
-        let modulated_time = self.get_modulated_time(actual_time_taken);
+        let mut actual_time_taken = u64::from(
+            prev_block_time.saturating_sub(interval_tail_extend_header.block_header.time),
+        );
+
+        let max_adjustment_factor: u64 = 4;
+
+        if actual_time_taken < config.expected_time_secs / max_adjustment_factor {
+            actual_time_taken = config.expected_time_secs / max_adjustment_factor;
+        }
+        if actual_time_taken > config.expected_time_secs * max_adjustment_factor {
+            actual_time_taken = config.expected_time_secs * max_adjustment_factor;
+        }
 
         let last_target = target_from_bits(prev_block_header.block_header.bits);
 
-        let (mut new_target, new_target_overflow) = last_target.overflowing_mul(modulated_time);
+        let (mut new_target, new_target_overflow) = last_target.overflowing_mul(actual_time_taken);
         require!(!new_target_overflow, "new target overflow");
         new_target = new_target / U256::from(config.expected_time_secs);
 
-        new_target = self.adjust_target_for_pow_rules(
-            new_target,
-            u64::from(block_header.time),
-            u64::from(prev_block_time),
-        );
+        if new_target > config.pow_limit {
+            new_target = config.pow_limit;
+        }
 
         let expected_bits = new_target.target_to_bits();
 
@@ -630,38 +639,6 @@ impl BtcLightClient {
                 expected_bits, block_header.bits
             )
         );
-    }
-
-    #[cfg(not(feature = "dogecoin"))]
-    fn adjust_target_for_pow_rules(
-        &self,
-        new_target: U256,
-        _prev_block_time: u64,
-        _block_time: u64,
-    ) -> U256 {
-        let config = self.get_config();
-        if new_target > config.pow_limit {
-            return config.pow_limit;
-        }
-
-        new_target
-    }
-
-    #[cfg(not(any(feature = "dogecoin", feature = "zcash")))]
-    fn get_modulated_time(&self, actual_time_taken: i64) -> u64 {
-        use btc_types::btc_header::MAX_ADJUSTMENT_FACTOR;
-
-        let config = self.get_config();
-        let mut modulated_time: u64 = u64::try_from(actual_time_taken).unwrap_or(0);
-
-        if modulated_time < config.expected_time_secs / MAX_ADJUSTMENT_FACTOR {
-            modulated_time = config.expected_time_secs / MAX_ADJUSTMENT_FACTOR;
-        }
-        if modulated_time > config.expected_time_secs * MAX_ADJUSTMENT_FACTOR {
-            modulated_time = config.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
-        }
-
-        modulated_time
     }
 
     /// The most expensive operation which reorganizes the chain, based on fork weight
@@ -762,6 +739,21 @@ impl BtcLightClient {
     /// Stores and handles fork submissions
     fn store_fork_header(&mut self, header: &ExtendedHeader) {
         self.headers_pool.insert(&header.block_hash, header);
+    }
+}
+
+impl BlocksGetter for BtcLightClient {
+    fn get_prev_header(&self, current_header: &ExtendedHeader) -> ExtendedHeader {
+        self.headers_pool
+            .get(&current_header.block_header.prev_block_hash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
+    }
+
+    fn get_header_by_height(&self, height: u64) -> ExtendedHeader {
+        self.mainchain_height_to_header
+            .get(&height)
+            .and_then(|hash| self.headers_pool.get(&hash))
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
     }
 }
 
