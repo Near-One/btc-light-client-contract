@@ -473,7 +473,7 @@ impl BtcLightClient {
             Some(ref aux_data) => {
                 self.check_aux(&block_header, aux_data);
             }
-        };
+        }
 
         let (current_block_computed_chain_work, overflow) = prev_block_header
             .chain_work
