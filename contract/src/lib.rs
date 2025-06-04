@@ -431,6 +431,7 @@ impl BtcLightClient {
         }
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     fn submit_block_header(
         &mut self,
         block_header: Header,
@@ -470,7 +471,7 @@ impl BtcLightClient {
                 }
             }
             Some(ref aux_data) => {
-                self.check_aux(&block_header, &aux_data);
+                self.check_aux(&block_header, aux_data);
             }
         };
 
