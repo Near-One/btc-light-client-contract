@@ -430,7 +430,12 @@ impl BtcLightClient {
         }
     }
 
-    fn submit_block_header(&mut self, block_header: Header, aux_data: Option<AuxData>, skip_pow_verification: bool) {
+    fn submit_block_header(
+        &mut self,
+        block_header: Header,
+        aux_data: Option<AuxData>,
+        skip_pow_verification: bool,
+    ) {
         // We do not have a previous block in the headers_pool, there is a high probability
         // it means we are starting to receive a new fork,
         // so what we do now is we are returning the error code
