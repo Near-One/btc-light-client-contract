@@ -94,11 +94,25 @@ impl NearClient {
         }
     }
 
+    /// Get the current nonce for the signer
+    ///
+    /// # Returns
+    /// The current nonce value as a `u64`.
     pub fn get_nonce(&self) -> u64 {
         self.nonce
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Reset the nonce for the signer
+    /// This method queries the current nonce from the NEAR blockchain
+    ///
+    /// # Returns
+    /// A `Result` indicating success or failure.
+    ///
+    /// # Errors
+    /// This function can return an error if:
+    /// - The query to the NEAR blockchain fails, e.g., due to network issues or RPC failures.
+    /// - The response from the blockchain does not contain the expected access key information.
     pub async fn reset_nonce(&self) -> Result<(), Box<dyn std::error::Error>> {
         let access_key_query_response = self
             .client
