@@ -1,4 +1,3 @@
-use bitcoin::hashes::Hash;
 use btc_types::aux::AuxData;
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
@@ -458,9 +457,6 @@ impl BtcLightClient {
 
         let current_block_hash = block_header.block_hash();
 
-        #[cfg(not(feature = "dogecoin"))]
-        assert_eq!(aux_data, None);
-
         match aux_data {
             None => {
                 let pow_hash = block_header.block_hash_pow();
@@ -473,8 +469,11 @@ impl BtcLightClient {
                     );
                 }
             }
-            Some(ref aux_data) => {
-                self.check_aux(&block_header, aux_data);
+            Some(ref _aux_data) => {
+                #[cfg(feature = "dogecoin")]
+                self.check_aux(&block_header, _aux_data);
+                #[cfg(not(feature = "dogecoin"))]
+                env::panic_str("AuxData can be provided only for DogeCoin");
             }
         }
 
@@ -524,49 +523,6 @@ impl BtcLightClient {
                 self.reorg_chain(current_header, last_main_chain_block_height);
             }
         }
-    }
-
-    fn check_aux(&mut self, block_header: &Header, aux_data: &AuxData) {
-        let parent_block_hash = aux_data.parent_block.block_hash();
-        require!(
-            self.used_aux_parent_blocks.insert(&parent_block_hash),
-            "parent block already used"
-        );
-
-        let coinbase_tx = aux_data.get_coinbase_tx();
-        let coinbase_tx_hash = coinbase_tx.compute_txid();
-
-        require!(
-            merkle_tools::compute_root_from_merkle_proof(
-                H256::from(coinbase_tx_hash.to_raw_hash().to_byte_array()),
-                0,
-                &aux_data.merkle_proof,
-            ) == aux_data.parent_block.merkle_root
-        );
-
-        let chain_root = merkle_tools::compute_root_from_merkle_proof(
-            block_header.block_hash(),
-            aux_data.chain_id,
-            &aux_data.chain_merkle_proof,
-        );
-
-        require!(
-            coinbase_tx
-                .input
-                .first()
-                .unwrap()
-                .script_sig
-                .to_hex_string()
-                .contains(&chain_root.to_string()),
-            "coinbase_tx don't contain chain_root"
-        );
-
-        let pow_hash = aux_data.parent_block.block_hash_pow();
-        require!(
-            self.skip_pow_verification
-                || U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
-            format!("block should have correct pow")
-        );
     }
 
     fn check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
