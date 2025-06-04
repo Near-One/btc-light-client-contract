@@ -978,10 +978,7 @@ mod tests {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
         contract.submit_block_header(header.clone(), contract.skip_pow_verification);
 
-        contract.submit_block_header(
-            fork_block_header_example(),
-            contract.skip_pow_verification,
-        );
+        contract.submit_block_header(fork_block_header_example(), contract.skip_pow_verification);
 
         let received_header = contract.get_last_block_header();
 
@@ -1042,10 +1039,7 @@ mod tests {
 
         contract.submit_block_header(block_header_example(), contract.skip_pow_verification);
 
-        contract.submit_block_header(
-            fork_block_header_example(),
-            contract.skip_pow_verification,
-        );
+        contract.submit_block_header(fork_block_header_example(), contract.skip_pow_verification);
         contract.submit_block_header(
             fork_block_header_example_2(),
             contract.skip_pow_verification,
