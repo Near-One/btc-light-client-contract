@@ -342,7 +342,7 @@ impl BtcLightClient {
     }
 
     #[cfg(feature = "zcash")]
-    pub fn get_config(&self) -> btc_types::network::NetworkConfig {
+    pub fn get_config(&self) -> btc_types::network::ZcashConfig {
         btc_types::network::get_zcash_config(self.network)
     }
 
