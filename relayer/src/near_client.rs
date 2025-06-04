@@ -98,6 +98,7 @@ impl NearClient {
     ///
     /// # Returns
     /// The current nonce value as a `u64`.
+    #[must_use]
     pub fn get_nonce(&self) -> u64 {
         self.nonce
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
