@@ -918,7 +918,7 @@ mod tests {
         let header = block_header_example();
 
         let mut contract = BtcLightClient::init(get_default_init_args());
-        contract.submit_block_header(header, None, contract.skip_pow_verification);
+        contract.submit_block_header(header, contract.skip_pow_verification);
     }
 
     #[test]
@@ -926,7 +926,7 @@ mod tests {
         let header = fork_block_header_example();
         let mut contract = BtcLightClient::init(get_default_init_args());
 
-        contract.submit_block_header(header.clone(), None, contract.skip_pow_verification);
+        contract.submit_block_header(header.clone(), contract.skip_pow_verification);
 
         let received_header = contract.get_last_block_header();
 
@@ -951,7 +951,7 @@ mod tests {
         let header = block_header_example();
 
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
-        contract.submit_block_header(header.clone(), None, contract.skip_pow_verification);
+        contract.submit_block_header(header.clone(), contract.skip_pow_verification);
 
         let received_header = contract.get_last_block_header();
 
@@ -976,11 +976,10 @@ mod tests {
         let header = block_header_example();
 
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
-        contract.submit_block_header(header.clone(), None, contract.skip_pow_verification);
+        contract.submit_block_header(header.clone(), contract.skip_pow_verification);
 
         contract.submit_block_header(
             fork_block_header_example(),
-            None,
             contract.skip_pow_verification,
         );
 
@@ -1006,7 +1005,7 @@ mod tests {
     #[test]
     fn test_getting_block_by_height() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
-        contract.submit_block_header(block_header_example(), None, contract.skip_pow_verification);
+        contract.submit_block_header(block_header_example(), contract.skip_pow_verification);
 
         assert_eq!(
             contract.get_block_hash_by_height(0).unwrap(),
@@ -1021,7 +1020,7 @@ mod tests {
     #[test]
     fn test_getting_height_by_block() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
-        contract.submit_block_header(block_header_example(), None, contract.skip_pow_verification);
+        contract.submit_block_header(block_header_example(), contract.skip_pow_verification);
 
         assert_eq!(
             contract
@@ -1041,16 +1040,14 @@ mod tests {
     fn test_submitting_existing_fork_block_header_and_promote_fork() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(block_header_example(), None, contract.skip_pow_verification);
+        contract.submit_block_header(block_header_example(), contract.skip_pow_verification);
 
         contract.submit_block_header(
             fork_block_header_example(),
-            None,
             contract.skip_pow_verification,
         );
         contract.submit_block_header(
             fork_block_header_example_2(),
-            None,
             contract.skip_pow_verification,
         );
 
@@ -1078,7 +1075,7 @@ mod tests {
         let mut contract = BtcLightClient::init(get_default_init_args());
         let mut next_header = block_header_example();
         next_header.bits += 1;
-        contract.submit_block_header(next_header, None, contract.skip_pow_verification);
+        contract.submit_block_header(next_header, contract.skip_pow_verification);
     }
 
     #[test]
@@ -1086,6 +1083,6 @@ mod tests {
     fn test_getting_an_error_if_submitting_unattached_block() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
-        contract.submit_block_header(fork_block_header_example_2(), None, false);
+        contract.submit_block_header(fork_block_header_example_2(), false);
     }
 }
