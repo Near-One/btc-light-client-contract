@@ -39,3 +39,4 @@ overflow-checks = true
 default = []
 scrypt_hash = ["scrypt"]
 zcash_header = []
+dogecoin_header = []

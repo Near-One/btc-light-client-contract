@@ -417,6 +417,7 @@ impl BtcLightClient {
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
+            #[cfg(feature = "dogecoin")]
             aux_parent_block: None,
         };
 
@@ -453,7 +454,10 @@ impl BtcLightClient {
 
         let current_block_hash = block_header.block_hash();
 
-        let aux_parent_block = match aux_data {
+        #[cfg(not(feature = "dogecoin"))]
+        assert_eq!(aux_data, None);
+
+        match aux_data {
             None => {
                 let pow_hash = block_header.block_hash_pow();
                 if !skip_pow_verification {
@@ -464,11 +468,9 @@ impl BtcLightClient {
                         format!("block should have correct pow")
                     );
                 }
-                None
             }
-            Some(aux_data) => {
+            Some(ref aux_data) => {
                 self.check_aux(&block_header, &aux_data);
-                Some(aux_data.parent_block.block_hash())
             }
         };
 
@@ -482,7 +484,8 @@ impl BtcLightClient {
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
-            aux_parent_block,
+            #[cfg(feature = "dogecoin")]
+            aux_parent_block: aux_data.map(|data| data.parent_block.block_hash()),
         };
 
         // Main chain submission
@@ -802,8 +805,9 @@ impl BtcLightClient {
     /// Remove block header and meta information
     fn remove_block_header(&mut self, header_block_hash: &H256) {
         self.mainchain_header_to_height.remove(header_block_hash);
-        if let Some(header) = self.headers_pool.remove(header_block_hash) {
-            if let Some(aux_parent_blockhash) = header.aux_parent_block {
+        if let Some(_header) = self.headers_pool.remove(header_block_hash) {
+            #[cfg(feature = "dogecoin")]
+            if let Some(aux_parent_blockhash) = _header.aux_parent_block {
                 self.used_aux_parent_blocks.remove(&aux_parent_blockhash);
             }
         }
@@ -992,7 +996,6 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
-                aux_parent_block: None,
             }
         );
     }
@@ -1018,7 +1021,6 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
-                aux_parent_block: None,
             }
         );
     }
@@ -1050,7 +1052,6 @@ mod tests {
                     0, 2, 0, 2, 0, 2
                 ]),
                 block_height: 1,
-                aux_parent_block: None,
             }
         );
     }
@@ -1121,7 +1122,6 @@ mod tests {
                     0, 3, 0, 3, 0, 3
                 ]),
                 block_height: 2,
-                aux_parent_block: None,
             }
         );
     }
