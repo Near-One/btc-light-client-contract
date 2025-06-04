@@ -20,6 +20,9 @@ pub(crate) const ERR_KEY_NOT_EXIST: &str = "ERR_KEY_NOT_EXIST";
 #[cfg(feature = "zcash")]
 mod zcash;
 
+#[cfg(feature = "dogecoin")]
+mod dogecoin;
+
 /// Define roles for access control of `Pausable` features. Accounts which are
 /// granted a role are authorized to execute the corresponding action.
 #[derive(AccessControlRole, Deserialize, Serialize, Copy, Clone)]
@@ -694,26 +697,6 @@ impl BtcLightClient {
         }
         if modulated_time > config.expected_time_secs * MAX_ADJUSTMENT_FACTOR {
             modulated_time = config.expected_time_secs * MAX_ADJUSTMENT_FACTOR;
-        }
-
-        modulated_time
-    }
-
-    #[cfg(feature = "dogecoin")]
-    fn get_modulated_time(&self, actual_time_taken: i64) -> u64 {
-        let config = self.get_config();
-
-        let mut modulated_time: u64 = u64::try_from(
-            config.expected_time_secs as i64
-                + (actual_time_taken - config.expected_time_secs as i64) / 8,
-        )
-        .unwrap_or(0);
-
-        if modulated_time < (config.expected_time_secs - (config.expected_time_secs / 4)) {
-            modulated_time = config.expected_time_secs - (config.expected_time_secs / 4);
-        }
-        if modulated_time > (config.expected_time_secs + (config.expected_time_secs * 2)) {
-            modulated_time = config.expected_time_secs + (config.expected_time_secs * 2);
         }
 
         modulated_time
