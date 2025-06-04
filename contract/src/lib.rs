@@ -1,7 +1,6 @@
-use btc_types::aux::AuxData;
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{ExtendedHeader, Header};
+use btc_types::header::{ExtendedHeader, Header, BlockHeader};
 use btc_types::network::Network;
 use btc_types::u256::U256;
 use btc_types::utils::{target_from_bits, work_from_bits};
@@ -151,23 +150,14 @@ impl BtcLightClient {
     #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
     pub fn submit_blocks(
         &mut self,
-        #[serializer(borsh)] headers: Vec<Header>,
-    ) -> PromiseOrValue<()> {
-        self.submit_blocks_aux(headers.into_iter().map(|h| (h, None::<AuxData>)).collect())
-    }
-
-    #[payable]
-    #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
-    pub fn submit_blocks_aux(
-        &mut self,
-        #[serializer(borsh)] headers: Vec<(Header, Option<AuxData>)>,
+        #[serializer(borsh)] headers: Vec<BlockHeader>,
     ) -> PromiseOrValue<()> {
         let amount = env::attached_deposit();
         let initial_storage = env::storage_usage();
         let num_of_headers = headers.len().try_into().unwrap();
 
         for header in headers {
-            self.submit_block_header(header.0, header.1, self.skip_pow_verification);
+            self.submit_block_header(header, self.skip_pow_verification);
         }
 
         self.run_mainchain_gc(num_of_headers);
@@ -429,17 +419,38 @@ impl BtcLightClient {
         self.mainchain_tip_blockhash = current_block_hash;
 
         for block_header in submit_blocks {
-            self.submit_block_header(block_header, None, true);
+            #[cfg(feature = "dogecoin")]
+            self.submit_block_header((block_header, None), true);
+            #[cfg(not(feature = "dogecoin"))]
+            self.submit_block_header(block_header, true);
         }
     }
 
-    #[allow(clippy::needless_pass_by_value)]
+    #[cfg(not(feature = "dogecoin"))]
     fn submit_block_header(
         &mut self,
-        block_header: Header,
-        aux_data: Option<AuxData>,
+        header: Header,
         skip_pow_verification: bool,
     ) {
+        let prev_block_header = self.get_prev_block_header(&header.prev_block_hash);
+        let current_block_hash = header.block_hash();
+
+        let (current_block_computed_chain_work, overflow) = prev_block_header
+            .chain_work
+            .overflowing_add(work_from_bits(header.bits));
+        require!(!overflow, "Addition of U256 values overflowed");
+
+        let current_header = ExtendedHeader {
+            block_header: header.clone().into_light(),
+            block_hash: current_block_hash,
+            chain_work: current_block_computed_chain_work,
+            block_height: 1 + prev_block_header.block_height,
+        };
+
+        self.submit_block_header_inner(header, current_header, prev_block_header, skip_pow_verification);
+    }
+
+    fn get_prev_block_header(&self, prev_block_hash: &H256) -> ExtendedHeader {
         // We do not have a previous block in the headers_pool, there is a high probability
         // it means we are starting to receive a new fork,
         // so what we do now is we are returning the error code
@@ -450,46 +461,28 @@ impl BtcLightClient {
         // And do it until we can accept the block.
         // It means we found an initial fork position.
         // We are starting to gather new fork from this initial position.
-        let prev_block_header = self
+        self
             .headers_pool
-            .get(&block_header.prev_block_hash)
-            .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"));
+            .get(prev_block_hash)
+            .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"))
+    }
 
-        let current_block_hash = block_header.block_hash();
-
-        match aux_data {
-            None => {
-                let pow_hash = block_header.block_hash_pow();
-                if !skip_pow_verification {
-                    self.check_target(&block_header, &prev_block_header);
-                    // Check if the block hash is less than or equal to the target
-                    require!(
+    fn submit_block_header_inner(
+        &mut self,
+        block_header: Header,
+        current_header: ExtendedHeader,
+        prev_block_header: ExtendedHeader,
+        skip_pow_verification: bool,
+    ) {
+        let pow_hash = block_header.block_hash_pow();
+        if !skip_pow_verification {
+            self.check_target(&block_header, &prev_block_header);
+            // Check if the block hash is less than or equal to the target
+            require!(
                         U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
                         format!("block should have correct pow")
                     );
-                }
-            }
-            Some(ref _aux_data) => {
-                #[cfg(feature = "dogecoin")]
-                self.check_aux(&block_header, _aux_data);
-                #[cfg(not(feature = "dogecoin"))]
-                env::panic_str("AuxData can be provided only for DogeCoin");
-            }
         }
-
-        let (current_block_computed_chain_work, overflow) = prev_block_header
-            .chain_work
-            .overflowing_add(work_from_bits(block_header.bits));
-        require!(!overflow, "Addition of U256 values overflowed");
-
-        let current_header = ExtendedHeader {
-            block_header: block_header.into_light(),
-            block_hash: current_block_hash,
-            chain_work: current_block_computed_chain_work,
-            block_height: 1 + prev_block_header.block_height,
-            #[cfg(feature = "dogecoin")]
-            aux_parent_block: aux_data.map(|data| data.parent_block.block_hash()),
-        };
 
         // Main chain submission
         if prev_block_header.block_hash == self.mainchain_tip_blockhash {
@@ -518,7 +511,7 @@ impl BtcLightClient {
             self.store_fork_header(&current_header);
 
             // Current chainwork is higher than on a current mainchain, let's promote the fork
-            if current_block_computed_chain_work > total_main_chain_chainwork {
+            if current_header.chain_work > total_main_chain_chainwork {
                 log!("Chain reorg");
                 self.reorg_chain(current_header, last_main_chain_block_height);
             }

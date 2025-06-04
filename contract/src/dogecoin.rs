@@ -1,6 +1,8 @@
-use crate::{AuxData, BtcLightClient, BtcLightClientExt, Header, H256, U256};
+use crate::{BtcLightClient, BtcLightClientExt, Header, H256, U256};
 use bitcoin::hashes::Hash;
-use btc_types::utils::target_from_bits;
+use btc_types::aux::AuxData;
+use btc_types::header::ExtendedHeader;
+use btc_types::utils::{target_from_bits, work_from_bits};
 use near_sdk::{near, require};
 
 #[near]
@@ -65,5 +67,36 @@ impl BtcLightClient {
                 || U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
             format!("block should have correct pow")
         );
+    }
+
+    pub(crate) fn submit_block_header(
+        &mut self,
+        header: (Header, Option<AuxData>),
+        skip_pow_verification: bool,
+    ) {
+        let (block_header, aux_data) = header;
+        let mut skip_pow_verification = skip_pow_verification;
+        if let Some(ref aux_data) = aux_data {
+            self.check_aux(&block_header, aux_data);
+            skip_pow_verification = true;
+        }
+
+        let prev_block_header = self.get_prev_block_header(&block_header.prev_block_hash);
+        let current_block_hash = block_header.block_hash();
+
+        let (current_block_computed_chain_work, overflow) = prev_block_header
+            .chain_work
+            .overflowing_add(work_from_bits(block_header.bits));
+        require!(!overflow, "Addition of U256 values overflowed");
+
+        let current_header = ExtendedHeader {
+            block_header: block_header.clone().into_light(),
+            block_hash: current_block_hash,
+            chain_work: current_block_computed_chain_work,
+            block_height: 1 + prev_block_header.block_height,
+            aux_parent_block: aux_data.map(|data| data.parent_block.block_hash()),
+        };
+
+        self.submit_block_header_inner(block_header, current_header, prev_block_header, skip_pow_verification);
     }
 }

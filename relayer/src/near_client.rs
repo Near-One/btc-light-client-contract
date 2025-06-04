@@ -1,21 +1,22 @@
+#[cfg(feature = "dogecoin")]
+use bitcoin::consensus::serialize;
+#[cfg(feature = "dogecoin")]
+use bitcoincore_rpc::bitcoin::hashes::Hash;
+use borsh::to_vec;
 use btc_types::contract_args::InitArgs;
 use btc_types::header::ExtendedHeader;
+use log::info;
 use merkle_tools::H256;
+use near_crypto::InMemorySigner;
+use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncResponse;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_jsonrpc_client::{methods, JsonRpcClient, MethodCallResult};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, TransactionInfo};
+use near_primitives::borsh;
 use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
-
-use bitcoin::consensus::serialize;
-use bitcoincore_rpc::bitcoin::hashes::Hash;
-use borsh::to_vec;
-use log::info;
-use near_crypto::InMemorySigner;
-use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncResponse;
-use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
 
@@ -24,7 +25,7 @@ use tokio::time;
 
 use crate::config::NearConfig;
 
-const SUBMIT_BLOCKS: &str = "submit_blocks_aux";
+const SUBMIT_BLOCKS: &str = "submit_blocks";
 const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 #[allow(dead_code)]
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
@@ -47,6 +48,7 @@ pub struct NearClient {
     transaction_timeout_sec: u64,
 }
 
+#[cfg(feature = "dogecoin")]
 fn get_aux_data(aux_data: Option<AuxData>) -> Option<btc_types::aux::AuxData> {
     match aux_data {
         None => None,
@@ -166,10 +168,14 @@ impl NearClient {
             println!("Submit block {}", header.0.block_hash());
         }
 
+        #[cfg(feature = "dogecoin")]
         let args: Vec<_> = headers
             .iter()
             .map(|header| (header.0.clone(), get_aux_data(header.1.clone())))
             .collect();
+
+        #[cfg(not(feature = "dogecoin"))]
+        let args: Vec<_> = headers.iter().map(|header| header.0.clone()).collect();
 
         let sent_at = time::Instant::now();
 
