@@ -94,7 +94,7 @@ impl NearClient {
         }
     }
 
-    pub async fn get_nonce(&self) -> u64 {
+    pub fn get_nonce(&self) -> u64 {
         self.nonce
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     }
@@ -372,7 +372,7 @@ impl NearClient {
         let transaction = Transaction {
             signer_id: self.signer.account_id.clone(),
             public_key: self.signer.public_key.clone(),
-            nonce: self.get_nonce().await,
+            nonce: self.get_nonce(),
             receiver_id: self.btc_light_client_account_id.clone(),
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
