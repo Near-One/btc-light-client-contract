@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use bitcoin::hashes::Hash;
@@ -63,21 +64,24 @@ impl Synchronizer {
         }
     }
 
-    async fn sync(&mut self) {
-        let mut first_block_height_to_submit =
-            self.get_last_correct_block_height().await.unwrap() + 1;
+    async fn sync(self: Arc<Self>) {
+        let first_block_height_to_submit = Arc::new(AtomicU64::new(
+            self.get_last_correct_block_height().await.unwrap() + 1,
+        ));
         let sleep_time_on_fail_sec = self.config.sleep_time_on_fail_sec;
 
         'main_loop: loop {
             // Get the latest block height from the Bitcoin client
             let latest_height = continue_on_fail!(self.bitcoin_client.get_block_count(), "Bitcoin Client: Error on get_block_count", sleep_time_on_fail_sec, 'main_loop);
 
-            let mut handlers = Vec::new();
-            for current_height in first_block_height_to_submit
-                ..=latest_height
-                    .min(first_block_height_to_submit.saturating_add(self.config.fetch_batch_size))
-            {
-                handlers.push(tokio::spawn({
+            let start_height =
+                first_block_height_to_submit.load(std::sync::atomic::Ordering::Relaxed);
+            let end_height =
+                latest_height.min(start_height.saturating_add(self.config.fetch_batch_size));
+
+            let mut handles = Vec::new();
+            for current_height in start_height..=end_height {
+                handles.push(tokio::spawn({
                     let bitcoin_client = self.bitcoin_client.clone();
                     async move { get_block_header(&bitcoin_client, current_height) }
                 }));
@@ -85,7 +89,7 @@ impl Synchronizer {
 
             let mut blocks_to_submit = Vec::new();
             let mut min_failed_height = None;
-            for handler in handlers {
+            for handler in handles {
                 match handler.await {
                     Ok(Ok((height, block_header))) => {
                         blocks_to_submit.push((height, block_header));
@@ -127,44 +131,40 @@ impl Synchronizer {
 
             let block_already_submitted = continue_on_fail!(self.near_client.is_block_hash_exists(last_block_hash.to_string()).await, "NEAR Client: Error on checking if block already submitted", sleep_time_on_fail_sec, 'main_loop);
             if block_already_submitted {
-                info!(target: "relay", "Skip block submission: blocks [{} - {}] already on chain", first_block_height_to_submit, first_block_height_to_submit + number_of_blocks_to_submit - 1);
-                first_block_height_to_submit += number_of_blocks_to_submit;
+                info!(target: "relay", "Skip block submission: blocks [{} - {}] already on chain", start_height, start_height + number_of_blocks_to_submit - 1);
+                first_block_height_to_submit.fetch_add(
+                    number_of_blocks_to_submit,
+                    std::sync::atomic::Ordering::SeqCst,
+                );
                 continue 'main_loop;
             }
 
+            continue_on_fail!(
+                self.near_client.reset_nonce().await,
+                "NEAR Client: Error on reset nonce",
+                sleep_time_on_fail_sec,
+                'main_loop
+            );
+
+            let mut handles = Vec::new();
             for blocks in blocks_to_submit.chunks(self.config.submit_batch_size) {
-                let Some(first_block_height) = blocks.first().map(|(height, _)| *height) else {
-                    warn!("No blocks to submit in the current chunk");
-                    continue 'main_loop;
-                };
+                handles.push(tokio::spawn({
+                    let cloned_self = self.clone();
+                    let blocks = blocks.to_vec();
+                    let first_block_height_to_submit = first_block_height_to_submit.clone();
 
-                let Some(last_block_height) = blocks.last().map(|(height, _)| *height) else {
-                    warn!("No last block height in the current chunk");
-                    continue 'main_loop;
-                };
-
-                info!("Submit blocks with height: [{first_block_height} - {last_block_height}]");
-
-                match self
-                    .near_client
-                    .submit_blocks(blocks.iter().map(|(_, header)| header.clone()).collect())
-                    .await
-                {
-                    Ok(Err(CustomError::PrevBlockNotFound)) => {
-                        // Contract cannot save block, because no previous block found, we are in fork
-                        first_block_height_to_submit = continue_on_fail!(self.get_last_correct_block_height().await, "Error on get_last_correct_block_height", sleep_time_on_fail_sec,  'main_loop)
-                            + 1;
+                    async move {
+                        if let Err(err) = cloned_self
+                            .submit_blocks(first_block_height_to_submit, blocks)
+                            .await
+                        {
+                            warn!(target: "relay", "Error on block submission: {:?}", err);
+                        }
                     }
-                    Ok(val) => {
-                        let _ = continue_on_fail!(val, "Error on block submission.", sleep_time_on_fail_sec,  'main_loop);
-                        first_block_height_to_submit = last_block_height + 1;
-                    }
-                    err => {
-                        // network error after retries
-                        let _ = continue_on_fail!(err, "Off-chain relay panics after multiple attempts to submit blocks", sleep_time_on_fail_sec,  'main_loop);
-                    }
-                }
+                }));
             }
+
+            futures::future::join_all(handles).await;
 
             tokio::time::sleep(std::time::Duration::from_secs(
                 self.config.sleep_time_after_sync_iteration_sec,
@@ -173,7 +173,52 @@ impl Synchronizer {
         }
     }
 
-    async fn get_last_correct_block_height(&self) -> Result<u64, Box<dyn std::error::Error>> {
+    async fn submit_blocks(
+        &self,
+        first_block_height_to_submit: Arc<AtomicU64>,
+        blocks: Vec<(u64, btc_types::header::Header)>,
+    ) -> Result<(), String> {
+        let Some(first_block_height) = blocks.first().map(|(height, _)| *height) else {
+            return Err("No blocks to submit in the current chunk".to_string());
+        };
+
+        let Some(last_block_height) = blocks.last().map(|(height, _)| *height) else {
+            return Err("No last block height in the current chunk".to_string());
+        };
+
+        info!("Submit blocks with height: [{first_block_height} - {last_block_height}]");
+
+        match self
+            .near_client
+            .submit_blocks(blocks.iter().map(|(_, header)| header.clone()).collect())
+            .await
+        {
+            Ok(Err(CustomError::PrevBlockNotFound)) => {
+                // Contract cannot save block, because no previous block found, we are in fork
+                let Ok(last_block_height) = self.get_last_correct_block_height().await else {
+                    return Err("Error on get_last_block_height".to_string());
+                };
+                first_block_height_to_submit
+                    .store(last_block_height + 1, std::sync::atomic::Ordering::SeqCst);
+            }
+            Ok(val) => {
+                if let Err(err) = val {
+                    return Err(format!("Error on block submission, but not panic: {err:?}"));
+                };
+                first_block_height_to_submit
+                    .store(last_block_height + 1, std::sync::atomic::Ordering::SeqCst);
+            }
+            err => {
+                return Err(format!("Error on block submission: {err:?}"));
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn get_last_correct_block_height(
+        &self,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         let last_block_header = self.near_client.get_last_block_header().await?;
         let last_block_height = last_block_header.block_height;
         if self.get_bitcoin_block_hash_by_height(last_block_height)?
@@ -206,7 +251,7 @@ impl Synchronizer {
     fn get_bitcoin_block_hash_by_height(
         &self,
         height: u64,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let block_from_bitcoin_node = self.bitcoin_client.get_block_header_by_height(height)?;
 
         Ok(block_from_bitcoin_node.block_hash().to_string())
@@ -296,7 +341,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // RUNNING IN BLOCK RELAY MODE
     info!("run block header sync");
-    let mut synchronizer = Synchronizer::new(bitcoin_client, near_client.clone(), config);
+    let synchronizer = Arc::new(Synchronizer::new(
+        bitcoin_client,
+        near_client.clone(),
+        config,
+    ));
     synchronizer.sync().await;
     info!("end block header sync");
 

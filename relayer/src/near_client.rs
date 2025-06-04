@@ -16,6 +16,8 @@ use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncRespons
 use near_primitives::borsh;
 use serde_json::{from_slice, json};
 use std::str::FromStr;
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 
 use tokio::time;
 
@@ -41,6 +43,7 @@ pub struct NearClient {
     client: JsonRpcClient,
     signer: InMemorySigner,
     btc_light_client_account_id: AccountId,
+    nonce: Arc<AtomicU64>,
     transaction_timeout_sec: u64,
 }
 
@@ -86,8 +89,37 @@ impl NearClient {
                 .clone()
                 .parse()
                 .unwrap(),
+            nonce: Arc::new(AtomicU64::new(0)),
             transaction_timeout_sec: config.transaction_timeout_sec,
         }
+    }
+
+    pub async fn get_nonce(&self) -> u64 {
+        self.nonce
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    }
+
+    pub async fn reset_nonce(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let access_key_query_response = self
+            .client
+            .call(methods::query::RpcQueryRequest {
+                block_reference: BlockReference::latest(),
+                request: near_primitives::views::QueryRequest::ViewAccessKey {
+                    account_id: self.signer.account_id.clone(),
+                    public_key: self.signer.public_key.clone(),
+                },
+            })
+            .await?;
+
+        let current_nonce = match access_key_query_response.kind {
+            QueryResponseKind::AccessKey(access_key) => access_key.nonce,
+            _ => Err("failed to extract current nonce")?,
+        };
+
+        self.nonce
+            .store(current_nonce + 1, std::sync::atomic::Ordering::Relaxed);
+
+        Ok(())
     }
 
     /// Initializes the BTC Light Client
@@ -107,7 +139,7 @@ impl NearClient {
     pub async fn init_contract(
         &self,
         args: &InitArgs,
-    ) -> Result<RpcTransactionResponse, Box<dyn std::error::Error>> {
+    ) -> Result<RpcTransactionResponse, Box<dyn std::error::Error + Send + Sync>> {
         let tx_hash = self
             .submit_tx("init", json!({"args": args}).to_string().into_bytes(), 0)
             .await?;
@@ -137,7 +169,8 @@ impl NearClient {
     pub async fn submit_blocks(
         &self,
         headers: Vec<btc_types::header::Header>,
-    ) -> Result<Result<RpcTransactionResponse, CustomError>, Box<dyn std::error::Error>> {
+    ) -> Result<Result<RpcTransactionResponse, CustomError>, Box<dyn std::error::Error + Send + Sync>>
+    {
         for header in &headers {
             println!("Submit block {}", header.block_hash());
         }
@@ -200,7 +233,7 @@ impl NearClient {
     /// * Connection issue
     pub async fn get_last_block_header(
         &self,
-    ) -> Result<ExtendedHeader, Box<dyn std::error::Error>> {
+    ) -> Result<ExtendedHeader, Box<dyn std::error::Error + Send + Sync>> {
         let args = json!({});
         let result = self
             .submit_view_tx(GET_LAST_BLOCK_HEADER, args.to_string().into_bytes())
@@ -222,7 +255,7 @@ impl NearClient {
     pub async fn is_block_hash_exists(
         &self,
         block_hash: String,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         let args = json!({
             "blockhash": block_hash,
         });
@@ -243,7 +276,7 @@ impl NearClient {
         &self,
         n: u64,
         shift_from_the_end: u64,
-    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
         let args = json!({
             "skip": shift_from_the_end,
             "limit": n,
@@ -271,7 +304,7 @@ impl NearClient {
         transaction_block_blockhash: H256,
         merkle_proof: Vec<H256>,
         confirmations: u64,
-    ) -> Result<bool, Box<dyn std::error::Error>> {
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         let args = btc_types::contract_args::ProofArgs {
             tx_id: transaction_hash,
             tx_block_blockhash: transaction_block_blockhash,
@@ -324,7 +357,7 @@ impl NearClient {
         method_name: &str,
         args: Vec<u8>,
         deposit: u128,
-    ) -> Result<RpcBroadcastTxAsyncResponse, Box<dyn std::error::Error>> {
+    ) -> Result<RpcBroadcastTxAsyncResponse, Box<dyn std::error::Error + Send + Sync>> {
         let access_key_query_response = self
             .client
             .call(methods::query::RpcQueryRequest {
@@ -336,15 +369,10 @@ impl NearClient {
             })
             .await?;
 
-        let current_nonce = match access_key_query_response.kind {
-            QueryResponseKind::AccessKey(access_key) => access_key.nonce,
-            _ => Err("failed to extract current nonce")?,
-        };
-
         let transaction = Transaction {
             signer_id: self.signer.account_id.clone(),
             public_key: self.signer.public_key.clone(),
-            nonce: current_nonce + 1,
+            nonce: self.get_nonce().await,
             receiver_id: self.btc_light_client_account_id.clone(),
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
@@ -381,7 +409,7 @@ impl NearClient {
         &self,
         method_name: &str,
         args: Vec<u8>,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         let read_request = near_jsonrpc_client::methods::query::RpcQueryRequest {
             block_reference: near_primitives::types::BlockReference::Finality(
                 near_primitives::types::Finality::Final,

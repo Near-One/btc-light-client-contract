@@ -124,7 +124,7 @@ impl Client {
     pub fn get_block_header(
         &self,
         block_hash: &BlockHash,
-    ) -> Result<Header, Box<dyn std::error::Error>> {
+    ) -> Result<Header, Box<dyn std::error::Error + Send + Sync>> {
         let hex: String = self.inner.call(
             "getblockheader",
             &[serde_json::to_value(block_hash)?, false.into()],
@@ -140,7 +140,7 @@ impl Client {
     pub fn get_block_header_by_height(
         &self,
         height: u64,
-    ) -> Result<Header, Box<dyn std::error::Error>> {
+    ) -> Result<Header, Box<dyn std::error::Error + Send + Sync>> {
         let block_hash = self.get_block_hash(height)?;
         self.get_block_header(&block_hash)
     }
