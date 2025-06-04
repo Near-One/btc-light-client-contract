@@ -427,6 +427,7 @@ impl BtcLightClient {
     }
 
     #[cfg(not(feature = "dogecoin"))]
+    #[allow(clippy::needless_pass_by_value)]
     fn submit_block_header(&mut self, header: Header, skip_pow_verification: bool) {
         let prev_block_header = self.get_prev_block_header(&header.prev_block_hash);
         let current_block_hash = header.block_hash();
