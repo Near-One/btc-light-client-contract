@@ -184,16 +184,13 @@ async fn init_contract(
 
     let genesis_block_height = init_config.init_height - init_config.num_of_blcoks_to_submit;
 
-    let submit_blocks = (headers.len() > 1).then(|| headers[1..].to_vec());
-
     let args = InitArgs {
-        genesis_block: headers[0].clone(),
         genesis_block_hash: headers[0].block_hash(),
         genesis_block_height,
         skip_pow_verification: init_config.skip_pow_verification,
         gc_threshold: init_config.gc_threshold,
         network: init_config.network,
-        submit_blocks,
+        submit_blocks: headers,
     };
 
     info!(

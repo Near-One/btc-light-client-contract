@@ -19,13 +19,12 @@ mod test_basics {
 
         let block_header = genesis_block_header();
         let args = InitArgs {
-            genesis_block: block_header.clone(),
             genesis_block_hash: block_header.block_hash(),
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 5,
             network: btc_types::network::Network::Mainnet,
-            submit_blocks: None,
+            submit_blocks: [block_header.clone()].to_vec(),
         };
         // Call the init method on the contract
         let outcome = contract
@@ -53,13 +52,12 @@ mod test_basics {
         let block_headers =
             read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
         let args = InitArgs {
-            genesis_block: block_headers[0][0].clone(),
             genesis_block_hash: block_headers[0][0].block_hash(),
             genesis_block_height: 685_440,
             skip_pow_verification: false,
             gc_threshold,
             network: btc_types::network::Network::Mainnet,
-            submit_blocks: None,
+            submit_blocks: [block_headers[0][0].clone()].to_vec(),
         };
         // Call the init method on the contract
         let outcome = contract

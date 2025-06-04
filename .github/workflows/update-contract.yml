@@ -25,9 +25,12 @@ jobs:
           cargo near build reproducible-wasm
           mv ./target/near/btc_light_client_contract.wasm ./target/near/btc_light_client_contract_bitcoin.wasm
           
+<<<<<<< HEAD
           cargo near build reproducible-wasm --variant dogecoin
           mv ./target/near/btc_light_client_contract.wasm ./target/near/btc_light_client_contract_dogecoin.wasm
 
+=======
+>>>>>>> main
           cargo near build reproducible-wasm --variant litecoin
           mv ./target/near/btc_light_client_contract.wasm ./target/near/btc_light_client_contract_litecoin.wasm
           

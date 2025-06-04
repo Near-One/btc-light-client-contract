@@ -9,8 +9,11 @@ use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
 
+<<<<<<< HEAD
 use bitcoin::consensus::serialize;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
+=======
+>>>>>>> main
 use borsh::to_vec;
 use log::info;
 use near_crypto::InMemorySigner;
@@ -47,6 +50,7 @@ pub struct NearClient {
     transaction_timeout_sec: u64,
 }
 
+<<<<<<< HEAD
 fn get_aux_data(aux_data: Option<AuxData>) -> Option<btc_types::aux::AuxData> {
     match aux_data {
         None => None,
@@ -68,6 +72,8 @@ fn get_aux_data(aux_data: Option<AuxData>) -> Option<btc_types::aux::AuxData> {
     }
 }
 
+=======
+>>>>>>> main
 impl NearClient {
     /// Create new Near client
     ///

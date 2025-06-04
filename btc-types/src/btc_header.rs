@@ -6,6 +6,7 @@ pub type Error = crate::utils::DecodeHeaderError;
 
 pub const MAX_ADJUSTMENT_FACTOR: u64 = 4;
 
+// Represents a Bitcoin/Litecoin/Dogecoin block header, which contains metadata about the block
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Header {
@@ -103,6 +104,11 @@ impl Header {
             bits,
             nonce,
         })
+    }
+
+    #[must_use]
+    pub fn into_light(self) -> LightHeader {
+        self
     }
 }
 
