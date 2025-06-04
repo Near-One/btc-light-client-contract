@@ -1,6 +1,6 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{ExtendedHeader, Header, BlockHeader};
+use btc_types::header::{BlockHeader, ExtendedHeader, Header};
 use btc_types::network::Network;
 use btc_types::u256::U256;
 use btc_types::utils::{target_from_bits, work_from_bits};
@@ -427,11 +427,7 @@ impl BtcLightClient {
     }
 
     #[cfg(not(feature = "dogecoin"))]
-    fn submit_block_header(
-        &mut self,
-        header: Header,
-        skip_pow_verification: bool,
-    ) {
+    fn submit_block_header(&mut self, header: Header, skip_pow_verification: bool) {
         let prev_block_header = self.get_prev_block_header(&header.prev_block_hash);
         let current_block_hash = header.block_hash();
 
@@ -447,7 +443,12 @@ impl BtcLightClient {
             block_height: 1 + prev_block_header.block_height,
         };
 
-        self.submit_block_header_inner(header, current_header, prev_block_header, skip_pow_verification);
+        self.submit_block_header_inner(
+            header,
+            current_header,
+            prev_block_header,
+            skip_pow_verification,
+        );
     }
 
     fn get_prev_block_header(&self, prev_block_hash: &H256) -> ExtendedHeader {
@@ -461,8 +462,7 @@ impl BtcLightClient {
         // And do it until we can accept the block.
         // It means we found an initial fork position.
         // We are starting to gather new fork from this initial position.
-        self
-            .headers_pool
+        self.headers_pool
             .get(prev_block_hash)
             .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"))
     }
@@ -479,9 +479,9 @@ impl BtcLightClient {
             self.check_target(&block_header, &prev_block_header);
             // Check if the block hash is less than or equal to the target
             require!(
-                        U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
-                        format!("block should have correct pow")
-                    );
+                U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
+                format!("block should have correct pow")
+            );
         }
 
         // Main chain submission
@@ -566,6 +566,12 @@ impl BtcLightClient {
         }
     }
 
+    #[cfg(not(feature = "dogecoin"))]
+    fn get_first_block_height(&self, last_block_height: u64) -> u64 {
+        let config = self.get_config();
+        last_block_height + 1 - config.blocks_per_adjustment
+    }
+
     #[cfg(any(feature = "bitcoin", feature = "litecoin", feature = "dogecoin"))]
     fn btc_check_target(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         let config = self.get_config();
@@ -584,11 +590,7 @@ impl BtcLightClient {
             return;
         }
 
-        #[cfg(not(feature = "dogecoin"))]
-        let first_block_height = prev_block_header.block_height + 1 - config.blocks_per_adjustment;
-
-        #[cfg(feature = "dogecoin")]
-        let first_block_height = prev_block_header.block_height - config.blocks_per_adjustment;
+        let first_block_height = self.get_first_block_height(prev_block_header.block_height);
 
         let interval_tail_header_hash =
             match self.mainchain_height_to_header.get(&first_block_height) {
@@ -612,16 +614,11 @@ impl BtcLightClient {
         require!(!new_target_overflow, "new target overflow");
         new_target = new_target / U256::from(config.expected_time_secs);
 
-        if new_target > config.pow_limit {
-            new_target = config.pow_limit;
-        }
-
-        #[cfg(feature = "dogecoin")]
-        if config.pow_allow_min_difficulty_blocks
-            && (block_header.time as u64) > (prev_block_time as u64) + config.expected_time_secs * 2
-        {
-            new_target = config.pow_limit;
-        }
+        new_target = self.adjust_target_for_pow_rules(
+            new_target,
+            block_header.time as u64,
+            prev_block_time as u64,
+        );
 
         let expected_bits = new_target.target_to_bits();
 
@@ -632,6 +629,21 @@ impl BtcLightClient {
                 expected_bits, block_header.bits
             )
         );
+    }
+
+    #[cfg(not(feature = "dogecoin"))]
+    fn adjust_target_for_pow_rules(
+        &self,
+        new_target: U256,
+        _prev_block_time: u64,
+        _block_time: u64,
+    ) -> U256 {
+        let config = self.get_config();
+        if new_target > config.pow_limit {
+            return config.pow_limit;
+        }
+
+        new_target
     }
 
     #[cfg(not(any(feature = "dogecoin", feature = "zcash")))]

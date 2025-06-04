@@ -14,7 +14,7 @@ impl BtcLightClient {
             config.expected_time_secs as i64
                 + (actual_time_taken - config.expected_time_secs as i64) / 8,
         )
-            .unwrap_or(0);
+        .unwrap_or(0);
 
         if modulated_time < (config.expected_time_secs - (config.expected_time_secs / 4)) {
             modulated_time = config.expected_time_secs - (config.expected_time_secs / 4);
@@ -97,6 +97,36 @@ impl BtcLightClient {
             aux_parent_block: aux_data.map(|data| data.parent_block.block_hash()),
         };
 
-        self.submit_block_header_inner(block_header, current_header, prev_block_header, skip_pow_verification);
+        self.submit_block_header_inner(
+            block_header,
+            current_header,
+            prev_block_header,
+            skip_pow_verification,
+        );
+    }
+
+    pub(crate) fn get_first_block_height(&self, last_block_height: u64) -> u64 {
+        let config = self.get_config();
+        last_block_height + 1 - config.blocks_per_adjustment
+    }
+
+    pub(crate) fn adjust_target_for_pow_rules(
+        &self,
+        new_target: U256,
+        prev_block_time: u64,
+        block_time: u64,
+    ) -> U256 {
+        let config = self.get_config();
+        if new_target > config.pow_limit {
+            return config.pow_limit;
+        }
+
+        if config.pow_allow_min_difficulty_blocks
+            && block_time > prev_block_time + config.expected_time_secs * 2
+        {
+            return config.pow_limit;
+        }
+
+        new_target
     }
 }
