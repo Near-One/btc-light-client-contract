@@ -98,9 +98,9 @@ impl BtcLightClient {
         };
 
         self.submit_block_header_inner(
-            block_header,
+            &block_header,
             current_header,
-            prev_block_header,
+            &prev_block_header,
             skip_pow_verification,
         );
     }

@@ -444,9 +444,9 @@ impl BtcLightClient {
         };
 
         self.submit_block_header_inner(
-            header,
+            &header,
             current_header,
-            prev_block_header,
+            &prev_block_header,
             skip_pow_verification,
         );
     }
@@ -469,14 +469,14 @@ impl BtcLightClient {
 
     fn submit_block_header_inner(
         &mut self,
-        block_header: Header,
+        block_header: &Header,
         current_header: ExtendedHeader,
-        prev_block_header: ExtendedHeader,
+        prev_block_header: &ExtendedHeader,
         skip_pow_verification: bool,
     ) {
         let pow_hash = block_header.block_hash_pow();
         if !skip_pow_verification {
-            self.check_target(&block_header, &prev_block_header);
+            self.check_target(block_header, prev_block_header);
             // Check if the block hash is less than or equal to the target
             require!(
                 U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
@@ -616,8 +616,8 @@ impl BtcLightClient {
 
         new_target = self.adjust_target_for_pow_rules(
             new_target,
-            block_header.time as u64,
-            prev_block_time as u64,
+            u64::from(block_header.time),
+            u64::from(prev_block_time),
         );
 
         let expected_bits = new_target.target_to_bits();
