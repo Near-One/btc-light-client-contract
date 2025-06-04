@@ -81,8 +81,7 @@ inherits = "release"
 
 [features]
 default = ["bitcoin"]
-scrypt_hash = ["btc-types/scrypt_hash"]
-dogecoin = ["scrypt_hash"]
+dogecoin = ["btc-types/scrypt_hash"]
 bitcoin = []
 litecoin = ["btc-types/scrypt_hash"]
 zcash = ["btc-types/zcash_header", "equihash"]
