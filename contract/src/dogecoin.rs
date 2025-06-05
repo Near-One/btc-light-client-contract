@@ -205,7 +205,7 @@ fn calculate_next_work_required(
 ) -> u32 {
     let mut actual_timespan: i64 = prev_block_header.block_header.time as i64 - first_block_time;
     // TODO: improve the config
-    let pow_target_timespan = config.expected_time_secs as i64;
+    let pow_target_timespan = config.pow_target_timespan as i64;
 
     if actual_timespan < pow_target_timespan / 4 {
         actual_timespan = pow_target_timespan / 4;
@@ -216,7 +216,7 @@ fn calculate_next_work_required(
 
     // Retarget
     let new_target = target_from_bits(prev_block_header.block_header.bits)
-        / U256::from(config.expected_time_secs);
+        / U256::from(<i64 as TryInto<u64>>::try_into(config.pow_target_timespan).unwrap());
 
     let (mut new_target, new_target_overflow) = new_target.overflowing_mul(actual_timespan as u64);
     require!(!new_target_overflow, "new target overflow");

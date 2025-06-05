@@ -15,7 +15,7 @@ pub fn get_bitcoin_config(network: Network) -> NetworkConfig {
     match network {
         Network::Mainnet => NetworkConfig {
             blocks_per_adjustment: 2016,
-            expected_time_secs: 2016 * 600, // blocks_per_adjustment * target_block_time_secs,
+            pow_target_timespan: 2016 * 600, // blocks_per_adjustment * target_block_time_secs,
             proof_of_work_limit_bits: 0x1d00ffff,
             pow_target_time_between_blocks_secs: 600, // 10 minutes
             pow_allow_min_difficulty_blocks: false,
@@ -26,7 +26,7 @@ pub fn get_bitcoin_config(network: Network) -> NetworkConfig {
         },
         Network::Testnet => NetworkConfig {
             blocks_per_adjustment: 2016,
-            expected_time_secs: 2016 * 600, // blocks_per_adjustment * target_block_time_secs,
+            pow_target_timespan: 2016 * 600, // blocks_per_adjustment * target_block_time_secs,
             proof_of_work_limit_bits: 0x1d00ffff,
             pow_target_time_between_blocks_secs: 600, // 10 minutes
             pow_allow_min_difficulty_blocks: true,
@@ -42,7 +42,7 @@ pub fn get_litecoin_config(network: Network) -> NetworkConfig {
     match network {
         Network::Mainnet => NetworkConfig {
             blocks_per_adjustment: 2016,
-            expected_time_secs: 2016 * 150,
+            pow_target_timespan: 2016 * 150,
             proof_of_work_limit_bits: 0x1e0fffff,
             pow_target_time_between_blocks_secs: 150, // 2.5 minutes
             pow_allow_min_difficulty_blocks: false,
@@ -53,7 +53,7 @@ pub fn get_litecoin_config(network: Network) -> NetworkConfig {
         },
         Network::Testnet => NetworkConfig {
             blocks_per_adjustment: 2016,
-            expected_time_secs: 2016 * 150,
+            pow_target_timespan: 2016 * 150,
             proof_of_work_limit_bits: 0x1e0fffff,
             pow_target_time_between_blocks_secs: 150, // 2.5 minutes
             pow_allow_min_difficulty_blocks: true,
@@ -69,7 +69,7 @@ pub fn get_dogecoin_config(network: Network) -> NetworkConfig {
     match network {
         Network::Mainnet => NetworkConfig {
             blocks_per_adjustment: 1,
-            expected_time_secs: 60,
+            pow_target_timespan: 60,
             proof_of_work_limit_bits: 0x1e0fffff,
             pow_target_time_between_blocks_secs: 60, // 1 minute
             pow_allow_min_difficulty_blocks: false,
@@ -80,7 +80,7 @@ pub fn get_dogecoin_config(network: Network) -> NetworkConfig {
         },
         Network::Testnet => NetworkConfig {
             blocks_per_adjustment: 1,
-            expected_time_secs: 60,
+            pow_target_timespan: 60,
             proof_of_work_limit_bits: 0x1e0fffff,
             pow_target_time_between_blocks_secs: 60, // 1 minute
             pow_allow_min_difficulty_blocks: true,
@@ -138,7 +138,7 @@ pub fn get_zcash_config(network: Network) -> ZcashConfig {
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Copy, Debug)]
 pub struct NetworkConfig {
-    pub expected_time_secs: u64,
+    pub pow_target_timespan: i64,
     pub blocks_per_adjustment: u64,
     pub proof_of_work_limit_bits: u32,
     pub pow_target_time_between_blocks_secs: u32,

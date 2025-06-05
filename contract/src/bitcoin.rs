@@ -68,23 +68,22 @@ impl BtcLightClient {
         let config = self.get_config();
         let prev_block_time = prev_block_header.block_header.time;
 
-        let mut actual_time_taken =
-            u64::from(prev_block_time.saturating_sub(first_block_time.try_into().unwrap()));
-
-        let max_adjustment_factor: u64 = 4;
-
-        if actual_time_taken < config.expected_time_secs / max_adjustment_factor {
-            actual_time_taken = config.expected_time_secs / max_adjustment_factor;
+        let mut actual_time_taken: i64 =
+            <u32 as Into<i64>>::into(prev_block_time) - first_block_time;
+        if actual_time_taken < config.pow_target_timespan / 4 {
+            actual_time_taken = config.pow_target_timespan / 4;
         }
-        if actual_time_taken > config.expected_time_secs * max_adjustment_factor {
-            actual_time_taken = config.expected_time_secs * max_adjustment_factor;
+        if actual_time_taken > config.pow_target_timespan * 4 {
+            actual_time_taken = config.pow_target_timespan * 4;
         }
 
-        let last_target = target_from_bits(prev_block_header.block_header.bits);
+        let bn_new = target_from_bits(prev_block_header.block_header.bits);
 
-        let (mut new_target, new_target_overflow) = last_target.overflowing_mul(actual_time_taken);
+        let (mut new_target, new_target_overflow) =
+            bn_new.overflowing_mul(<i64 as TryInto<u64>>::try_into(actual_time_taken).unwrap());
         require!(!new_target_overflow, "new target overflow");
-        new_target = new_target / U256::from(config.expected_time_secs);
+        new_target = new_target
+            / U256::from(<i64 as TryInto<u64>>::try_into(config.pow_target_timespan).unwrap());
 
         if new_target > config.pow_limit {
             new_target = config.pow_limit;
