@@ -117,7 +117,7 @@ pub struct BtcLightClient {
 #[near]
 impl BtcLightClient {
     /// Recommended initialization parameters:
-    /// * `genesis_block_height % blocks_per_adjustment == 0`: The genesis block height must be divisible by `blocks_per_adjustment` to align with difficulty adjustment cycles.
+    /// * `genesis_block_height % difficulty_adjustment_interval == 0`: The genesis block height must be divisible by `difficulty_adjustment_interval` to align with difficulty adjustment cycles.
     /// * The `genesis_block` must be at least 144 blocks earlier than the last block. 144 is the approximate number of blocks generated in one day.
     /// * `skip_pow_verification = false`: Should be set to `false` for standard use. Set to `true` only for testing purposes.
     /// * `gc_threshold = 52704`: This is the approximate number of blocks generated in a year.
@@ -395,7 +395,7 @@ impl BtcLightClient {
         let config = self.get_config();
         #[cfg(any(feature = "bitcoin", feature = "litecoin", feature = "dogecoin"))]
         {
-            require!(block_height % config.blocks_per_adjustment == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.blocks_per_adjustment));
+            require!(block_height % config.difficulty_adjustment_interval == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
         }
         #[cfg(feature = "zcash")]
         {

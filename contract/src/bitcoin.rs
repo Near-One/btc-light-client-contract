@@ -26,18 +26,18 @@ impl BtcLightClient {
     ) -> u32 {
         let config = self.get_config();
 
-        if (prev_block_header.block_height + 1) % config.blocks_per_adjustment != 0 {
+        if (prev_block_header.block_height + 1) % config.difficulty_adjustment_interval != 0 {
             if config.pow_allow_min_difficulty_blocks {
                 if block_header.time
                     > prev_block_header.block_header.time
-                        + 2 * config.pow_target_time_between_blocks_secs
+                        + 2 * config.pow_target_spacing
                 {
                     return config.proof_of_work_limit_bits;
                 }
 
                 let mut current_block_header = prev_block_header.clone();
                 while current_block_header.block_header.bits == config.proof_of_work_limit_bits
-                    && current_block_header.block_height % config.blocks_per_adjustment != 0
+                    && current_block_header.block_height % config.difficulty_adjustment_interval != 0
                 {
                     current_block_header = self.get_prev_header(&current_block_header.block_header);
                 }
@@ -49,7 +49,7 @@ impl BtcLightClient {
         }
 
         let first_block_height =
-            prev_block_header.block_height - (config.blocks_per_adjustment - 1);
+            prev_block_header.block_height - (config.difficulty_adjustment_interval - 1);
 
         let interval_tail_extend_header = self.get_header_by_height(first_block_height);
         self.calculate_next_work_required(
@@ -65,10 +65,9 @@ impl BtcLightClient {
         first_block_time: i64,
     ) -> u32 {
         let config = self.get_config();
-        let prev_block_time = prev_block_header.block_header.time;
+        let prev_block_time: i64 = prev_block_header.block_header.time.into();
 
-        let mut actual_time_taken: i64 =
-            <u32 as Into<i64>>::into(prev_block_time) - first_block_time;
+        let mut actual_time_taken: i64 = prev_block_time - first_block_time;
         if actual_time_taken < config.pow_target_timespan / 4 {
             actual_time_taken = config.pow_target_timespan / 4;
         }
