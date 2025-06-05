@@ -1,6 +1,6 @@
 services:
   bitcoind:
-    image: ruimarinho/bitcoin-core:24.0.1
+    image: lncm/bitcoind:v28.0
     command:
       -prune=550
       -rpcuser=bitcoin
