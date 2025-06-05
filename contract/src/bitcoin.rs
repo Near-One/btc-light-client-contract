@@ -88,7 +88,6 @@ impl BtcLightClient {
             bn_new = config.pow_limit;
         }
 
-        let expected_bits = bn_new.target_to_bits();
-        expected_bits
+        bn_new.target_to_bits()
     }
 }
