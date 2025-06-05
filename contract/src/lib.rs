@@ -25,8 +25,11 @@ mod zcash;
 #[cfg(feature = "dogecoin")]
 mod dogecoin;
 
-#[cfg(any(feature = "bitcoin", feature = "litecoin"))]
+#[cfg(feature = "bitcoin")]
 mod bitcoin;
+
+#[cfg(feature = "litecoin")]
+mod litecoin;
 
 /// Define roles for access control of `Pausable` features. Accounts which are
 /// granted a role are authorized to execute the corresponding action.

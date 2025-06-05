@@ -21,7 +21,7 @@ impl BtcLightClient {
     }
 }
 
-//https://github.com/bitcoin/bitcoin/blob/ae024137bda9fe189f4e7ccf26dbaffd44cbbeb6/src/pow.cpp#L14
+//https://github.com/litecoin-project/litecoin/blob/09a67c25495e2398437d6a388ee96fb6a266460e/src/pow.cpp#L13
 fn get_next_work_required(
     config: &NetworkConfig,
     block_header: &Header,
@@ -50,8 +50,14 @@ fn get_next_work_required(
         return prev_block_header.block_header.bits;
     }
 
-    let first_block_height =
-        prev_block_header.block_height - (config.difficulty_adjustment_interval - 1);
+    // Litecoin: This fixes an issue where a 51% attack can change difficulty at will.
+    // Go back the full period unless it's the first retarget after genesis. Code courtesy of Art Forz
+    let mut blocks_to_go_back = config.difficulty_adjustment_interval - 1;
+    if prev_block_header.block_height + 1 != config.difficulty_adjustment_interval {
+        blocks_to_go_back = config.difficulty_adjustment_interval;
+    }
+
+    let first_block_height = prev_block_header.block_height - blocks_to_go_back;
 
     let interval_tail_extend_header = blocks_getter.get_header_by_height(first_block_height);
     calculate_next_work_required(
@@ -61,7 +67,7 @@ fn get_next_work_required(
     )
 }
 
-//https://github.com/bitcoin/bitcoin/blob/ae024137bda9fe189f4e7ccf26dbaffd44cbbeb6/src/pow.cpp#L50
+//https://github.com/litecoin-project/litecoin/blob/09a67c25495e2398437d6a388ee96fb6a266460e/src/pow.cpp#L57
 fn calculate_next_work_required(
     config: &NetworkConfig,
     prev_block_header: &ExtendedHeader,
@@ -77,13 +83,22 @@ fn calculate_next_work_required(
         actual_time_taken = config.pow_target_timespan * 4;
     }
 
-    let new_target = target_from_bits(prev_block_header.block_header.bits);
+    let mut new_target = target_from_bits(prev_block_header.block_header.bits);
+
+    let shift: bool = new_target > config.pow_limit;
+    if shift {
+        new_target = new_target >> 1;
+    }
 
     let (mut new_target, new_target_overflow) =
         new_target.overflowing_mul(<i64 as TryInto<u64>>::try_into(actual_time_taken).unwrap());
     require!(!new_target_overflow, "new target overflow");
     new_target = new_target
         / U256::from(<i64 as TryInto<u64>>::try_into(config.pow_target_timespan).unwrap());
+
+    if shift {
+        new_target = new_target << 1;
+    }
 
     if new_target > config.pow_limit {
         new_target = config.pow_limit;
