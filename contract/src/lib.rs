@@ -433,7 +433,17 @@ impl BtcLightClient {
     #[cfg(not(feature = "dogecoin"))]
     #[allow(clippy::needless_pass_by_value)]
     fn submit_block_header(&mut self, header: Header, skip_pow_verification: bool) {
-        let prev_block_header = self.get_prev_block_header(&header.prev_block_hash);
+        // We do not have a previous block in the headers_pool, there is a high probability
+        // it means we are starting to receive a new fork,
+        // so what we do now is we are returning the error code
+        // to ask the relay to deploy the previous block.
+        //
+        // Offchain relay now, should submit blocks one by one in decreasing height order
+        // 80 -> 79 -> 78 -> ...
+        // And do it until we can accept the block.
+        // It means we found an initial fork position.
+        // We are starting to gather new fork from this initial position.
+        let prev_block_header = self.get_prev_header(&header);
         let current_block_hash = header.block_hash();
 
         let (current_block_computed_chain_work, overflow) = prev_block_header
@@ -454,22 +464,6 @@ impl BtcLightClient {
             &prev_block_header,
             skip_pow_verification,
         );
-    }
-
-    fn get_prev_block_header(&self, prev_block_hash: &H256) -> ExtendedHeader {
-        // We do not have a previous block in the headers_pool, there is a high probability
-        // it means we are starting to receive a new fork,
-        // so what we do now is we are returning the error code
-        // to ask the relay to deploy the previous block.
-        //
-        // Offchain relay now, should submit blocks one by one in decreasing height order
-        // 80 -> 79 -> 78 -> ...
-        // And do it until we can accept the block.
-        // It means we found an initial fork position.
-        // We are starting to gather new fork from this initial position.
-        self.headers_pool
-            .get(prev_block_hash)
-            .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"))
     }
 
     fn submit_block_header_inner(
@@ -558,10 +552,7 @@ impl BtcLightClient {
             while current_block_header.block_header.bits == config.proof_of_work_limit_bits
                 && current_block_header.block_height % config.blocks_per_adjustment != 0
             {
-                current_block_header = self
-                    .headers_pool
-                    .get(&current_block_header.block_header.prev_block_hash)
-                    .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+                current_block_header = self.get_prev_header(&current_block_header.block_header);
             }
 
             let last_bits = current_block_header.block_header.bits;
@@ -595,16 +586,8 @@ impl BtcLightClient {
         }
 
         let first_block_height = prev_block_header.block_height + 1 - config.blocks_per_adjustment;
-        let interval_tail_header_hash =
-            match self.mainchain_height_to_header.get(&first_block_height) {
-                None => return,
-                Some(header_hash) => header_hash,
-            };
 
-        let interval_tail_extend_header = self
-            .headers_pool
-            .get(&interval_tail_header_hash)
-            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        let interval_tail_extend_header = self.get_header_by_height(first_block_height);
         let prev_block_time = prev_block_header.block_header.time;
 
         let mut actual_time_taken = u64::from(
@@ -743,9 +726,9 @@ impl BtcLightClient {
 }
 
 impl BlocksGetter for BtcLightClient {
-    fn get_prev_header(&self, current_header: &ExtendedHeader) -> ExtendedHeader {
+    fn get_prev_header(&self, current_header: &Header) -> ExtendedHeader {
         self.headers_pool
-            .get(&current_header.block_header.prev_block_hash)
+            .get(&current_header.prev_block_hash)
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
     }
 

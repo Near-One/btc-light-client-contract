@@ -81,7 +81,7 @@ impl BtcLightClient {
             skip_pow_verification = true;
         }
 
-        let prev_block_header = self.get_prev_block_header(&block_header.prev_block_hash);
+        let prev_block_header = self.get_prev_header(&block_header);
         let current_block_hash = block_header.block_hash();
 
         let (current_block_computed_chain_work, overflow) = prev_block_header
@@ -168,7 +168,8 @@ fn get_next_work_required(
                 while current_block_header.block_header.bits == config.proof_of_work_limit_bits
                     && current_block_header.block_height % config.blocks_per_adjustment != 0
                 {
-                    current_block_header = blocks_getter.get_prev_header(&current_block_header);
+                    current_block_header =
+                        blocks_getter.get_prev_header(&current_block_header.block_header);
                 }
 
                 return current_block_header.block_header.bits;
