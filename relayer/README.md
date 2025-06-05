@@ -12,6 +12,16 @@ Prerequisites: You should have access to a Bitcoin full node and a Near node. Al
 2. Run the server with `cargo run --release` in release mode. Or you can just run with `cargo run` in debug mode.
 3. For Zcash, you need to pass the feature flag like this: `cargo run --features "zcash"`
 
+### Docker
+
+To run the relayer together with a bitcoin node you can use docker compose.
+
+0. Move config.example.toml to config.toml and fill in the required fields.
+1. Create a NEAR credentials file `relayer-credentials.json` to be used by the relayer.
+2. Run ```docker compose up```.
+
+> Because relayer depends on the bitcoin node being up-to-date, its container will fail with an error first. You'll have to wait for the bitcoin node to sync and then restart the relayer container.
+
 ## How to run tests
 ### Working with Bitcoin Prune Node
 To run the tests, you need to start a Bitcoin Prune Node and download block 277136.
