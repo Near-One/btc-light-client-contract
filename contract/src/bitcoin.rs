@@ -77,13 +77,26 @@ fn calculate_next_work_required(
         actual_time_taken = config.pow_target_timespan * 4;
     }
 
-    let new_target = target_from_bits(prev_block_header.block_header.bits);
+    #[allow(unused_mut)]
+    let mut new_target = target_from_bits(prev_block_header.block_header.bits);
+
+    #[cfg(feature = "litecoin")]
+    let shift: bool = new_target > config.pow_limit;
+    #[cfg(feature = "litecoin")]
+    if shift {
+        new_target = new_target >> 1;
+    }
 
     let (mut new_target, new_target_overflow) =
         new_target.overflowing_mul(<i64 as TryInto<u64>>::try_into(actual_time_taken).unwrap());
     require!(!new_target_overflow, "new target overflow");
     new_target = new_target
         / U256::from(<i64 as TryInto<u64>>::try_into(config.pow_target_timespan).unwrap());
+
+    #[cfg(feature = "litecoin")]
+    if shift {
+        new_target = new_target << 1;
+    }
 
     if new_target > config.pow_limit {
         new_target = config.pow_limit;
