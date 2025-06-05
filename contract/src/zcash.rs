@@ -1,7 +1,7 @@
 use crate::{utils::BlocksGetter, BtcLightClient, BtcLightClientExt};
 use btc_types::{
     header::{ExtendedHeader, Header},
-    network::ZcashConfig,
+    network::{Network, ZcashConfig},
     u256::U256,
     utils::target_from_bits,
 };
@@ -9,6 +9,14 @@ use near_sdk::{env, near, require};
 
 #[near]
 impl BtcLightClient {
+    pub fn get_config(&self) -> btc_types::network::ZcashConfig {
+        btc_types::network::get_zcash_config(self.network)
+    }
+
+    pub fn get_network(&self) -> (String, Network) {
+        ("Zcash".to_owned(), self.network)
+    }
+
     pub fn check_pow(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         let expected_bits =
             zcash_get_next_work_required(&self.get_config(), block_header, prev_block_header, self);

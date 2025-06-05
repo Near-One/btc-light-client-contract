@@ -1,12 +1,20 @@
 use crate::utils::BlocksGetter;
 use crate::{BtcLightClient, BtcLightClientExt, Header, U256};
 use btc_types::header::ExtendedHeader;
-use btc_types::network::NetworkConfig;
+use btc_types::network::{Network, NetworkConfig};
 use btc_types::utils::target_from_bits;
 use near_sdk::{near, require};
 
 #[near]
 impl BtcLightClient {
+    pub fn get_config(&self) -> btc_types::network::NetworkConfig {
+        btc_types::network::get_litecoin_config(self.network)
+    }
+
+    pub fn get_network(&self) -> (String, Network) {
+        ("Litecoin".to_owned(), self.network)
+    }
+
     pub(crate) fn check_pow(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         let config = self.get_config();
         let expected_bits = get_next_work_required(&config, block_header, prev_block_header, self);

@@ -3,12 +3,20 @@ use crate::{BtcLightClient, BtcLightClientExt, Header, H256, U256};
 use bitcoin::hashes::Hash;
 use btc_types::aux::AuxData;
 use btc_types::header::ExtendedHeader;
-use btc_types::network::NetworkConfig;
+use btc_types::network::{Network, NetworkConfig};
 use btc_types::utils::{target_from_bits, work_from_bits};
 use near_sdk::{env, near, require};
 
 #[near]
 impl BtcLightClient {
+    pub fn get_config(&self) -> btc_types::network::NetworkConfig {
+        btc_types::network::get_dogecoin_config(self.network)
+    }
+
+    pub fn get_network(&self) -> (String, Network) {
+        ("Dogecoin".to_owned(), self.network)
+    }
+
     pub(crate) fn check_pow(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         let expected_bits =
             get_next_work_required(&self.get_config(), block_header, prev_block_header, self);
