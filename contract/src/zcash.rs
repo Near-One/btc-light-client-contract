@@ -9,7 +9,7 @@ use near_sdk::{env, near, require};
 
 #[near]
 impl BtcLightClient {
-    pub fn zcash_check_pow_and_equihash(
+    pub fn check_pow(
         &self,
         block_header: &Header,
         prev_block_header: &ExtendedHeader,

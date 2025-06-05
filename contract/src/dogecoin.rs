@@ -9,7 +9,7 @@ use near_sdk::{env, near, require};
 
 #[near]
 impl BtcLightClient {
-    pub(crate) fn dogecoin_check_pow(
+    pub(crate) fn check_pow(
         &self,
         block_header: &Header,
         prev_block_header: &ExtendedHeader,
