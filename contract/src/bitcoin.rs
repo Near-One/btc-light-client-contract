@@ -6,42 +6,7 @@ use near_sdk::{near, require};
 
 #[near]
 impl BtcLightClient {
-    pub(crate) fn check_target_testnet(
-        &self,
-        block_header: &Header,
-        prev_block_header: &ExtendedHeader,
-        config: btc_types::network::NetworkConfig,
-    ) {
-        let time_diff = block_header
-            .time
-            .saturating_sub(prev_block_header.block_header.time);
-        if time_diff > 2 * config.pow_target_time_between_blocks_secs {
-            require!(
-                block_header.bits == config.proof_of_work_limit_bits,
-                format!(
-                    "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
-                    config.proof_of_work_limit_bits, block_header.bits
-                )
-            );
-        } else {
-            let mut current_block_header = prev_block_header.clone();
-            while current_block_header.block_header.bits == config.proof_of_work_limit_bits
-                && current_block_header.block_height % config.blocks_per_adjustment != 0
-            {
-                current_block_header = self.get_prev_header(&current_block_header.block_header);
-            }
-
-            let last_bits = current_block_header.block_header.bits;
-            require!(
-                last_bits == block_header.bits,
-                format!(
-                    "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
-                    last_bits, block_header.bits
-                )
-            );
-        }
-    }
-
+    //https://github.com/bitcoin/bitcoin/blob/ae024137bda9fe189f4e7ccf26dbaffd44cbbeb6/src/pow.cpp
     pub(crate) fn check_pow(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         let config = self.get_config();
 
@@ -59,7 +24,8 @@ impl BtcLightClient {
             return;
         }
 
-        let first_block_height = prev_block_header.block_height + 1 - config.blocks_per_adjustment;
+        let first_block_height =
+            prev_block_header.block_height - (config.blocks_per_adjustment - 1);
 
         let interval_tail_extend_header = self.get_header_by_height(first_block_height);
         let prev_block_time = prev_block_header.block_header.time;
@@ -96,5 +62,40 @@ impl BtcLightClient {
                 expected_bits, block_header.bits
             )
         );
+    }
+
+    pub(crate) fn check_target_testnet(
+        &self,
+        block_header: &Header,
+        prev_block_header: &ExtendedHeader,
+        config: btc_types::network::NetworkConfig,
+    ) {
+        if block_header.time
+            > prev_block_header.block_header.time + 2 * config.pow_target_time_between_blocks_secs
+        {
+            require!(
+                block_header.bits == config.proof_of_work_limit_bits,
+                format!(
+                    "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
+                    config.proof_of_work_limit_bits, block_header.bits
+                )
+            );
+        } else {
+            let mut current_block_header = prev_block_header.clone();
+            while current_block_header.block_header.bits == config.proof_of_work_limit_bits
+                && current_block_header.block_height % config.blocks_per_adjustment != 0
+            {
+                current_block_header = self.get_prev_header(&current_block_header.block_header);
+            }
+
+            let last_bits = current_block_header.block_header.bits;
+            require!(
+                last_bits == block_header.bits,
+                format!(
+                    "Error: Incorrect bits. Expected bits: {}; Actual bits: {}",
+                    last_bits, block_header.bits
+                )
+            );
+        }
     }
 }
