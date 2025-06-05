@@ -629,7 +629,7 @@ impl BlocksGetter for BtcLightClient {
     fn get_prev_header(&self, current_header: &Header) -> ExtendedHeader {
         self.headers_pool
             .get(&current_header.prev_block_hash)
-            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
+            .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"))
     }
 
     fn get_header_by_height(&self, height: u64) -> ExtendedHeader {
