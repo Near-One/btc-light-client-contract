@@ -396,7 +396,7 @@ impl BtcLightClient {
         );
 
         let config = self.get_config();
-        #[cfg(any(feature = "bitcoin"))]
+        #[cfg(feature = "bitcoin")]
         {
             require!(block_height % config.difficulty_adjustment_interval == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
         }
