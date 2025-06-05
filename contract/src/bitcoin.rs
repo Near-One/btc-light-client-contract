@@ -30,17 +30,16 @@ impl BtcLightClient {
             if config.pow_allow_min_difficulty_blocks {
                 if block_header.time
                     > prev_block_header.block_header.time
-                    + 2 * config.pow_target_time_between_blocks_secs
+                        + 2 * config.pow_target_time_between_blocks_secs
                 {
                     return config.proof_of_work_limit_bits;
                 }
-                
+
                 let mut current_block_header = prev_block_header.clone();
                 while current_block_header.block_header.bits == config.proof_of_work_limit_bits
                     && current_block_header.block_height % config.blocks_per_adjustment != 0
                 {
-                    current_block_header =
-                        self.get_prev_header(&current_block_header.block_header);
+                    current_block_header = self.get_prev_header(&current_block_header.block_header);
                 }
 
                 let last_bits = current_block_header.block_header.bits;
