@@ -29,15 +29,15 @@ impl BtcLightClient {
         if (prev_block_header.block_height + 1) % config.difficulty_adjustment_interval != 0 {
             if config.pow_allow_min_difficulty_blocks {
                 if block_header.time
-                    > prev_block_header.block_header.time
-                        + 2 * config.pow_target_spacing
+                    > prev_block_header.block_header.time + 2 * config.pow_target_spacing
                 {
                     return config.proof_of_work_limit_bits;
                 }
 
                 let mut current_block_header = prev_block_header.clone();
                 while current_block_header.block_header.bits == config.proof_of_work_limit_bits
-                    && current_block_header.block_height % config.difficulty_adjustment_interval != 0
+                    && current_block_header.block_height % config.difficulty_adjustment_interval
+                        != 0
                 {
                     current_block_header = self.get_prev_header(&current_block_header.block_header);
                 }

@@ -120,8 +120,7 @@ fn allow_min_difficulty_for_block(
     }
 
     // Allow for a minimum block time if the elapsed time > 2*nTargetSpacing
-    block_header.time
-        > prev_block_header.block_header.time + config.pow_target_spacing * 2
+    block_header.time > prev_block_header.block_header.time + config.pow_target_spacing * 2
 }
 
 // source https://github.com/dogecoin/dogecoin/blob/2c513d0172e8bc86fe9a337693b26f2fdf68a013/src/pow.cpp#L17
@@ -153,8 +152,7 @@ fn get_next_work_required(
             // If the new block's timestamp is more than 2* 10 minutes
             // then allow mining of a min-difficulty block.
             if block_header.time
-                > prev_block_header.block_header.time
-                    + config.pow_target_spacing * 2
+                > prev_block_header.block_header.time + config.pow_target_spacing * 2
             {
                 return config.proof_of_work_limit_bits;
             } else {
@@ -162,7 +160,8 @@ fn get_next_work_required(
                 let mut current_block_header = prev_block_header.clone();
 
                 while current_block_header.block_header.bits == config.proof_of_work_limit_bits
-                    && current_block_header.block_height % config.difficulty_adjustment_interval != 0
+                    && current_block_header.block_height % config.difficulty_adjustment_interval
+                        != 0
                 {
                     current_block_header =
                         blocks_getter.get_prev_header(&current_block_header.block_header);
