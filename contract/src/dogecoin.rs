@@ -204,13 +204,12 @@ fn calculate_next_work_required(
 ) -> u32 {
     let prev_block_time: i64 = prev_block_header.block_header.time.into();
     let mut actual_timespan: i64 = prev_block_time - first_block_time;
-    let pow_target_timespan = config.pow_target_timespan;
 
-    if actual_timespan < pow_target_timespan / 4 {
-        actual_timespan = pow_target_timespan / 4;
+    if actual_timespan < config.pow_target_timespan / 4 {
+        actual_timespan = config.pow_target_timespan / 4;
     }
-    if actual_timespan > pow_target_timespan * 4 {
-        actual_timespan = pow_target_timespan * 4;
+    if actual_timespan > config.pow_target_timespan * 4 {
+        actual_timespan = config.pow_target_timespan * 4;
     }
 
     // Retarget
