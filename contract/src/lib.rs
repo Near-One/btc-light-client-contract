@@ -1,6 +1,6 @@
 use btc_types::contract_args::{InitArgs, ProofArgs};
 use btc_types::hash::H256;
-use btc_types::header::{BlockHeader, ExtendedHeader, LightHeader, Header};
+use btc_types::header::{BlockHeader, ExtendedHeader, Header, LightHeader};
 use btc_types::network::Network;
 use btc_types::u256::U256;
 use btc_types::utils::{target_from_bits, work_from_bits};
@@ -446,6 +446,7 @@ impl BtcLightClient {
         // And do it until we can accept the block.
         // It means we found an initial fork position.
         // We are starting to gather new fork from this initial position.
+        #[allow(clippy::useless_conversion)]
         let prev_block_header = self.get_prev_header(&header.clone().into());
         let current_block_hash = header.block_hash();
 
