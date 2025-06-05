@@ -940,7 +940,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Error: Incorrect bits")]
+    #[should_panic(expected = "Error: Incorrect target.")]
     fn test_submitting_block_with_incorrect_bits_same_period() {
         let mut contract = BtcLightClient::init(get_default_init_args());
         let mut next_header = block_header_example();
