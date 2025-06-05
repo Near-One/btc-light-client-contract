@@ -50,8 +50,16 @@ fn get_next_work_required(
         return prev_block_header.block_header.bits;
     }
 
-    let first_block_height =
-        prev_block_header.block_height - (config.difficulty_adjustment_interval - 1);
+    // Litecoin: This fixes an issue where a 51% attack can change difficulty at will.
+    // Go back the full period unless it's the first retarget after genesis. Code courtesy of Art Forz
+    #[allow(unused_mut)]
+    let mut blocks_to_go_back = config.difficulty_adjustment_interval - 1;
+    #[cfg(feature = "litecoin")]
+    if prev_block_header.block_height + 1 != config.difficulty_adjustment_interval {
+        blocks_to_go_back = config.difficulty_adjustment_interval;
+    }
+
+    let first_block_height = prev_block_header.block_height - blocks_to_go_back;
 
     let interval_tail_extend_header = blocks_getter.get_header_by_height(first_block_height);
     calculate_next_work_required(

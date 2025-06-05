@@ -393,9 +393,14 @@ impl BtcLightClient {
         );
 
         let config = self.get_config();
-        #[cfg(any(feature = "bitcoin", feature = "litecoin", feature = "dogecoin"))]
+        #[cfg(any(feature = "bitcoin"))]
         {
             require!(block_height % config.difficulty_adjustment_interval == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
+        }
+        #[cfg(any(feature = "litecoin", feature = "dogecoin"))]
+        {
+            require!((block_height + 1) % config.difficulty_adjustment_interval == 0, format!("Error: The initial block height  + 1 must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
+            require!(submit_blocks.len() == 2, format!("Exactly two initial blocks must be submitted"));
         }
         #[cfg(feature = "zcash")]
         {
