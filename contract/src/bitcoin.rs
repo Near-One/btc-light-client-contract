@@ -79,17 +79,17 @@ impl BtcLightClient {
 
         let bn_new = target_from_bits(prev_block_header.block_header.bits);
 
-        let (mut new_target, new_target_overflow) =
+        let (mut bn_new, new_target_overflow) =
             bn_new.overflowing_mul(<i64 as TryInto<u64>>::try_into(actual_time_taken).unwrap());
         require!(!new_target_overflow, "new target overflow");
-        new_target = new_target
+        bn_new = bn_new
             / U256::from(<i64 as TryInto<u64>>::try_into(config.pow_target_timespan).unwrap());
 
-        if new_target > config.pow_limit {
-            new_target = config.pow_limit;
+        if bn_new > config.pow_limit {
+            bn_new = config.pow_limit;
         }
 
-        let expected_bits = new_target.target_to_bits();
+        let expected_bits = bn_new.target_to_bits();
         return expected_bits;
     }
 }
