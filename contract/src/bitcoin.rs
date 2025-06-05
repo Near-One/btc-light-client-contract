@@ -30,21 +30,21 @@ impl BtcLightClient {
             if config.pow_allow_min_difficulty_blocks {
                 if block_header.time
                     > prev_block_header.block_header.time
-                        + 2 * config.pow_target_time_between_blocks_secs
+                    + 2 * config.pow_target_time_between_blocks_secs
                 {
                     return config.proof_of_work_limit_bits;
-                } else {
-                    let mut current_block_header = prev_block_header.clone();
-                    while current_block_header.block_header.bits == config.proof_of_work_limit_bits
-                        && current_block_header.block_height % config.blocks_per_adjustment != 0
-                    {
-                        current_block_header =
-                            self.get_prev_header(&current_block_header.block_header);
-                    }
-
-                    let last_bits = current_block_header.block_header.bits;
-                    return last_bits;
                 }
+                
+                let mut current_block_header = prev_block_header.clone();
+                while current_block_header.block_header.bits == config.proof_of_work_limit_bits
+                    && current_block_header.block_height % config.blocks_per_adjustment != 0
+                {
+                    current_block_header =
+                        self.get_prev_header(&current_block_header.block_header);
+                }
+
+                let last_bits = current_block_header.block_header.bits;
+                return last_bits;
             }
             return prev_block_header.block_header.bits;
         }
@@ -90,6 +90,6 @@ impl BtcLightClient {
         }
 
         let expected_bits = bn_new.target_to_bits();
-        return expected_bits;
+        expected_bits
     }
 }
