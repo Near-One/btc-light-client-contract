@@ -75,18 +75,18 @@ impl BtcLightClient {
             actual_time_taken = config.pow_target_timespan * 4;
         }
 
-        let bn_new = target_from_bits(prev_block_header.block_header.bits);
+        let new_target = target_from_bits(prev_block_header.block_header.bits);
 
-        let (mut bn_new, new_target_overflow) =
-            bn_new.overflowing_mul(<i64 as TryInto<u64>>::try_into(actual_time_taken).unwrap());
+        let (mut new_target, new_target_overflow) =
+            new_target.overflowing_mul(<i64 as TryInto<u64>>::try_into(actual_time_taken).unwrap());
         require!(!new_target_overflow, "new target overflow");
-        bn_new = bn_new
+        new_target = new_target
             / U256::from(<i64 as TryInto<u64>>::try_into(config.pow_target_timespan).unwrap());
 
-        if bn_new > config.pow_limit {
-            bn_new = config.pow_limit;
+        if new_target > config.pow_limit {
+            new_target = config.pow_limit;
         }
 
-        bn_new.target_to_bits()
+        new_target.target_to_bits()
     }
 }
