@@ -9,11 +9,7 @@ use near_sdk::{env, near, require};
 
 #[near]
 impl BtcLightClient {
-    pub fn check_pow(
-        &self,
-        block_header: &Header,
-        prev_block_header: &ExtendedHeader,
-    ) {
+    pub fn check_pow(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         let expected_bits =
             zcash_get_next_work_required(&self.get_config(), block_header, prev_block_header, self);
 

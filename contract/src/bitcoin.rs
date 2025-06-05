@@ -6,7 +6,7 @@ use near_sdk::{near, require};
 
 #[near]
 impl BtcLightClient {
-     pub(crate) fn check_target_testnet(
+    pub(crate) fn check_target_testnet(
         &self,
         block_header: &Header,
         prev_block_header: &ExtendedHeader,
