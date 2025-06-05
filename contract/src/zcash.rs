@@ -75,7 +75,7 @@ fn zcash_get_next_work_required(
             require!(!overflow, "Addition of U256 values overflowed");
             total_target = sum;
 
-            current_header = prev_block_getter.get_prev_header(&current_header);
+            current_header = prev_block_getter.get_prev_header(&current_header.block_header);
         }
 
         median_time.sort_unstable();
@@ -85,7 +85,7 @@ fn zcash_get_next_work_required(
     let first_block_in_interval_median_time_past = {
         for i in 0..ZCASH_MEDIAN_TIME_SPAN {
             median_time[i] = current_header.block_header.time;
-            current_header = prev_block_getter.get_prev_header(&current_header);
+            current_header = prev_block_getter.get_prev_header(&current_header.block_header);
         }
         median_time.sort_unstable();
         median_time[median_time.len() / 2]
