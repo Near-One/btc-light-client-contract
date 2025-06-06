@@ -167,7 +167,8 @@ async fn init_contract(
     );
     let mut current_header = bitcoin_client
         .get_aux_block_header(&header_hash)
-        .expect("Failed to get initial block header").0;
+        .expect("Failed to get initial block header")
+        .0;
 
     headers.push(current_header.clone());
 
@@ -175,7 +176,8 @@ async fn init_contract(
         let prev_hash = BlockHash::from_byte_array(current_header.prev_block_hash.0);
         current_header = bitcoin_client
             .get_aux_block_header(&prev_hash)
-            .expect("Failed to get previous block header").0;
+            .expect("Failed to get previous block header")
+            .0;
         headers.push(current_header.clone());
     }
 
