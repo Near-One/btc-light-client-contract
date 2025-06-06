@@ -28,8 +28,6 @@ serde_json = "1.0.116"
 serde = { version = "1.0.200", features = ["derive"] }
 toml = "0.8.12"
 log = "0.4.21"
-rs_merkle = "1.4.2"
-merkle-lite = "0.1.0"
 rand_core = "0.6.4"
 sha3 = "0.10.8"
 sha2 = "0.10"
@@ -50,3 +48,4 @@ required-features = ["integration_tests"]
 [features]
 integration_tests = []
 zcash = ["btc-types/zcash_header"]
+dogecoin = []
