@@ -15,10 +15,14 @@ jobs:
   contract:
     name: "Smart contract checks"
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./contract
     steps:
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.84.0
+          components: clippy, rustfmt
+          target: wasm32-unknown-unknown
+
       - name: Checkout sources
         uses: actions/checkout@v2
 
@@ -27,26 +31,13 @@ jobs:
           curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh
 
       - name: Run rustfmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --manifest-path ./contract/Cargo.toml --all -- --check
+        run: make fmt
 
       - name: Run clippy
-        uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --manifest-path ./contract/Cargo.toml --all-targets -- -D warnings -D clippy::pedantic -D clippy::as_conversions -A clippy::must_use_candidate
+        run: make clippy
 
       - name: Run tests
-        run: |
-          rustup target add wasm32-unknown-unknown
-          RUST_BACKTRACE=1 cargo test -- --skip test_setting_genesis_block --skip test_setting_chain_reorg
-
-      - name: Run tests zcash
-        run: |
-          rustup target add wasm32-unknown-unknown
-          RUST_BACKTRACE=1 cargo test --features zcash --no-default-features
+        run: make test
 
   relayer:
     name: "Relayer checks"
