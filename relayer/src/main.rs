@@ -163,26 +163,25 @@ async fn init_contract(
 
     let mut headers = Vec::with_capacity(
         usize::try_from(init_config.num_of_blcoks_to_submit)
-            .expect("Error on converting num_of_blocks_to_submit to usize")
-            + 1,
+            .expect("Error on converting num_of_blocks_to_submit to usize"),
     );
     let mut current_header = bitcoin_client
-        .get_block_header(&header_hash)
-        .expect("Failed to get initial block header");
+        .get_aux_block_header(&header_hash)
+        .expect("Failed to get initial block header").0;
 
     headers.push(current_header.clone());
 
-    for _ in 0..init_config.num_of_blcoks_to_submit {
+    for _ in 1..init_config.num_of_blcoks_to_submit {
         let prev_hash = BlockHash::from_byte_array(current_header.prev_block_hash.0);
         current_header = bitcoin_client
-            .get_block_header(&prev_hash)
-            .expect("Failed to get previous block header");
+            .get_aux_block_header(&prev_hash)
+            .expect("Failed to get previous block header").0;
         headers.push(current_header.clone());
     }
 
     headers.reverse();
 
-    let genesis_block_height = init_config.init_height - init_config.num_of_blcoks_to_submit;
+    let genesis_block_height = init_config.init_height - init_config.num_of_blcoks_to_submit + 1;
 
     let args = InitArgs {
         genesis_block_hash: headers[0].block_hash(),
