@@ -4,8 +4,6 @@ NEAR_MANIFEST := $(MAKEFILE_DIR)/contract/Cargo.toml
 
 FEATURES = bitcoin dogecoin litecoin zcash
 
-all: build clippy
-
 build: $(addprefix build-,$(FEATURES))
 
 clippy: $(addprefix clippy-,$(FEATURES))
@@ -22,7 +20,7 @@ $(foreach feature,$(FEATURES), \
 )
 
 $(foreach feature,$(FEATURES), \
-  $(eval clippy-$(feature): ; cargo clippy --no-default-features --features "$(feature)" --manifest-path $(NEAR_MANIFEST) -- $(LINT_OPTIONS)) \
+	$(eval clippy-$(feature): ; cargo clippy --no-default-features --features "$(feature)" --manifest-path $(NEAR_MANIFEST) -- $(LINT_OPTIONS)) \
 )
 
 $(foreach feature,$(FEATURES), \
