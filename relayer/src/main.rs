@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use bitcoin::hashes::Hash;
 use bitcoin::BlockHash;
+use bitcoin_client::AuxData;
 use btc_types::contract_args::InitArgs;
 use log::{debug, info, trace, warn};
 
@@ -38,17 +39,17 @@ macro_rules! continue_on_fail {
 fn get_block_header(
     bitcoin_client: &Arc<BitcoinClient>,
     current_height: u64,
-) -> Result<(u64, btc_types::header::Header), u64> {
+) -> Result<(u64, btc_types::header::Header, Option<AuxData>), u64> {
     let Ok(block_hash) = bitcoin_client.get_block_hash(current_height) else {
         warn!("Failed to get block hash at height {current_height}");
         return Err(current_height);
     };
-    let Ok(block_header) = bitcoin_client.get_block_header(&block_hash) else {
+    let Ok((block_header, aux_data)) = bitcoin_client.get_aux_block_header(&block_hash) else {
         warn!("Failed to get block header at height {current_height}");
         return Err(current_height);
     };
 
-    Ok((current_height, block_header))
+    Ok((current_height, block_header, aux_data))
 }
 
 impl Synchronizer {
@@ -91,8 +92,8 @@ impl Synchronizer {
             let mut min_failed_height = None;
             for handler in handles {
                 match handler.await {
-                    Ok(Ok((height, block_header))) => {
-                        blocks_to_submit.push((height, block_header));
+                    Ok(Ok((height, block_header, aux_data))) => {
+                        blocks_to_submit.push((height, block_header, aux_data));
                     }
                     Ok(Err(current_height)) => {
                         warn!("Failed to process block at height {current_height}");
@@ -109,10 +110,10 @@ impl Synchronizer {
                     }
                 }
             }
-            blocks_to_submit.sort_by_key(|(height, _)| *height);
+            blocks_to_submit.sort_by_key(|(height, _, _)| *height);
 
             if let Some(min_failed_height) = min_failed_height {
-                blocks_to_submit.retain(|(height, _)| *height < min_failed_height);
+                blocks_to_submit.retain(|(height, _, _)| *height < min_failed_height);
             }
 
             let number_of_blocks_to_submit: u64 = blocks_to_submit.len().try_into().unwrap();
@@ -176,13 +177,13 @@ impl Synchronizer {
     async fn submit_blocks(
         &self,
         first_block_height_to_submit: Arc<AtomicU64>,
-        blocks: Vec<(u64, btc_types::header::Header)>,
+        blocks: Vec<(u64, btc_types::header::Header, Option<AuxData>)>,
     ) -> Result<(), String> {
-        let Some(first_block_height) = blocks.first().map(|(height, _)| *height) else {
+        let Some(first_block_height) = blocks.first().map(|(height, _, _)| *height) else {
             return Err("No blocks to submit in the current chunk".to_string());
         };
 
-        let Some(last_block_height) = blocks.last().map(|(height, _)| *height) else {
+        let Some(last_block_height) = blocks.last().map(|(height, _, _)| *height) else {
             return Err("No last block height in the current chunk".to_string());
         };
 
@@ -190,7 +191,12 @@ impl Synchronizer {
 
         match self
             .near_client
-            .submit_blocks(blocks.iter().map(|(_, header)| header.clone()).collect())
+            .submit_blocks(
+                blocks
+                    .iter()
+                    .map(|(_, header, aux_data)| (header.clone(), aux_data.clone()))
+                    .collect(),
+            )
             .await
         {
             Ok(Err(CustomError::PrevBlockNotFound)) => {
@@ -272,26 +278,27 @@ async fn init_contract(
 
     let mut headers = Vec::with_capacity(
         usize::try_from(init_config.num_of_blcoks_to_submit)
-            .expect("Error on converting num_of_blocks_to_submit to usize")
-            + 1,
+            .expect("Error on converting num_of_blocks_to_submit to usize"),
     );
     let mut current_header = bitcoin_client
-        .get_block_header(&header_hash)
-        .expect("Failed to get initial block header");
+        .get_aux_block_header(&header_hash)
+        .expect("Failed to get initial block header")
+        .0;
 
     headers.push(current_header.clone());
 
-    for _ in 0..init_config.num_of_blcoks_to_submit {
+    for _ in 1..init_config.num_of_blcoks_to_submit {
         let prev_hash = BlockHash::from_byte_array(current_header.prev_block_hash.0);
         current_header = bitcoin_client
-            .get_block_header(&prev_hash)
-            .expect("Failed to get previous block header");
+            .get_aux_block_header(&prev_hash)
+            .expect("Failed to get previous block header")
+            .0;
         headers.push(current_header.clone());
     }
 
     headers.reverse();
 
-    let genesis_block_height = init_config.init_height - init_config.num_of_blcoks_to_submit;
+    let genesis_block_height = init_config.init_height - init_config.num_of_blcoks_to_submit + 1;
 
     let args = InitArgs {
         genesis_block_hash: headers[0].block_hash(),

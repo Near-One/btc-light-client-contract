@@ -1,31 +1,23 @@
-use crate::{BtcLightClient, BtcLightClientExt, ERR_KEY_NOT_EXIST};
+use crate::{utils::BlocksGetter, BtcLightClient, BtcLightClientExt};
 use btc_types::{
     header::{ExtendedHeader, Header},
-    network::ZcashConfig,
+    network::{Network, ZcashConfig},
     u256::U256,
     utils::target_from_bits,
 };
 use near_sdk::{env, near, require};
 
-trait PrevBlockGetter {
-    fn get_prev_header(&self, current_header: &ExtendedHeader) -> ExtendedHeader;
-}
-
-impl PrevBlockGetter for BtcLightClient {
-    fn get_prev_header(&self, current_header: &ExtendedHeader) -> ExtendedHeader {
-        self.headers_pool
-            .get(&current_header.block_header.prev_block_hash)
-            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
-    }
-}
-
 #[near]
 impl BtcLightClient {
-    pub fn zcash_check_pow_and_equihash(
-        &self,
-        block_header: &Header,
-        prev_block_header: &ExtendedHeader,
-    ) {
+    pub fn get_config(&self) -> btc_types::network::ZcashConfig {
+        btc_types::network::get_zcash_config(self.network)
+    }
+
+    pub fn get_network(&self) -> (String, Network) {
+        ("Zcash".to_owned(), self.network)
+    }
+
+    pub(crate) fn check_pow(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         let expected_bits =
             zcash_get_next_work_required(&self.get_config(), block_header, prev_block_header, self);
 
@@ -44,7 +36,7 @@ impl BtcLightClient {
 
         equihash::is_valid_solution(n, k, &input, &block_header.nonce.0, &block_header.solution)
             .unwrap_or_else(|e| {
-                env::panic_str(&format!("Invalid Equihash solution: {}", e));
+                env::panic_str(&format!("Invalid Equihash solution: {e}"));
             });
     }
 }
@@ -54,7 +46,7 @@ fn zcash_get_next_work_required(
     config: &ZcashConfig,
     block_header: &Header,
     prev_block_header: &ExtendedHeader,
-    prev_block_getter: &impl PrevBlockGetter,
+    prev_block_getter: &impl BlocksGetter,
 ) -> u32 {
     use btc_types::network::ZCASH_MEDIAN_TIME_SPAN;
 
@@ -91,7 +83,7 @@ fn zcash_get_next_work_required(
             require!(!overflow, "Addition of U256 values overflowed");
             total_target = sum;
 
-            current_header = prev_block_getter.get_prev_header(&current_header);
+            current_header = prev_block_getter.get_prev_header(&current_header.block_header);
         }
 
         median_time.sort_unstable();
@@ -101,7 +93,7 @@ fn zcash_get_next_work_required(
     let first_block_in_interval_median_time_past = {
         for i in 0..ZCASH_MEDIAN_TIME_SPAN {
             median_time[i] = current_header.block_header.time;
-            current_header = prev_block_getter.get_prev_header(&current_header);
+            current_header = prev_block_getter.get_prev_header(&current_header.block_header);
         }
         median_time.sort_unstable();
         median_time[median_time.len() / 2]
@@ -113,14 +105,15 @@ fn zcash_get_next_work_required(
     //
     // Here we take the floor of MeanTarget(height) immediately, but that is equivalent to doing
     // so only after a further division, as proven in <https://math.stackexchange.com/a/147832/185422>.
-    let average_target = total_target / U256::from(config.pow_averaging_window as u64);
+    let average_target = total_target
+        / U256::from(<i64 as TryInto<u64>>::try_into(config.pow_averaging_window).unwrap());
 
-    return zcash_calculate_next_work_required(
+    zcash_calculate_next_work_required(
         config,
         average_target,
         prev_block_median_time_past,
         first_block_in_interval_median_time_past,
-    );
+    )
 }
 
 fn zcash_calculate_next_work_required(
@@ -148,8 +141,10 @@ fn zcash_calculate_next_work_required(
     }
 
     // Retarget
-    let new_target = average_target / U256::from(averaging_window_timespan as u64);
-    let (mut new_target, new_target_overflow) = new_target.overflowing_mul(actual_timespan as u64);
+    let new_target = average_target
+        / U256::from(<i64 as TryInto<u64>>::try_into(averaging_window_timespan).unwrap());
+    let (mut new_target, new_target_overflow) =
+        new_target.overflowing_mul(<i64 as TryInto<u64>>::try_into(actual_timespan).unwrap());
     require!(!new_target_overflow, "new target overflow");
 
     if new_target > config.pow_limit {
