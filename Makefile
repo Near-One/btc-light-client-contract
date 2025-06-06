@@ -1,5 +1,5 @@
 MAKEFILE_DIR :=  $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
-LINT_OPTIONS = -D warnings -D clippy::pedantic
+LINT_OPTIONS = -D warnings -D clippy::pedantic -A clippy::must_use_candidate
 NEAR_MANIFEST := $(MAKEFILE_DIR)/contract/Cargo.toml
 
 FEATURES = bitcoin dogecoin litecoin zcash
