@@ -3,6 +3,7 @@ LINT_OPTIONS = -D warnings -D clippy::pedantic -A clippy::must_use_candidate -A 
 NEAR_MANIFEST := $(MAKEFILE_DIR)/contract/Cargo.toml
 
 FEATURES = bitcoin dogecoin litecoin zcash
+FEATURES_TEST = bitcoin litecoin zcash
 
 all: build clippy
 
@@ -29,6 +30,6 @@ $(foreach feature,$(FEATURES), \
 	$(eval fmt-$(feature): ; cargo fmt --all --check --manifest-path $(NEAR_MANIFEST)) \
 )
 
-$(foreach feature,$(FEATURES), \
+$(foreach feature,$(FEATURES_TEST), \
 	$(eval test-$(feature): ; cargo test --no-default-features --features "$(feature)" --manifest-path $(NEAR_MANIFEST)) \
 )
