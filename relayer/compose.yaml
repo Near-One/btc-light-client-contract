@@ -1,6 +1,8 @@
+name: relayer-bitcoin
 services:
   bitcoind:
     image: lncm/bitcoind:v28.0
+    platform: ${PLATFORM:-linux/amd64}
     command:
       -prune=550
       -rpcuser=bitcoin
@@ -12,6 +14,7 @@ services:
       - "8333:8333"
   relayer:
     image: btc-relayer
+    platform: ${PLATFORM:-linux/amd64}
     build:
       context: ../
       dockerfile: ./relayer/Dockerfile

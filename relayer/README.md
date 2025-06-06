@@ -22,6 +22,8 @@ To run the relayer together with a bitcoin node you can use docker compose.
 
 > Because relayer depends on the bitcoin node being up-to-date, its container will fail with an error first. You'll have to wait for the bitcoin node to sync and then restart the relayer container.
 
+Building containers locally is possible with `docker compose build`. You can set `PLATFORM` environment variable to build relayer image for a desired platform. 
+
 ## How to run tests
 ### Working with Bitcoin Prune Node
 To run the tests, you need to start a Bitcoin Prune Node and download block 277136.
