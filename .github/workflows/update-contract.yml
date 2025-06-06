@@ -22,7 +22,7 @@ jobs:
         run: |
           cd contract
           
-          cargo near build reproducible-wasm
+          cargo near build reproducible-wasm --variant bitcoin
           mv ./target/near/btc_light_client_contract.wasm ./target/near/btc_light_client_contract_bitcoin.wasm
           
           cargo near build reproducible-wasm --variant dogecoin
