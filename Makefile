@@ -1,5 +1,5 @@
 MAKEFILE_DIR :=  $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
-LINT_OPTIONS = -D warnings -D clippy::pedantic -A clippy::must_use_candidate
+LINT_OPTIONS = -D warnings -D clippy::pedantic -A clippy::must_use_candidate -A clippy::used_underscore_binding -A clippy::needless_range_loop
 NEAR_MANIFEST := $(MAKEFILE_DIR)/contract/Cargo.toml
 
 FEATURES = bitcoin dogecoin litecoin zcash
@@ -26,7 +26,7 @@ $(foreach feature,$(FEATURES), \
 )
 
 $(foreach feature,$(FEATURES), \
-	$(eval fmt-$(feature): ; cargo fmt --manifest-path $(NEAR_MANIFEST)) \
+	$(eval fmt-$(feature): ; cargo fmt --all --check --manifest-path $(NEAR_MANIFEST)) \
 )
 
 $(foreach feature,$(FEATURES), \

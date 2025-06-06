@@ -374,7 +374,8 @@ impl BtcLightClient {
         #[cfg(feature = "zcash")]
         {
             require!(
-                btc_types::network::ZCASH_MEDIAN_TIME_SPAN + config.pow_averaging_window as usize
+                btc_types::network::ZCASH_MEDIAN_TIME_SPAN
+                    + usize::try_from(config.pow_averaging_window).unwrap()
                     == submit_blocks.len() - 1,
                 "ERR_NOT_ENOUGH_BLOCKS_FOR_ZCASH"
             );
