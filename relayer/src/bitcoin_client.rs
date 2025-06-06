@@ -137,6 +137,7 @@ impl Client {
     ///
     /// # Errors
     /// * issue with connection to the Bitcoin Node
+    #[allow(dead_code)]
     pub fn get_block_header(
         &self,
         block_hash: &BlockHash,
@@ -215,7 +216,7 @@ impl Client {
         height: u64,
     ) -> Result<Header, Box<dyn std::error::Error>> {
         let block_hash = self.get_block_hash(height)?;
-        self.get_block_header(&block_hash)
+        Ok(self.get_aux_block_header(&block_hash)?.0)
     }
 
     /// Get block by block hash
