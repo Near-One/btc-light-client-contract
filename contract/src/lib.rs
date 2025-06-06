@@ -673,7 +673,7 @@ mod migrate {
  * Learn more about Rust tests: https://doc.rust-lang.org/book/ch11-01-writing-tests.html
  */
 #[cfg(test)]
-#[cfg(not(feature = "zcash"))]
+#[cfg(feature = "bitcoin")]
 mod tests {
     use super::*;
 
