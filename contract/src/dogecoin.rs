@@ -210,9 +210,7 @@ fn calculate_next_work_required(
     first_block_time: i64,
 ) -> u32 {
     let retarget_timespan = config.pow_target_timespan;
-    let actual_timespan = i64::from(prev_block_header.block_header.time) - first_block_time;
-
-    let modulated_timespan = actual_timespan;
+    let modulated_timespan = i64::from(prev_block_header.block_header.time) - first_block_time;
 
     let mut modulated_timespan = retarget_timespan + (modulated_timespan - retarget_timespan) / 8;
 
