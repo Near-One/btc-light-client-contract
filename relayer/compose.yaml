@@ -1,0 +1,22 @@
+name: relayer-bitcoin
+services:
+  bitcoind:
+    image: lncm/bitcoind:v28.0
+    platform: ${PLATFORM:-linux/amd64}
+    command:
+      -prune=550
+      -rpcuser=bitcoin
+      -rpcpassword=bitcoin
+      -rpcallowip=0.0.0.0/0
+      -rpcbind=0.0.0.0
+      -assumevalid=00000000000000000000b417eaf1b6d670fdabb4996d8902f8ea05aafc88d158
+    ports:
+      - "8333:8333"
+  relayer:
+    image: btc-relayer
+    platform: ${PLATFORM:-linux/amd64}
+    build:
+      context: ../
+      dockerfile: ./relayer/Dockerfile
+    depends_on:
+      - bitcoind
