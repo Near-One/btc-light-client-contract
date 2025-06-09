@@ -207,7 +207,7 @@ impl NearClient {
                 .collect();
 
             #[cfg(not(feature = "dogecoin"))]
-            let args: Vec<_> = headers
+            let args: Vec<_> = header_chunk
                 .iter()
                 .map(|(_, header, _)| header.clone())
                 .collect();
