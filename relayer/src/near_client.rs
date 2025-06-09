@@ -143,8 +143,13 @@ impl NearClient {
     ) -> Result<RpcTransactionResponse, Box<dyn std::error::Error + Send + Sync>> {
         let tx_hash = self
             .submit_tx(
-                self.sign_tx("init", json!({"args": args}).to_string().into_bytes(), 0)
-                    .await?,
+                self.sign_tx(
+                    "init",
+                    json!({"args": args}).to_string().into_bytes(),
+                    0,
+                    None,
+                )
+                .await?,
             )
             .await?;
 
@@ -186,6 +191,24 @@ impl NearClient {
     ) -> Result<Vec<SignedSubmitTransaction>, Box<dyn std::error::Error + Send + Sync>> {
         let mut signed_txs = Vec::new();
 
+        let access_key_query_response = self
+            .client
+            .call(methods::query::RpcQueryRequest {
+                block_reference: BlockReference::latest(),
+                request: near_primitives::views::QueryRequest::ViewAccessKey {
+                    account_id: self.signer.account_id.clone(),
+                    public_key: self.signer.public_key.clone(),
+                },
+            })
+            .await?;
+
+        let mut current_nonce = match access_key_query_response.kind {
+            near_jsonrpc_primitives::types::query::QueryResponseKind::AccessKey(access_key) => {
+                access_key.nonce + 1
+            }
+            _ => return Err("failed to extract current nonce".into()),
+        };
+
         for header_chunk in headers.chunks(batch_size) {
             for header in header_chunk {
                 println!("Submit block {}", header.1.block_hash());
@@ -216,9 +239,16 @@ impl NearClient {
                 first_block_height,
                 last_block_height,
                 signed_tx: self
-                    .sign_tx(SUBMIT_BLOCKS, to_vec(&args)?, 5 * 10_u128.pow(23))
+                    .sign_tx(
+                        SUBMIT_BLOCKS,
+                        to_vec(&args)?,
+                        5 * 10_u128.pow(23),
+                        Some(current_nonce),
+                    )
                     .await?,
             });
+
+            current_nonce += 1;
         }
 
         Ok(signed_txs)
@@ -373,7 +403,7 @@ impl NearClient {
 
         let tx_hash = self
             .submit_tx(
-                self.sign_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args)?, 0)
+                self.sign_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args)?, 0, None)
                     .await?,
             )
             .await?;
@@ -432,6 +462,7 @@ impl NearClient {
         method_name: &str,
         args: Vec<u8>,
         deposit: u128,
+        nonce: Option<u64>,
     ) -> Result<SignedTransaction, Box<dyn std::error::Error + Send + Sync>> {
         let access_key_query_response = self
             .client
@@ -444,15 +475,19 @@ impl NearClient {
             })
             .await?;
 
-        let current_nonce = match access_key_query_response.kind {
-            QueryResponseKind::AccessKey(access_key) => access_key.nonce,
-            _ => Err("failed to extract current nonce")?,
+        let nonce = if let Some(nonce) = nonce {
+            nonce
+        } else {
+            match access_key_query_response.kind {
+                QueryResponseKind::AccessKey(access_key) => access_key.nonce + 1,
+                _ => return Err("failed to extract current nonce")?,
+            }
         };
 
         let transaction = Transaction {
             signer_id: self.signer.account_id.clone(),
             public_key: self.signer.public_key.clone(),
-            nonce: current_nonce + 1,
+            nonce,
             receiver_id: self.btc_light_client_account_id.clone(),
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
