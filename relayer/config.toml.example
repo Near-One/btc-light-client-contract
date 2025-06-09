@@ -5,14 +5,14 @@ sleep_time_after_sync_iteration_sec = 5
 batch_size = 15
 
 [bitcoin]
-endpoint = "http://127.0.0.1:8332"
-node_user = "user"
-node_password = "password"
+endpoint = "http://bitcoind:8332"
+node_user = "bitcoin"
+node_password = "bitcoin"
 
 [near]
 endpoint = "https://rpc.testnet.near.org"
-btc_light_client_account_id = "btc_light_client.testnet"
-near_credentials_path = "~/.near-credentials/testnet/account.testnet.json"
+btc_light_client_account_id = "btc-client-v4.testnet"
+near_credentials_path = "./relayer-credentials.json"
 transaction_timeout_sec = 120
 
 [init]
