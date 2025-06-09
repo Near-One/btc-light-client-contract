@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 #[cfg(feature = "dogecoin")]
 use bitcoin::consensus::serialize;
 #[cfg(feature = "dogecoin")]
@@ -14,13 +16,10 @@ use near_jsonrpc_client::{methods, JsonRpcClient, MethodCallResult};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, TransactionInfo};
 use near_primitives::borsh;
-use near_primitives::transaction::{Action, FunctionCallAction, Transaction};
+use near_primitives::transaction::{Action, FunctionCallAction, SignedTransaction, Transaction};
 use near_primitives::types::{AccountId, BlockReference};
 use near_primitives::views::TxExecutionStatus;
 use serde_json::{from_slice, json};
-use std::str::FromStr;
-use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
 
 use crate::bitcoin_client::AuxData;
 use tokio::time;
@@ -47,8 +46,13 @@ pub struct NearClient {
     client: JsonRpcClient,
     signer: InMemorySigner,
     btc_light_client_account_id: AccountId,
-    nonce: Arc<AtomicU64>,
     transaction_timeout_sec: u64,
+}
+
+pub struct SignedSubmitTransaction {
+    pub first_block_height: u64,
+    pub last_block_height: u64,
+    pub signed_tx: SignedTransaction,
 }
 
 #[cfg(feature = "dogecoin")]
@@ -115,52 +119,8 @@ impl NearClient {
                 .clone()
                 .parse()
                 .unwrap(),
-            nonce: Arc::new(AtomicU64::new(0)),
             transaction_timeout_sec: config.transaction_timeout_sec,
         }
-    }
-
-    /// Get the current nonce for the signer
-    ///
-    /// # Returns
-    /// The current nonce value as a `u64`.
-    #[must_use]
-    pub fn get_nonce(&self) -> u64 {
-        self.nonce
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Reset the nonce for the signer
-    /// This method queries the current nonce from the NEAR blockchain
-    ///
-    /// # Returns
-    /// A `Result` indicating success or failure.
-    ///
-    /// # Errors
-    /// This function can return an error if:
-    /// - The query to the NEAR blockchain fails, e.g., due to network issues or RPC failures.
-    /// - The response from the blockchain does not contain the expected access key information.
-    pub async fn reset_nonce(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let access_key_query_response = self
-            .client
-            .call(methods::query::RpcQueryRequest {
-                block_reference: BlockReference::latest(),
-                request: near_primitives::views::QueryRequest::ViewAccessKey {
-                    account_id: self.signer.account_id.clone(),
-                    public_key: self.signer.public_key.clone(),
-                },
-            })
-            .await?;
-
-        let current_nonce = match access_key_query_response.kind {
-            QueryResponseKind::AccessKey(access_key) => access_key.nonce,
-            _ => Err("failed to extract current nonce")?,
-        };
-
-        self.nonce
-            .store(current_nonce + 1, std::sync::atomic::Ordering::Relaxed);
-
-        Ok(())
     }
 
     /// Initializes the BTC Light Client
@@ -182,7 +142,10 @@ impl NearClient {
         args: &InitArgs,
     ) -> Result<RpcTransactionResponse, Box<dyn std::error::Error + Send + Sync>> {
         let tx_hash = self
-            .submit_tx("init", json!({"args": args}).to_string().into_bytes(), 0)
+            .submit_tx(
+                self.sign_tx("init", json!({"args": args}).to_string().into_bytes(), 0)
+                    .await?,
+            )
             .await?;
 
         self.get_tx_status(tx_hash)
@@ -201,6 +164,66 @@ impl NearClient {
             .and_then(|result| result)
     }
 
+    /// Sign transaction of `submit_blocks` method call to the smart contract.
+    ///
+    /// # Arguments
+    /// * `headers` - A vector of tuples containing block height, block header, and optional auxiliary data.
+    /// * `batch_size` - The size of each batch of headers to be processed.
+    ///
+    /// # Returns
+    /// A `Result` containing a vector of `SignedSubmitTransaction` if successful, or an error.
+    ///
+    /// # Errors
+    /// This function can return an error in the following cases:
+    /// * Serialization of the arguments fails (`to_vec`).
+    /// * Signing of the transaction fails (`sign_tx`).
+    /// * No blocks to submit in the current chunk.
+    /// * No last block height in the current chunk.
+    pub async fn sign_submit_blocks(
+        &self,
+        headers: Vec<(u64, btc_types::header::Header, Option<AuxData>)>,
+        batch_size: usize,
+    ) -> Result<Vec<SignedSubmitTransaction>, Box<dyn std::error::Error + Send + Sync>> {
+        let mut signed_txs = Vec::new();
+
+        for header_chunk in headers.chunks(batch_size) {
+            for header in header_chunk {
+                println!("Submit block {}", header.1.block_hash());
+            }
+
+            let Some(first_block_height) = header_chunk.first().map(|(height, _, _)| *height)
+            else {
+                return Err("No blocks to submit in the current chunk".into());
+            };
+
+            let Some(last_block_height) = header_chunk.last().map(|(height, _, _)| *height) else {
+                return Err("No last block height in the current chunk".into());
+            };
+
+            #[cfg(feature = "dogecoin")]
+            let args: Vec<_> = header_chunk
+                .iter()
+                .map(|(_, header, aux_data)| (header.clone(), get_aux_data(aux_data.clone())))
+                .collect();
+
+            #[cfg(not(feature = "dogecoin"))]
+            let args: Vec<_> = headers
+                .iter()
+                .map(|(_, header, _)| header.clone())
+                .collect();
+
+            signed_txs.push(SignedSubmitTransaction {
+                first_block_height,
+                last_block_height,
+                signed_tx: self
+                    .sign_tx(SUBMIT_BLOCKS, to_vec(&args)?, 5 * 10_u128.pow(23))
+                    .await?,
+            });
+        }
+
+        Ok(signed_txs)
+    }
+
     /// Submitting block header to the smart contract.
     /// This method supports retries internally.
     ///
@@ -209,27 +232,12 @@ impl NearClient {
     /// * Connection issue
     pub async fn submit_blocks(
         &self,
-        headers: Vec<(btc_types::header::Header, Option<AuxData>)>,
+        signed_tx: SignedTransaction,
     ) -> Result<Result<RpcTransactionResponse, CustomError>, Box<dyn std::error::Error + Send + Sync>>
     {
-        for header in &headers {
-            println!("Submit block {}", header.0.block_hash());
-        }
-
-        #[cfg(feature = "dogecoin")]
-        let args: Vec<_> = headers
-            .iter()
-            .map(|header| (header.0.clone(), get_aux_data(header.1.clone())))
-            .collect();
-
-        #[cfg(not(feature = "dogecoin"))]
-        let args: Vec<_> = headers.iter().map(|header| header.0.clone()).collect();
-
         let sent_at = time::Instant::now();
+        let tx_hash = self.submit_tx(signed_tx).await?;
 
-        let tx_hash = self
-            .submit_tx(SUBMIT_BLOCKS, to_vec(&args)?, 5 * 10_u128.pow(23))
-            .await?;
         info!("Blocks submitted: tx_hash = {tx_hash:?}");
 
         loop {
@@ -364,7 +372,10 @@ impl NearClient {
         };
 
         let tx_hash = self
-            .submit_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args)?, 0)
+            .submit_tx(
+                self.sign_tx(VERIFY_TRANSACTION_INCLUSION, to_vec(&args)?, 0)
+                    .await?,
+            )
             .await?;
         let response = self.get_tx_status(tx_hash).await?;
 
@@ -402,12 +413,26 @@ impl NearClient {
         }
     }
 
-    async fn submit_tx(
+    /// Sign transaction for a method call to the smart contract.
+    ///
+    /// # Arguments
+    /// * `method_name` - The name of the method to call on the smart contract.
+    /// * `args` - A vector of bytes representing the arguments to pass to the method.
+    /// * `deposit` - The amount of NEAR to deposit with the transaction.
+    ///
+    /// # Returns
+    /// A `Result` containing a `SignedTransaction` if successful, or an error.
+    ///
+    /// # Errors
+    /// * Access key query fails, e.g., due to network issues or RPC failures.
+    /// * Current nonce cannot be extracted from the access key query response.
+    /// * Signing the transaction fails, e.g., due to an invalid signer or public key.
+    pub async fn sign_tx(
         &self,
         method_name: &str,
         args: Vec<u8>,
         deposit: u128,
-    ) -> Result<RpcBroadcastTxAsyncResponse, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<SignedTransaction, Box<dyn std::error::Error + Send + Sync>> {
         let access_key_query_response = self
             .client
             .call(methods::query::RpcQueryRequest {
@@ -419,10 +444,15 @@ impl NearClient {
             })
             .await?;
 
+        let current_nonce = match access_key_query_response.kind {
+            QueryResponseKind::AccessKey(access_key) => access_key.nonce,
+            _ => Err("failed to extract current nonce")?,
+        };
+
         let transaction = Transaction {
             signer_id: self.signer.account_id.clone(),
             public_key: self.signer.public_key.clone(),
-            nonce: self.get_nonce(),
+            nonce: current_nonce + 1,
             receiver_id: self.btc_light_client_account_id.clone(),
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
@@ -433,11 +463,19 @@ impl NearClient {
             }))],
         };
 
-        let request = methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
-            signed_transaction: transaction.sign(&self.signer),
-        };
+        Ok(transaction.sign(&self.signer))
+    }
 
-        Ok(self.client.call(request).await?)
+    async fn submit_tx(
+        &self,
+        signed_tx: SignedTransaction,
+    ) -> Result<RpcBroadcastTxAsyncResponse, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(self
+            .client
+            .call(methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
+                signed_transaction: signed_tx,
+            })
+            .await?)
     }
 
     async fn get_tx_status(
