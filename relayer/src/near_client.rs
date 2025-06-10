@@ -211,7 +211,11 @@ impl NearClient {
 
         for header_chunk in headers.chunks(batch_size) {
             for header in header_chunk {
-                println!("Submit block {}", header.1.block_hash());
+                info!(
+                    "Block to submit: height = {}, hash = {}",
+                    header.0,
+                    header.1.block_hash()
+                );
             }
 
             let Some(first_block_height) = header_chunk.first().map(|(height, _, _)| *height)
@@ -290,7 +294,7 @@ impl NearClient {
                     _ => Err(err)?,
                 },
                 Ok(response) => {
-                    println!("Success response gotten after: {delta}s");
+                    info!("Success response gotten after: {delta}s");
                     return Ok(Self::parse_submit_blocks_response(response));
                 }
             }
@@ -328,8 +332,8 @@ impl NearClient {
             .await?;
 
         let header = from_slice::<ExtendedHeader>(&result)?;
-        println!("Block Height: {}", header.block_height);
-        println!("Block Hash: {}", header.block_hash);
+        info!("Block Height: {}", header.block_height);
+        info!("Block Hash: {}", header.block_hash);
 
         Ok(header)
     }
@@ -375,7 +379,7 @@ impl NearClient {
             .await?;
 
         let block_hashes = from_slice::<Vec<String>>(&result)?;
-        println!("{block_hashes:#?}");
+        info!("{block_hashes:#?}");
         Ok(block_hashes)
     }
 
@@ -418,7 +422,7 @@ impl NearClient {
         {
             near_primitives::views::FinalExecutionStatus::SuccessValue(value) => {
                 let parsed_output = String::from_utf8(value.clone())?;
-                println!(
+                info!(
                     "Transaction succeeded with result: {:?}",
                     String::from_utf8(value.clone())
                 );

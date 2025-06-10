@@ -8,6 +8,7 @@ use bitcoincore_rpc::jsonrpc::Transport;
 use bitcoincore_rpc::{jsonrpc, RpcApi};
 use btc_types::header::Header;
 use jsonrpc::{Request, Response};
+use log::info;
 use std::error::Error;
 
 use crate::config::Config;
@@ -111,7 +112,7 @@ impl Client {
             )),
             headers: config.bitcoin.node_headers.clone().unwrap_or_default(),
         };
-        println!("client: {:?}", client.headers);
+        info!("client: {:?}", client.headers);
         let inner = bitcoincore_rpc::Client::from_jsonrpc(client.into());
 
         Self { inner }
