@@ -24,7 +24,8 @@ fn setup() {
 #[serial]
 async fn verify_correct_transaction_test() {
     setup();
-    let config = Config::new().expect("we expect config.toml to be next to executable in `./`");
+    let config = Config::new("config.toml".to_string())
+        .expect("we expect config.toml to be next to executable in `./`");
 
     debug!("Configuration loaded: {:?}", config);
 
@@ -52,7 +53,8 @@ async fn verify_correct_transaction_test() {
 #[serial]
 async fn verify_incorrect_transaction_test() {
     setup();
-    let config = Config::new().expect("we expect config.toml to be next to executable in `./`");
+    let config = Config::new("config.toml".to_string())
+        .expect("we expect config.toml to be next to executable in `./`");
 
     debug!("Configuration loaded: {:?}", config);
 
