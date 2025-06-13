@@ -8,6 +8,7 @@ use bitcoincore_rpc::jsonrpc::Transport;
 use bitcoincore_rpc::{jsonrpc, RpcApi};
 use btc_types::header::Header;
 use jsonrpc::{Request, Response};
+use log::info;
 use std::error::Error;
 
 use crate::config::Config;
@@ -111,7 +112,7 @@ impl Client {
             )),
             headers: config.bitcoin.node_headers.clone().unwrap_or_default(),
         };
-        println!("client: {:?}", client.headers);
+        info!("client: {:?}", client.headers);
         let inner = bitcoincore_rpc::Client::from_jsonrpc(client.into());
 
         Self { inner }
@@ -141,7 +142,7 @@ impl Client {
     pub fn get_block_header(
         &self,
         block_hash: &BlockHash,
-    ) -> Result<Header, Box<dyn std::error::Error>> {
+    ) -> Result<Header, Box<dyn std::error::Error + Send + Sync>> {
         let hex: String = self.inner.call(
             "getblockheader",
             &[serde_json::to_value(block_hash)?, false.into()],
@@ -157,7 +158,7 @@ impl Client {
     pub fn get_aux_block_header(
         &self,
         block_hash: &BlockHash,
-    ) -> Result<(Header, Option<AuxData>), Box<dyn Error>> {
+    ) -> Result<(Header, Option<AuxData>), Box<dyn Error + Send + Sync>> {
         let hex: String = self
             .inner
             .call("getblockheader", &[into_json(block_hash)?, false.into()])?;
@@ -214,7 +215,7 @@ impl Client {
     pub fn get_block_header_by_height(
         &self,
         height: u64,
-    ) -> Result<Header, Box<dyn std::error::Error>> {
+    ) -> Result<Header, Box<dyn std::error::Error + Send + Sync>> {
         let block_hash = self.get_block_hash(height)?;
         Ok(self.get_aux_block_header(&block_hash)?.0)
     }
