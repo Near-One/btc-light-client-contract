@@ -18,11 +18,11 @@ To run the relayer together with a bitcoin node you can use docker compose.
 
 0. Move config.example.toml to config.toml and fill in the required fields.
 1. Create a NEAR credentials file `relayer-credentials.json` to be used by the relayer.
-2. Run ```docker compose up```.
+2. Run ```docker compose -f compose-{chain}.yaml up```.
 
 > Because relayer depends on the bitcoin node being up-to-date, its container will fail with an error first. You'll have to wait for the bitcoin node to sync and then restart the relayer container.
 
-Building containers locally is possible with `docker compose build`. You can set `PLATFORM` environment variable to build relayer image for a desired platform. 
+Building containers locally is possible with `docker compose -f compose-{chain}.yaml build`. You can set `PLATFORM` environment variable to build relayer image for a desired platform. 
 
 ## How to run tests
 ### Working with Bitcoin Prune Node

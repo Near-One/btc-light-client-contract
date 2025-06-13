@@ -1,0 +1,22 @@
+
+name: relayer-litecoin
+services:
+  litecoind:
+    image: litecoinproject/litecoin-core:0.21.4
+    platform: ${PLATFORM:-linux/amd64}
+    command:
+      -prune=550
+      -rpcuser=bitcoin
+      -rpcpassword=bitcoin
+      -rpcallowip=0.0.0.0/0
+      -rpcbind=0.0.0.0
+    ports:
+      - "8333:8333"
+  relayer:
+    image: ltc-relayer
+    platform: ${PLATFORM:-linux/amd64}
+    build:
+      context: ../
+      dockerfile: ./relayer/Dockerfile
+    depends_on:
+      - litecoind
