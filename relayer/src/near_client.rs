@@ -169,7 +169,11 @@ impl NearClient {
             .and_then(|result| result)
     }
 
-    /// Sign transaction of `submit_blocks` method call to the smart contract.
+    /// Signs one or more transactions to call the `submit_blocks` method on the smart contract.
+    ///
+    /// This method splits the provided block headers into batches of `batch_size` and
+    /// creates a signed transaction for each batch. It automatically increments the nonce
+    /// for each transaction based on the current access key state.
     ///
     /// # Arguments
     /// * `headers` - A vector of tuples containing block height, block header, and optional auxiliary data.
