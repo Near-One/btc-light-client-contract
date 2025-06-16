@@ -11,14 +11,13 @@ pub struct Config {
     pub sleep_time_after_sync_iteration_sec: u64,
     pub fetch_batch_size: u64,
     pub submit_batch_size: usize,
-    pub env_prefix: String,
     pub bitcoin: Option<BitcoinConfig>,
     pub near: NearConfig,
     pub init: Option<InitConfig>,
 }
 
 #[allow(dead_code)]
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 #[allow(clippy::module_name_repetitions)]
 pub struct BitcoinConfig {
     pub endpoint: String,
@@ -32,8 +31,8 @@ pub struct BitcoinConfig {
 pub struct NearConfig {
     pub endpoint: String,
     pub btc_light_client_account_id: String,
-    pub account_name: Option<String>,
-    pub secret_key: Option<String>,
+    pub account_id: Option<String>,
+    pub private_key: Option<String>,
     pub near_credentials_path: Option<String>,
     pub transaction_timeout_sec: u64,
 }
@@ -48,9 +47,8 @@ pub struct InitConfig {
     pub init_height: u64,
 }
 
-fn get_env_var(prefix: &str, var: &str) -> Result<String> {
-    let var = format!("{prefix}_{var}");
-    std::env::var(&var).context(format!("Failed getting env var {var}"))
+fn get_env_var(var: &str) -> Option<String> {
+    std::env::var(&var).ok()
 }
 
 /// Launching configuration file from a ./config.toml
@@ -66,16 +64,21 @@ impl Config {
         let mut config: Config =
             toml::from_str(&config_toml).context("Failed to parse config file")?;
 
-        if config.bitcoin.is_none() {
-            config.bitcoin = Some(BitcoinConfig {
-                endpoint: get_env_var(&config.env_prefix, "ENDPOINT")?,
-                node_user: get_env_var(&config.env_prefix, "NODE_USER").unwrap_or_default(),
-                node_password: get_env_var(&config.env_prefix, "NODE_PASSWORD").unwrap_or_default(),
-                node_headers: get_env_var(&config.env_prefix, "NODE_HEADERS")
-                    .map(|s| serde_json::from_str(&s).expect("Failed to parse NODE_HEADERS"))
-                    .ok(),
-            });
-        }
+        let bitcoin_config = config.bitcoin.clone().unwrap_or_default();
+
+        config.bitcoin = Some(BitcoinConfig {
+            endpoint: get_env_var("ENDPOINT").unwrap_or(bitcoin_config.endpoint),
+            node_user: get_env_var("NODE_USER").unwrap_or(bitcoin_config.node_user),
+            node_password: get_env_var("NODE_PASSWORD").unwrap_or(bitcoin_config.node_password),
+            node_headers: get_env_var("NODE_HEADERS")
+                .map(|s| serde_json::from_str(&s).expect("Failed to parse NODE_HEADERS"))
+                .unwrap_or(bitcoin_config.node_headers),
+        });
+
+        config.near.endpoint = get_env_var("NEAR_RPC_HTTP_URL").unwrap_or(config.near.endpoint);
+        config.near.account_id = get_env_var("NEAR_ACCOUNT_ID").or(config.near.account_id);
+        config.near.private_key = get_env_var("NEAR_PRIVATE_KEY").or(config.near.private_key);
+
         Ok(config)
     }
 }

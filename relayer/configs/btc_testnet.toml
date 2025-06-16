@@ -4,11 +4,8 @@ sleep_time_on_reach_last_block_sec = 60
 sleep_time_after_sync_iteration_sec = 5
 fetch_batch_size = 150
 submit_batch_size = 15
-env_prefix = "BTC"
 
 [near]
 endpoint = "https://rpc.testnet.near.org"
 btc_light_client_account_id = "btc-client-v4.testnet"
 transaction_timeout_sec = 120
-# Either provide a path to a credentials file or set it in the environment
-# near_credentials_path = "./relayer-credentials.json"
