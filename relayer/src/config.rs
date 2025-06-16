@@ -1,3 +1,4 @@
+use anyhow::{Context as _, Result};
 use btc_types::network::Network;
 use serde::Deserialize;
 use std::fs;
@@ -10,7 +11,8 @@ pub struct Config {
     pub sleep_time_after_sync_iteration_sec: u64,
     pub fetch_batch_size: u64,
     pub submit_batch_size: usize,
-    pub bitcoin: BitcoinConfig,
+    pub env_prefix: String,
+    pub bitcoin: Option<BitcoinConfig>,
     pub near: NearConfig,
     pub init: Option<InitConfig>,
 }
@@ -46,6 +48,11 @@ pub struct InitConfig {
     pub init_height: u64,
 }
 
+fn get_env_var(prefix: &str, var: &str) -> Result<String> {
+    let var = format!("{prefix}_{var}");
+    std::env::var(&var).context(format!("Failed getting env var {var}"))
+}
+
 /// Launching configuration file from a ./config.toml
 /// Expects configuration to be in the same directory as an executable file
 impl Config {
@@ -55,8 +62,20 @@ impl Config {
     /// * config file not exists
     /// * incorrect config
     pub fn new(file: String) -> Result<Self, Box<dyn std::error::Error>> {
-        let config_toml = fs::read_to_string(file)?;
-        let config: Config = toml::from_str(&config_toml)?;
+        let config_toml = fs::read_to_string(file).context("Failed to read config file")?;
+        let mut config: Config =
+            toml::from_str(&config_toml).context("Failed to parse config file")?;
+
+        if config.bitcoin.is_none() {
+            config.bitcoin = Some(BitcoinConfig {
+                endpoint: get_env_var(&config.env_prefix, "ENDPOINT")?,
+                node_user: get_env_var(&config.env_prefix, "NODE_USER").unwrap_or_default(),
+                node_password: get_env_var(&config.env_prefix, "NODE_PASSWORD").unwrap_or_default(),
+                node_headers: get_env_var(&config.env_prefix, "NODE_HEADERS")
+                    .map(|s| serde_json::from_str(&s).expect("Failed to parse NODE_HEADERS"))
+                    .ok(),
+            });
+        }
         Ok(config)
     }
 }

@@ -35,6 +35,7 @@ merkle-tools = { path = "../merkle-tools" }
 hex = "0.4"
 minreq = { version = "2.12.0", features = ["https"] }
 clap = { version = "4.5", features = ["derive"] }
+anyhow = "1"
 
 [dev-dependencies]
 lazy_static = "1.4"
