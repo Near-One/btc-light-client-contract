@@ -48,7 +48,7 @@ pub struct InitConfig {
 }
 
 fn get_env_var(var: &str) -> Option<String> {
-    std::env::var(&var).ok()
+    std::env::var(var).ok()
 }
 
 /// Launching configuration file from a ./config.toml
@@ -70,9 +70,10 @@ impl Config {
             endpoint: get_env_var("ENDPOINT").unwrap_or(bitcoin_config.endpoint),
             node_user: get_env_var("NODE_USER").unwrap_or(bitcoin_config.node_user),
             node_password: get_env_var("NODE_PASSWORD").unwrap_or(bitcoin_config.node_password),
-            node_headers: get_env_var("NODE_HEADERS")
-                .map(|s| serde_json::from_str(&s).expect("Failed to parse NODE_HEADERS"))
-                .unwrap_or(bitcoin_config.node_headers),
+            node_headers: match get_env_var("NODE_HEADERS") {
+                Some(s) => Some(serde_json::from_str(&s).context("Failed to parse NODE_HEADERS")?),
+                None => bitcoin_config.node_headers,
+            },
         });
 
         config.near.endpoint = get_env_var("NEAR_RPC_HTTP_URL").unwrap_or(config.near.endpoint);
