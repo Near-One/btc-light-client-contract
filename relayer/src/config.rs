@@ -1,8 +1,8 @@
 use btc_types::network::Network;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Config {
     pub max_fork_len: u64,
     pub sleep_time_on_fail_sec: u64,
@@ -16,7 +16,7 @@ pub struct Config {
 }
 
 #[allow(dead_code)]
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct BitcoinConfig {
     pub endpoint: String,
@@ -25,7 +25,7 @@ pub struct BitcoinConfig {
     pub node_headers: Option<Vec<(String, String)>>,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct NearConfig {
     pub endpoint: String,
@@ -36,7 +36,7 @@ pub struct NearConfig {
     pub transaction_timeout_sec: u64,
 }
 
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct InitConfig {
     pub network: Network,

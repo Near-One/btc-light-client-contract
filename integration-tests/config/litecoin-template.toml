@@ -1,0 +1,17 @@
+max_fork_len = 500
+sleep_time_on_fail_sec = 30
+sleep_time_on_reach_last_block_sec = 60
+sleep_time_after_sync_iteration_sec = 5
+batch_size = 5
+
+[bitcoin]
+endpoint = "https://litecoin-mainnet.gateway.tatum.io/"
+node_user = ""
+node_password = ""
+node_headers = [["x-api-key", ""]]
+
+[near]
+endpoint = ""
+btc_light_client_account_id = ""
+near_credentials_path = ""
+transaction_timeout_sec = 60
