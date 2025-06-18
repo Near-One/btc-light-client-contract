@@ -30,6 +30,7 @@ pub struct BitcoinConfig {
 #[derive(Deserialize, Clone, Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct NearConfig {
+    #[serde(default)]
     pub endpoint: String,
     pub btc_light_client_account_id: String,
     #[serde(default)]
