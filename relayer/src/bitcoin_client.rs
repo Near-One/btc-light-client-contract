@@ -103,10 +103,7 @@ impl Client {
     /// * incorrect bitcoin endpoint
     #[must_use]
     pub fn new(config: &Config) -> Self {
-        let config = config
-            .bitcoin
-            .clone()
-            .expect("Client configuration is not set");
+        let config = config.bitcoin.clone();
 
         let client = CustomMinreqHttpTransport {
             url: config.endpoint,

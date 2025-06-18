@@ -101,8 +101,8 @@ impl NearClient {
                 (account_id, private_key)
             } else {
                 (
-                    AccountId::from_str(&config.account_id.clone().unwrap()).unwrap(),
-                    near_crypto::SecretKey::from_str(&config.private_key.clone().unwrap()).unwrap(),
+                    AccountId::from_str(&config.account_id).unwrap(),
+                    near_crypto::SecretKey::from_str(&config.private_key).unwrap(),
                 )
             };
 

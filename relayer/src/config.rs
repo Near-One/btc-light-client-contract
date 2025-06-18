@@ -11,7 +11,8 @@ pub struct Config {
     pub sleep_time_after_sync_iteration_sec: u64,
     pub fetch_batch_size: u64,
     pub submit_batch_size: usize,
-    pub bitcoin: Option<BitcoinConfig>,
+    #[serde(default)]
+    pub bitcoin: BitcoinConfig,
     pub near: NearConfig,
     pub init: Option<InitConfig>,
 }
@@ -31,8 +32,10 @@ pub struct BitcoinConfig {
 pub struct NearConfig {
     pub endpoint: String,
     pub btc_light_client_account_id: String,
-    pub account_id: Option<String>,
-    pub private_key: Option<String>,
+    #[serde(default)]
+    pub account_id: String,
+    #[serde(default)]
+    pub private_key: String,
     pub near_credentials_path: Option<String>,
     pub transaction_timeout_sec: u64,
 }
@@ -64,9 +67,9 @@ impl Config {
         let mut config: Config =
             toml::from_str(&config_toml).context("Failed to parse config file")?;
 
-        let bitcoin_config = config.bitcoin.clone().unwrap_or_default();
+        let bitcoin_config = config.bitcoin.clone();
 
-        config.bitcoin = Some(BitcoinConfig {
+        config.bitcoin = BitcoinConfig {
             endpoint: get_env_var("ENDPOINT").unwrap_or(bitcoin_config.endpoint),
             node_user: get_env_var("NODE_USER").unwrap_or(bitcoin_config.node_user),
             node_password: get_env_var("NODE_PASSWORD").unwrap_or(bitcoin_config.node_password),
@@ -74,11 +77,12 @@ impl Config {
                 Some(s) => Some(serde_json::from_str(&s).context("Failed to parse NODE_HEADERS")?),
                 None => bitcoin_config.node_headers,
             },
-        });
+        };
 
         config.near.endpoint = get_env_var("NEAR_RPC_HTTP_URL").unwrap_or(config.near.endpoint);
-        config.near.account_id = get_env_var("NEAR_ACCOUNT_ID").or(config.near.account_id);
-        config.near.private_key = get_env_var("NEAR_PRIVATE_KEY").or(config.near.private_key);
+        config.near.account_id = get_env_var("NEAR_ACCOUNT_ID").unwrap_or(config.near.account_id);
+        config.near.private_key =
+            get_env_var("NEAR_PRIVATE_KEY").unwrap_or(config.near.private_key);
 
         Ok(config)
     }
