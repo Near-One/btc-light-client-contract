@@ -366,8 +366,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let args = CliArgs::parse();
 
-    let config =
-        Config::new(args.config).expect("we expect config.toml to be next to executable in `./`");
+    let config = Config::new(args.config).unwrap();
 
     debug!("Configuration loaded: {config:?}");
 

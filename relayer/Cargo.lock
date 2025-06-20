@@ -492,6 +492,7 @@ dependencies = [
 name = "btc-relayer"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bitcoin",
  "bitcoincore-rpc",
  "borsh",
