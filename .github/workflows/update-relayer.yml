@@ -3,7 +3,7 @@ name: Build and Release Relayer
 on:
   push:
     tags:
-      - 'relayer-v[0-9]+.[0-9]+.[0-9]+*'
+      - 'relayer-v[0-9]+\.[0-9]+\.[0-9]+*'
   workflow_dispatch:
 
 jobs:
@@ -45,28 +45,24 @@ jobs:
       - name: Add cross-compile target
         run: rustup target add ${{ matrix.target }}
 
-      - name: Build relayer
+      - name: Build relayer ( ${{ matrix.target }} / ${{ matrix.variant }} )
+        working-directory: relayer
         run: |
-          cd relayer
           case "${{ matrix.variant }}" in
-            default)
-              FLAGS=""
-              ;;
-            zcash)
-              FLAGS="--no-default-features --features zcash"
-              ;;
-            dogecoin)
-              FLAGS="--no-default-features --features dogecoin"
-              ;;
+            default) FLAGS="" ;;
+            zcash)   FLAGS="--no-default-features --features zcash" ;;
+            dogecoin)FLAGS="--no-default-features --features dogecoin" ;;
           esac
 
           cargo build --release --target ${{ matrix.target }} $FLAGS
 
-          mkdir -p ../artifacts
-          cp "target/${{ matrix.target }}/release/relayer" \
-             "../artifacts/relayer-${{ matrix.target }}-${{ matrix.variant }}"
+      - name: Collect binary into artifacts/
+        run: |
+          mkdir -p artifacts
+          cp "relayer/target/${{ matrix.target }}/release/relayer" \
+             "artifacts/relayer-${{ matrix.target }}-${{ matrix.variant }}"
 
-      - name: Upload built binary
+      - name: Upload per-variant artifact
         uses: actions/upload-artifact@v4
         with:
           name: relayer-${{ matrix.target }}-${{ matrix.variant }}
@@ -77,14 +73,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all relayer binaries
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
-      - name: Create GitHub Release and upload all binaries
+      - name: Create GitHub Release with all binaries
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           files: artifacts/**
 
-      - name: Cleanup artifacts folder
+      - name: Cleanup
         run: rm -rf artifacts
