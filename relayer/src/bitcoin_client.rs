@@ -150,10 +150,19 @@ impl Client {
         Ok(Header::from_block_header_vec(&decoded_hex)?)
     }
 
+    #[cfg(feature = "zcash")]
+    pub fn get_aux_block_header(
+        &self,
+        block_hash: &BlockHash,
+    ) -> Result<(Header, Option<AuxData>), Box<dyn Error>> {
+        Ok((self.get_block_header(block_hash)?, None))
+    }
+
     /// Get aux block header
     ///
     /// # Errors
     /// * issue with connection to the Bitcoin Node
+    #[cfg(not(feature = "zcash"))]
     pub fn get_aux_block_header(
         &self,
         block_hash: &BlockHash,
