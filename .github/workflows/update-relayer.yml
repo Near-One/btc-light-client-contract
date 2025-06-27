@@ -1,0 +1,90 @@
+name: Build and Release Relayer
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'btc-relayer-v[0-9]+\.[0-9]+\.[0-9]+*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            variant: default
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            variant: zcash
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            variant: dogecoin
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            variant: default
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            variant: zcash
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            variant: dogecoin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Add cross-compile target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build relayer ( ${{ matrix.target }} / ${{ matrix.variant }} )
+        working-directory: relayer
+        run: |
+          case "${{ matrix.variant }}" in
+            default) FLAGS="" ;;
+            zcash)   FLAGS="--no-default-features --features zcash" ;;
+            dogecoin)FLAGS="--no-default-features --features dogecoin" ;;
+          esac
+
+          cargo build --release --target ${{ matrix.target }} $FLAGS
+
+      - name: Collect binary into artifacts/
+        run: |
+          mkdir -p artifacts
+          cp "relayer/target/${{ matrix.target }}/release/btc-relayer" \
+             "artifacts/relayer-${{ matrix.target }}-${{ matrix.variant }}"
+
+      - name: Upload per-variant artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relayer-${{ matrix.target }}-${{ matrix.variant }}
+          path: artifacts/relayer-${{ matrix.target }}-${{ matrix.variant }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all relayer binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release with all binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: artifacts/**
+
+      - name: Cleanup
+        run: rm -rf artifacts
