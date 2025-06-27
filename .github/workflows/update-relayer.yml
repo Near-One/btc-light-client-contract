@@ -3,7 +3,7 @@ name: Build and Release Relayer
 on:
   push:
     tags:
-      - 'relayer-v[0-9]+\.[0-9]+\.[0-9]+*'
+      - 'btc-relayer-v[0-9]+\.[0-9]+\.[0-9]+*'
   workflow_dispatch:
 
 jobs:
@@ -59,7 +59,7 @@ jobs:
       - name: Collect binary into artifacts/
         run: |
           mkdir -p artifacts
-          cp "relayer/target/${{ matrix.target }}/release/relayer" \
+          cp "relayer/target/${{ matrix.target }}/release/btc-relayer" \
              "artifacts/relayer-${{ matrix.target }}-${{ matrix.variant }}"
 
       - name: Upload per-variant artifact
