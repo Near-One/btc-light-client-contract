@@ -1,5 +1,8 @@
 name: Build and Release Relayer
 
+permissions:
+  contents: write
+
 on:
   push:
     tags:
@@ -78,10 +81,9 @@ jobs:
           path: artifacts
 
       - name: Create GitHub Release with all binaries
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
           files: artifacts/**
 
       - name: Cleanup
