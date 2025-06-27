@@ -1,8 +1,8 @@
 #[cfg(not(feature = "zcash"))]
 use bitcoin::consensus::{encode, serialize};
-use bitcoin::TxMerkleNode;
 #[cfg(not(feature = "zcash"))]
 use bitcoin::Transaction;
+use bitcoin::TxMerkleNode;
 #[cfg(not(feature = "zcash"))]
 use bitcoincore_rpc::bitcoin::block::Header as BitcoinHeader;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
