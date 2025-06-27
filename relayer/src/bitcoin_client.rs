@@ -1,5 +1,9 @@
+#[cfg(not(feature = "zcash"))]
 use bitcoin::consensus::{encode, serialize};
-use bitcoin::{Transaction, TxMerkleNode};
+use bitcoin::TxMerkleNode;
+#[cfg(not(feature = "zcash"))]
+use bitcoin::Transaction;
+#[cfg(not(feature = "zcash"))]
 use bitcoincore_rpc::bitcoin::block::Header as BitcoinHeader;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
@@ -156,7 +160,7 @@ impl Client {
     pub fn get_aux_block_header(
         &self,
         block_hash: &BlockHash,
-    ) -> Result<(Header, Option<AuxData>), Box<dyn Error>> {
+    ) -> Result<(Header, Option<AuxData>), Box<dyn Error + Send + Sync>> {
         Ok((self.get_block_header(block_hash)?, None))
     }
 
@@ -271,6 +275,7 @@ impl Client {
     }
 }
 
+#[cfg(not(feature = "zcash"))]
 fn into_json<T>(val: T) -> Result<serde_json::Value, bitcoincore_rpc::Error>
 where
     T: serde::ser::Serialize,
