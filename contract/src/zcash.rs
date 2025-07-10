@@ -39,8 +39,6 @@ impl BtcLightClient {
         // Check future timestamp soft fork rule introduced in v2.1.1-1.
         // This retrospectively activates at block height 2 for mainnet and regtest,
         // and 6 blocks after Blossom activation for testnet.
-        // Explanations of these activation heights are in src/consensus/params.h
-        // and chainparams.cpp.
         //
         // MAX_FUTURE_BLOCK_TIME_MTP is typically 129600 seconds (36 hours) in Zcash
         require!(
