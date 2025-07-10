@@ -101,12 +101,30 @@ impl BtcLightClient {
         let bytes = hex::decode(&script_sig[pos_chain_root + 8..pos_chain_root + 16]).unwrap();
         let n_nonce = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
 
+        let chain_id = block_header.get_chain_id();
+
+        let expected_index =
+            Self::get_expected_index(n_nonce, chain_id, aux_data.chain_merkle_proof.len());
+
+        require!(
+            u32::try_from(aux_data.chain_id).ok() == Some(expected_index),
+            "Aux POW wrong index"
+        );
         let pow_hash = aux_data.parent_block.block_hash_pow();
         require!(
             self.skip_pow_verification
                 || U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
             format!("block should have correct pow")
         );
+    }
+
+    fn get_expected_index(nonce: u32, chain_id: i32, merkle_height: usize) -> u32 {
+        let mut rand = nonce;
+        rand = rand * 1103515245 + 12345;
+        rand += u32::try_from(chain_id).unwrap();
+        rand = rand * 1103515245 + 12345;
+
+        return rand % (1 << merkle_height);
     }
 
     pub(crate) fn submit_block_header(
