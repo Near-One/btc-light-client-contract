@@ -108,6 +108,10 @@ pub struct BtcLightClient {
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
     gc_threshold: u64,
 
+    // https://github.com/dogecoin/dogecoin/blob/master/src/chainparams.cpp#L276
+    #[cfg(feature = "dogecoin")]
+    aux_chain_id: Option<i32>,
+
     // Network type Mainnet/Testnet
     network: Network,
 }
@@ -131,6 +135,8 @@ impl BtcLightClient {
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
+            #[cfg(feature = "dogecoin")]
+            aux_chain_id: args.aux_chain_id,
             network: args.network,
         };
 
@@ -651,6 +657,8 @@ mod migrate {
                 headers_pool: old_state.headers_pool,
                 skip_pow_verification: old_state.skip_pow_verification,
                 gc_threshold: old_state.gc_threshold,
+                #[cfg(feature = "dogecoin")]
+                aux_chain_id: None,
                 network,
             }
         }

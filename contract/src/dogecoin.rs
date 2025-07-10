@@ -39,6 +39,13 @@ impl BtcLightClient {
             "Aux POW chain merkle branch too long"
         );
 
+        if let Some(chain_id) = self.aux_chain_id {
+            require!(
+                chain_id == block_header.get_chain_id(),
+                "Aux POW parent has our chain ID"
+            );
+        }
+
         let chain_root = merkle_tools::compute_root_from_merkle_proof(
             block_header.block_hash(),
             aux_data.chain_id,
