@@ -77,8 +77,7 @@ impl BtcLightClient {
         match pos_merged_mining_header {
             Some(pos_merged_mining_header) => {
                 if script_sig[pos_merged_mining_header + MERGED_MINING_HEADER.len()..]
-                    .find(MERGED_MINING_HEADER)
-                    .is_some()
+                    .contains(MERGED_MINING_HEADER)
                 {
                     env::panic_str("Multiple merged mining headers in coinbase");
                 }
