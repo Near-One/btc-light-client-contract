@@ -64,7 +64,6 @@ impl Header {
         block_header
     }
 
-
     pub fn get_chain_id(&self) -> i32 {
         return self.version >> 16;
     }
