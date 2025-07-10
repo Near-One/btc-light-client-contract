@@ -744,6 +744,7 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
+            aux_chain_id: None,
             submit_blocks: [genesis_block].to_vec(),
         }
     }
@@ -756,6 +757,7 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 3,
+            aux_chain_id: None,
             submit_blocks: [genesis_block].to_vec(),
         }
     }

@@ -23,6 +23,7 @@ mod test_basics {
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 5,
+            aux_chain_id: None,
             network: btc_types::network::Network::Mainnet,
             submit_blocks: [block_header.clone()].to_vec(),
         };
@@ -56,6 +57,7 @@ mod test_basics {
             genesis_block_height: 685_440,
             skip_pow_verification: false,
             gc_threshold,
+            aux_chain_id: None,
             network: btc_types::network::Network::Mainnet,
             submit_blocks: [block_headers[0][0].clone()].to_vec(),
         };
