@@ -109,9 +109,6 @@ pub struct BtcLightClient {
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
     gc_threshold: u64,
 
-    // Used only for networks with AuxPoW (Dogecoin). These are the hashes of already used parent blocks (Litecoin blocks for Dogecoin)
-    used_aux_parent_blocks: LookupSet<H256>,
-
     // Network type Mainnet/Testnet
     network: Network,
 }
@@ -135,7 +132,6 @@ impl BtcLightClient {
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
-            used_aux_parent_blocks: LookupSet::new(StorageKey::AuxParentBlocks),
             network: args.network,
         };
 
@@ -587,12 +583,7 @@ impl BtcLightClient {
     /// Remove block header and meta information
     fn remove_block_header(&mut self, header_block_hash: &H256) {
         self.mainchain_header_to_height.remove(header_block_hash);
-        if let Some(_header) = self.headers_pool.remove(header_block_hash) {
-            #[cfg(feature = "dogecoin")]
-            if let Some(aux_parent_blockhash) = _header.aux_parent_block {
-                self.used_aux_parent_blocks.remove(&aux_parent_blockhash);
-            }
-        }
+        self.headers_pool.remove(header_block_hash);
     }
 
     /// Stores and handles fork submissions
@@ -661,7 +652,6 @@ mod migrate {
                 headers_pool: old_state.headers_pool,
                 skip_pow_verification: old_state.skip_pow_verification,
                 gc_threshold: old_state.gc_threshold,
-                used_aux_parent_blocks: LookupSet::new(StorageKey::AuxParentBlocks),
                 network,
             }
         }

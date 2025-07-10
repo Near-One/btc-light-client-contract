@@ -7,6 +7,9 @@ use btc_types::network::{Network, NetworkConfig};
 use btc_types::utils::{target_from_bits, work_from_bits};
 use near_sdk::{env, near, require};
 
+//https://github.com/dogecoin/dogecoin/blob/2c513d0172e8bc86fe9a337693b26f2fdf68a013/src/auxpow.h#L24
+const MERGED_MINING_HEADER: &str = "fabe6d6d";
+
 #[near]
 impl BtcLightClient {
     pub fn get_config(&self) -> btc_types::network::NetworkConfig {
@@ -31,10 +34,15 @@ impl BtcLightClient {
     }
 
     pub(crate) fn check_aux(&mut self, block_header: &Header, aux_data: &AuxData) {
-        let parent_block_hash = aux_data.parent_block.block_hash();
         require!(
-            self.used_aux_parent_blocks.insert(&parent_block_hash),
-            "parent block already used"
+            aux_data.chain_merkle_proof.size() <= 30,
+            "Aux POW chain merkle branch too long"
+        );
+
+        let chain_root = merkle_tools::compute_root_from_merkle_proof(
+            block_header.block_hash(),
+            aux_data.chain_id,
+            &aux_data.chain_merkle_proof,
         );
 
         let coinbase_tx = aux_data.get_coinbase_tx();
@@ -48,22 +56,34 @@ impl BtcLightClient {
             ) == aux_data.parent_block.merkle_root
         );
 
-        let chain_root = merkle_tools::compute_root_from_merkle_proof(
-            block_header.block_hash(),
-            aux_data.chain_id,
-            &aux_data.chain_merkle_proof,
-        );
+        let script_sig = coinbase_tx
+            .input
+            .first()
+            .unwrap()
+            .script_sig
+            .to_hex_string();
+        let pos_merged_mining_header = script_sig.find(MERGED_MINING_HEADER);
+        let pos_chain_root = script_sig
+            .find(&chain_root.to_string())
+            .expect("Aux POW missing chain merkle root in parent coinbase");
 
-        require!(
-            coinbase_tx
-                .input
-                .first()
-                .unwrap()
-                .script_sig
-                .to_hex_string()
-                .contains(&chain_root.to_string()),
-            "coinbase_tx don't contain chain_root"
-        );
+        match pos_merged_mining_header {
+            Some(pos_merged_mining_header) => {
+                if let Some(_) = script_sig[pos_merged_mining_header + MERGED_MINING_HEADER.len()..]
+                    .find(MERGED_MINING_HEADER)
+                {
+                    env::panic_str("Multiple merged mining headers in coinbase");
+                }
+
+                require!(
+                    pos_merged_mining_header + MERGED_MINING_HEADER.len() == pos_chain_root,
+                    "Merged mining header is not just before chain merkle root"
+                );
+            }
+            None => {
+                require!(pos_chain_root <= 40, "Aux POW chain merkle root must start in the first 20 bytes of the parent coinbase")
+            }
+        }
 
         let pow_hash = aux_data.parent_block.block_hash_pow();
         require!(
