@@ -127,11 +127,11 @@ impl BtcLightClient {
 
     fn get_expected_index(nonce: u32, chain_id: i32, merkle_height: usize) -> u32 {
         let mut rand = nonce;
-        rand = rand * 1103515245 + 12345;
-        rand += u32::try_from(chain_id).unwrap();
-        rand = rand * 1103515245 + 12345;
+        rand = rand.wrapping_mul(1103515245).wrapping_add(12345);
+        rand = rand.wrapping_add(u32::try_from(chain_id).unwrap());
+        rand = rand.wrapping_mul(1103515245).wrapping_add(12345);
 
-        return rand % (1 << merkle_height);
+        return rand.wrapping_rem(1u32 << merkle_height);
     }
 
     pub(crate) fn submit_block_header(
