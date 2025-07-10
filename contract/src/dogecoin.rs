@@ -35,7 +35,7 @@ impl BtcLightClient {
 
     pub(crate) fn check_aux(&mut self, block_header: &Header, aux_data: &AuxData) {
         require!(
-            aux_data.chain_merkle_proof.size() <= 30,
+            aux_data.chain_merkle_proof.len() <= 30,
             "Aux POW chain merkle branch too long"
         );
 
@@ -63,7 +63,7 @@ impl BtcLightClient {
             .script_sig
             .to_hex_string();
         let pos_merged_mining_header = script_sig.find(MERGED_MINING_HEADER);
-        let pos_chain_root = script_sig
+        let mut pos_chain_root = script_sig
             .find(&chain_root.to_string())
             .expect("Aux POW missing chain merkle root in parent coinbase");
 
@@ -81,9 +81,25 @@ impl BtcLightClient {
                 );
             }
             None => {
-                require!(pos_chain_root <= 40, "Aux POW chain merkle root must start in the first 20 bytes of the parent coinbase")
+                require!(pos_chain_root <= 40, "Aux POW chain merkle root must start in the first 20 bytes of the parent coinbase");
             }
         }
+
+        pos_chain_root += chain_root.to_string().len();
+        require!(
+            script_sig.len() - pos_chain_root >= 16,
+            "Aux POW missing chain merkle tree size and nonce in parent coinbase"
+        );
+
+        let bytes = hex::decode(&script_sig[pos_chain_root..pos_chain_root + 8]).unwrap();
+        let n_size = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+        require!(
+            n_size == (1u32 << aux_data.chain_merkle_proof.len()),
+            "Aux POW merkle branch size does not match parent coinbase"
+        );
+
+        let bytes = hex::decode(&script_sig[pos_chain_root + 8..pos_chain_root + 16]).unwrap();
+        let n_nonce = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
 
         let pow_hash = aux_data.parent_block.block_hash_pow();
         require!(

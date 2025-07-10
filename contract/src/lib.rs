@@ -8,7 +8,7 @@ use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::{LookupMap, LookupSet};
+use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
@@ -71,7 +71,6 @@ enum StorageKey {
     MainchainHeightToHeader,
     MainchainHeaderToHeight,
     HeadersPool,
-    AuxParentBlocks,
 }
 
 /// Contract implementing Bitcoin light client.
@@ -610,7 +609,7 @@ impl BlocksGetter for BtcLightClient {
 mod migrate {
     use crate::{
         borsh, env, near, BorshDeserialize, BorshSerialize, BtcLightClient, BtcLightClientExt,
-        ExtendedHeader, LookupMap, LookupSet, Network, PanicOnDefault, StorageKey, H256,
+        ExtendedHeader, LookupMap, Network, PanicOnDefault, H256,
     };
 
     #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
