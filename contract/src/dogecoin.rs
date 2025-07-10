@@ -76,8 +76,8 @@ impl BtcLightClient {
 
         match pos_merged_mining_header {
             Some(pos_merged_mining_header) => {
-                if let Some(_) = script_sig[pos_merged_mining_header + MERGED_MINING_HEADER.len()..]
-                    .find(MERGED_MINING_HEADER)
+                if script_sig[pos_merged_mining_header + MERGED_MINING_HEADER.len()..]
+                    .find(MERGED_MINING_HEADER).is_some()
                 {
                     env::panic_str("Multiple merged mining headers in coinbase");
                 }
@@ -127,11 +127,11 @@ impl BtcLightClient {
 
     fn get_expected_index(nonce: u32, chain_id: i32, merkle_height: usize) -> u32 {
         let mut rand = nonce;
-        rand = rand.wrapping_mul(1103515245).wrapping_add(12345);
+        rand = rand.wrapping_mul(1_103_515_245).wrapping_add(12345);
         rand = rand.wrapping_add(u32::try_from(chain_id).unwrap());
-        rand = rand.wrapping_mul(1103515245).wrapping_add(12345);
+        rand = rand.wrapping_mul(1_103_515_245).wrapping_add(12345);
 
-        return rand.wrapping_rem(1u32 << merkle_height);
+        rand.wrapping_rem(1u32 << merkle_height)
     }
 
     pub(crate) fn submit_block_header(
