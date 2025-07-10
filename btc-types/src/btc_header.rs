@@ -65,7 +65,7 @@ impl Header {
     }
 
     pub fn get_chain_id(&self) -> i32 {
-        return self.version >> 16;
+        self.version >> 16
     }
 
     pub fn from_block_header_vec(block_header: &[u8]) -> Result<Self, Error> {
