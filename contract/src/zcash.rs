@@ -44,14 +44,14 @@ impl BtcLightClient {
         require!(
             block_header.time
                 <= next_work_result.prev_block_median_time_past + MAX_FUTURE_BLOCK_TIME_MTP,
-            "Timestamp %d is too far ahead of median-time-past"
+            "Block timestamp is too far ahead of median-time-past"
         );
 
         // Check timestamp
         let current_timestamp = u32::try_from(env::block_timestamp_ms() / 1000).unwrap(); // Convert to seconds
         require!(
             block_header.time <= current_timestamp + MAX_FUTURE_BLOCK_TIME_LOCAL,
-            "Block time is before the previous block time"
+            "Block timestamp is too far ahead of local time"
         );
 
         require!(
