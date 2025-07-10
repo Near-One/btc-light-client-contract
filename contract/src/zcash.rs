@@ -146,7 +146,7 @@ fn zcash_get_next_work_required(
     let average_target = total_target
         / U256::from(<i64 as TryInto<u64>>::try_into(config.pow_averaging_window).unwrap());
 
-    let expexted_bit = zcash_calculate_next_work_required(
+    let expected_bits = zcash_calculate_next_work_required(
         config,
         average_target,
         prev_block_median_time_past,
@@ -154,7 +154,7 @@ fn zcash_get_next_work_required(
     );
 
     NextWorkResult {
-        expected_bits: expexted_bit,
+        expected_bits,
         prev_block_median_time_past,
     }
 }
