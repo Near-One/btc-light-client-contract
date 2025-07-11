@@ -439,6 +439,8 @@ impl BtcLightClient {
         };
 
         if !skip_pow_verification {
+            self.check_target(&header, &prev_block_header);
+
             let pow_hash = header.block_hash_pow();
             // Check if the block hash is less than or equal to the target
             require!(
@@ -447,25 +449,14 @@ impl BtcLightClient {
             );
         }
 
-        self.submit_block_header_inner(
-            &header,
-            current_header,
-            &prev_block_header,
-            skip_pow_verification,
-        );
+        self.submit_block_header_inner(current_header, &prev_block_header);
     }
 
     fn submit_block_header_inner(
         &mut self,
-        block_header: &Header,
         current_header: ExtendedHeader,
         prev_block_header: &ExtendedHeader,
-        skip_pow_verification: bool,
     ) {
-        if !skip_pow_verification {
-            self.check_target(block_header, prev_block_header);
-        }
-
         // Main chain submission
         if prev_block_header.block_hash == self.mainchain_tip_blockhash {
             // Probably we should check if it is not in a mainchain?

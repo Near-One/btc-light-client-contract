@@ -141,6 +141,8 @@ impl BtcLightClient {
     ) {
         let (block_header, aux_data) = header;
         if !skip_pow_verification {
+            self.check_target(&header, &prev_block_header);
+
             if let Some(ref aux_data) = aux_data {
                 self.check_aux(&block_header, aux_data);
             } else {
@@ -169,7 +171,6 @@ impl BtcLightClient {
         };
 
         self.submit_block_header_inner(
-            &block_header,
             current_header,
             &prev_block_header,
             skip_pow_verification,
