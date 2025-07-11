@@ -140,10 +140,17 @@ impl BtcLightClient {
         skip_pow_verification: bool,
     ) {
         let (block_header, aux_data) = header;
-        let mut skip_pow_verification = skip_pow_verification;
-        if let Some(ref aux_data) = aux_data {
-            self.check_aux(&block_header, aux_data);
-            skip_pow_verification = true;
+        if !skip_pow_verification {
+            if let Some(ref aux_data) = aux_data {
+                self.check_aux(&block_header, aux_data);
+            } else {
+                let pow_hash = block_header.block_hash_pow();
+                // Check if the block hash is less than or equal to the target
+                require!(
+                    U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
+                    format!("block should have correct pow")
+                );
+            }
         }
 
         let prev_block_header = self.get_prev_header(&block_header);
@@ -159,7 +166,6 @@ impl BtcLightClient {
             block_hash: current_block_hash,
             chain_work: current_block_computed_chain_work,
             block_height: 1 + prev_block_header.block_height,
-            aux_parent_block: aux_data.map(|data| data.parent_block.block_hash()),
         };
 
         self.submit_block_header_inner(

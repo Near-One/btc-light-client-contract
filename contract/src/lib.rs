@@ -3,7 +3,9 @@ use btc_types::hash::H256;
 use btc_types::header::{BlockHeader, ExtendedHeader, Header, LightHeader};
 use btc_types::network::Network;
 use btc_types::u256::U256;
-use btc_types::utils::{target_from_bits, work_from_bits};
+#[cfg(not(feature = "dogecoin"))]
+use btc_types::utils::target_from_bits;
+use btc_types::utils::work_from_bits;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
@@ -392,8 +394,6 @@ impl BtcLightClient {
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
-            #[cfg(feature = "dogecoin")]
-            aux_parent_block: None,
         };
 
         self.store_block_header(&header);
@@ -438,6 +438,15 @@ impl BtcLightClient {
             block_height: 1 + prev_block_header.block_height,
         };
 
+        if !skip_pow_verification {
+            let pow_hash = header.block_hash_pow();
+            // Check if the block hash is less than or equal to the target
+            require!(
+                U256::from_le_bytes(&pow_hash.0) <= target_from_bits(header.bits),
+                format!("block should have correct pow")
+            );
+        }
+
         self.submit_block_header_inner(
             &header,
             current_header,
@@ -453,14 +462,8 @@ impl BtcLightClient {
         prev_block_header: &ExtendedHeader,
         skip_pow_verification: bool,
     ) {
-        let pow_hash = block_header.block_hash_pow();
         if !skip_pow_verification {
             self.check_target(block_header, prev_block_header);
-            // Check if the block hash is less than or equal to the target
-            require!(
-                U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
-                format!("block should have correct pow")
-            );
         }
 
         // Main chain submission
