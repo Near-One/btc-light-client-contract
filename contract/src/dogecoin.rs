@@ -140,8 +140,12 @@ impl BtcLightClient {
         skip_pow_verification: bool,
     ) {
         let (block_header, aux_data) = header;
+
+        let prev_block_header = self.get_prev_header(&block_header);
+        let current_block_hash = block_header.block_hash();
+
         if !skip_pow_verification {
-            self.check_target(&header, &prev_block_header);
+            self.check_target(&block_header, &prev_block_header);
 
             if let Some(ref aux_data) = aux_data {
                 self.check_aux(&block_header, aux_data);
@@ -155,9 +159,6 @@ impl BtcLightClient {
             }
         }
 
-        let prev_block_header = self.get_prev_header(&block_header);
-        let current_block_hash = block_header.block_hash();
-
         let (current_block_computed_chain_work, overflow) = prev_block_header
             .chain_work
             .overflowing_add(work_from_bits(block_header.bits));
@@ -170,11 +171,7 @@ impl BtcLightClient {
             block_height: 1 + prev_block_header.block_height,
         };
 
-        self.submit_block_header_inner(
-            current_header,
-            &prev_block_header,
-            skip_pow_verification,
-        );
+        self.submit_block_header_inner(current_header, &prev_block_header);
     }
 }
 
