@@ -1,6 +1,11 @@
 GCP_PROJECT ?= bridge-misc
 PLATFORM ?= linux/amd64
 
+CHAINS = btc ltc
+
+docker-build-all: $(addprefix docker-build-,$(CHAINS))
+docker-push-all: $(addprefix docker-push-,$(CHAINS))
+
 docker-build-%:
 	echo "Building $*-relayer for ${PLATFORM}"
 	docker compose -f compose-$*.yaml build
