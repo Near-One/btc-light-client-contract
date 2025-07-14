@@ -32,7 +32,7 @@ impl BtcLightClient {
 
         // Check timestamp against prev
         require!(
-            block_header.time >= next_work_result.prev_block_median_time_past,
+            block_header.time > next_work_result.prev_block_median_time_past,
             "Block time is before the median time of the previous block"
         );
 
@@ -83,17 +83,17 @@ fn zcash_get_next_work_required(
     prev_block_header: &ExtendedHeader,
     prev_block_getter: &impl BlocksGetter,
 ) -> NextWorkResult {
-    use btc_types::network::ZCASH_MEDIAN_TIME_SPAN;
+    use btc_types::network::MEDIAN_TIME_SPAN;
 
     // Find the first block in the averaging interval
     // and the median time past for the first and last blocks in the interval
     let mut current_header = prev_block_header.clone();
     let mut total_target = U256::ZERO;
-    let mut median_time = [0u32; ZCASH_MEDIAN_TIME_SPAN];
+    let mut median_time = [0u32; MEDIAN_TIME_SPAN];
 
     let prev_block_median_time_past = {
         for i in 0..usize::try_from(config.pow_averaging_window).unwrap() {
-            if i < ZCASH_MEDIAN_TIME_SPAN {
+            if i < MEDIAN_TIME_SPAN {
                 median_time[i] = current_header.block_header.time;
             }
 
@@ -110,7 +110,7 @@ fn zcash_get_next_work_required(
     };
 
     let first_block_in_interval_median_time_past = {
-        for i in 0..ZCASH_MEDIAN_TIME_SPAN {
+        for i in 0..MEDIAN_TIME_SPAN {
             median_time[i] = current_header.block_header.time;
             current_header = prev_block_getter.get_prev_header(&current_header.block_header);
         }

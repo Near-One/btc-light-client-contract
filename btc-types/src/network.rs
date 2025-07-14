@@ -2,7 +2,7 @@ use near_sdk::near;
 
 use crate::u256::U256;
 
-pub const ZCASH_MEDIAN_TIME_SPAN: usize = 11;
+pub const MEDIAN_TIME_SPAN: usize = 11;
 
 /**
  * Maximum amount of time that a block timestamp is allowed to be ahead of the
