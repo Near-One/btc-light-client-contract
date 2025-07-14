@@ -22,10 +22,7 @@ impl BtcLightClient {
 
         require!(
             expected_bits == block_header.bits,
-            format!(
-                "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
-                expected_bits, block_header.bits
-            )
+            "bad-diffbits: incorrect proof of work"
         );
 
         // Check timestamp against prev
@@ -44,7 +41,7 @@ impl BtcLightClient {
         // Reject blocks with outdated version
         require!(
             block_header.version >= 4,
-            "Block version must be at least 4"
+            "bad-version: block version must be at least 4"
         );
     }
 }

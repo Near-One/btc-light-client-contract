@@ -40,7 +40,10 @@ impl BtcLightClient {
         );
 
         // Reject blocks with outdated version
-        require!(block_header.version >= 4, "bad-version: rejected nVersion");
+        require!(
+            block_header.version >= 4,
+            "bad-version: block version must be at least 4"
+        );
     }
 }
 

@@ -24,16 +24,13 @@ impl BtcLightClient {
 
         require!(
             next_work_result.expected_bits == block_header.bits,
-            format!(
-                "Error: Incorrect target. Expected bits: {:?}, Actual bits: {:?}",
-                next_work_result.expected_bits, block_header.bits
-            )
+            "bad-diffbits: incorrect proof of work"
         );
 
         // Check timestamp against prev
         require!(
             block_header.time > next_work_result.prev_block_median_time_past,
-            "Block time is before the median time of the previous block"
+            "time-too-old: block time is before the median time of the previous block"
         );
 
         // Check future timestamp soft fork rule introduced in v2.1.1-1.
@@ -44,19 +41,19 @@ impl BtcLightClient {
         require!(
             block_header.time
                 <= next_work_result.prev_block_median_time_past + MAX_FUTURE_BLOCK_TIME_MTP,
-            "Block timestamp is too far ahead of median-time-past"
+            "time-too-far-ahead-of-mtp: block timestamp is too far ahead of median-time-past"
         );
 
         // Check timestamp
         let current_timestamp = u32::try_from(env::block_timestamp_ms() / 1000).unwrap(); // Convert to seconds
         require!(
             block_header.time <= current_timestamp + MAX_FUTURE_BLOCK_TIME_LOCAL,
-            "Block timestamp is too far ahead of local time"
+            "time-too-new: block timestamp is too far ahead of local time"
         );
 
         require!(
             block_header.version >= 4,
-            "Block version must be at least 4"
+            "bad-version: block version must be at least 4"
         );
 
         // Check Equihash solution
