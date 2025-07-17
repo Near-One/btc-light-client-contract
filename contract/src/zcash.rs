@@ -128,8 +128,8 @@ fn zcash_calculate_next_work_required(
 
     // Limit adjustment step
     // Use medians to prevent time-warp attacks
-    let mut actual_timespan =
-        i64::from(last_interval_block_median_time_past) - i64::from(first_interval_block_median_time_past);
+    let mut actual_timespan = i64::from(last_interval_block_median_time_past)
+        - i64::from(first_interval_block_median_time_past);
 
     actual_timespan = averaging_window_timespan + (actual_timespan - averaging_window_timespan) / 4;
 
@@ -171,13 +171,9 @@ mod tests {
         let average_target = target_from_bits(0x1d00ffff);
         let first_time = 1000000000;
         let last_time = 1000003570;
-        
-        let result = zcash_calculate_next_work_required(
-            &config,
-            average_target,
-            last_time,
-            first_time,
-        );
+
+        let result =
+            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1d011998);
     }
@@ -189,13 +185,9 @@ mod tests {
         let average_target = target_from_bits(0x1d00ffff);
         let first_time = 1000000000;
         let last_time = 1000001445;
-        
-        let result = zcash_calculate_next_work_required(
-            &config,
-            average_target,
-            last_time,
-            first_time,
-        );
+
+        let result =
+            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
 
         assert_lt!(result, 0x1d011998);
     }
@@ -208,13 +200,9 @@ mod tests {
         let average_target = target_from_bits(0x1f07ffff);
         let first_time = 1231006505;
         let last_time = 1233061996;
-        
-        let result = zcash_calculate_next_work_required(
-            &config,
-            average_target,
-            last_time,
-            first_time,
-        );
+
+        let result =
+            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1f07ffff);
     }
@@ -226,13 +214,9 @@ mod tests {
         let average_target = target_from_bits(0x1f07ffff);
         let first_time = 1231006505;
         let last_time = 1233061996;
-        
-        let result = zcash_calculate_next_work_required(
-            &config,
-            average_target,
-            last_time,
-            first_time,
-        );
+
+        let result =
+            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1f07ffff);
     }
@@ -245,13 +229,9 @@ mod tests {
         let average_target = target_from_bits(0x1c05a3f4);
         let first_time = 1000000000;
         let last_time = 100000917;
-        
-        let result = zcash_calculate_next_work_required(
-            &config,
-            average_target,
-            last_time,
-            first_time,
-        );
+
+        let result =
+            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1c04bceb);
     }
@@ -263,13 +243,9 @@ mod tests {
         let average_target = target_from_bits(0x1c05a3f4);
         let first_time = 1000000000;
         let last_time = 1000000458;
-        
-        let result = zcash_calculate_next_work_required(
-            &config,
-            average_target,
-            last_time,
-            first_time,
-        );
+
+        let result =
+            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1c04bceb);
     }
@@ -282,13 +258,9 @@ mod tests {
         let average_target = target_from_bits(0x1c387f6f);
         let first_time = 1000000000;
         let last_time = 1000005815;
-        
-        let result = zcash_calculate_next_work_required(
-            &config,
-            average_target,
-            last_time,
-            first_time,
-        );
+
+        let result =
+            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1c4a93bb);
     }
@@ -300,13 +272,9 @@ mod tests {
         let average_target = target_from_bits(0x1c387f6f);
         let first_time = 1000000000;
         let last_time = 1000002908;
-        
-        let result = zcash_calculate_next_work_required(
-            &config,
-            average_target,
-            last_time,
-            first_time,
-        );
+
+        let result =
+            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1c4a93bb);
     }
