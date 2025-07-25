@@ -42,6 +42,11 @@ impl BtcLightClient {
         if let Some(chain_id) = self.aux_chain_id {
             require!(
                 chain_id == block_header.get_chain_id(),
+                format!("block does not have our chain ID (got {block_header.get_chain_id()}, expected {chain_id})")
+            );
+
+            require!(
+                chain_id != aux_data.parent_block.get_chain_id(),
                 "Aux POW parent has our chain ID"
             );
         }
