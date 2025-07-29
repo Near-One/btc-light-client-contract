@@ -348,11 +348,6 @@ impl BtcLightClient {
                 .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         }
     }
-
-    #[private]
-    pub fn set_skip_pow_verification(&mut self, skip: bool) {
-        self.skip_pow_verification = skip;
-    }
 }
 
 impl BtcLightClient {
