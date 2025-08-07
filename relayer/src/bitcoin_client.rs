@@ -1,5 +1,9 @@
+#[cfg(not(feature = "zcash"))]
 use bitcoin::consensus::{encode, serialize};
-use bitcoin::{Transaction, TxMerkleNode};
+#[cfg(not(feature = "zcash"))]
+use bitcoin::Transaction;
+use bitcoin::TxMerkleNode;
+#[cfg(not(feature = "zcash"))]
 use bitcoincore_rpc::bitcoin::block::Header as BitcoinHeader;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
@@ -102,16 +106,18 @@ impl Client {
     /// * incorrect bitcoin endpoint
     #[must_use]
     pub fn new(config: &Config) -> Self {
+        let config = config.bitcoin.clone();
+
         let client = CustomMinreqHttpTransport {
-            url: config.bitcoin.endpoint.clone(),
+            url: config.endpoint,
             timeout: std::time::Duration::from_secs(15),
             basic_auth: Some(CustomMinreqHttpTransport::basic_auth(
-                config.bitcoin.node_user.clone(),
-                Some(&config.bitcoin.node_password.clone()),
+                config.node_user,
+                Some(&config.node_password),
             )),
-            headers: config.bitcoin.node_headers.clone().unwrap_or_default(),
+            headers: config.node_headers.unwrap_or_default(),
         };
-        println!("client: {:?}", client.headers);
+
         let inner = bitcoincore_rpc::Client::from_jsonrpc(client.into());
 
         Self { inner }
@@ -141,7 +147,7 @@ impl Client {
     pub fn get_block_header(
         &self,
         block_hash: &BlockHash,
-    ) -> Result<Header, Box<dyn std::error::Error>> {
+    ) -> Result<Header, Box<dyn std::error::Error + Send + Sync>> {
         let hex: String = self.inner.call(
             "getblockheader",
             &[serde_json::to_value(block_hash)?, false.into()],
@@ -150,14 +156,23 @@ impl Client {
         Ok(Header::from_block_header_vec(&decoded_hex)?)
     }
 
+    #[cfg(feature = "zcash")]
+    pub fn get_aux_block_header(
+        &self,
+        block_hash: &BlockHash,
+    ) -> Result<(Header, Option<AuxData>), Box<dyn Error + Send + Sync>> {
+        Ok((self.get_block_header(block_hash)?, None))
+    }
+
     /// Get aux block header
     ///
     /// # Errors
     /// * issue with connection to the Bitcoin Node
+    #[cfg(not(feature = "zcash"))]
     pub fn get_aux_block_header(
         &self,
         block_hash: &BlockHash,
-    ) -> Result<(Header, Option<AuxData>), Box<dyn Error>> {
+    ) -> Result<(Header, Option<AuxData>), Box<dyn Error + Send + Sync>> {
         let hex: String = self
             .inner
             .call("getblockheader", &[into_json(block_hash)?, false.into()])?;
@@ -214,7 +229,7 @@ impl Client {
     pub fn get_block_header_by_height(
         &self,
         height: u64,
-    ) -> Result<Header, Box<dyn std::error::Error>> {
+    ) -> Result<Header, Box<dyn std::error::Error + Send + Sync>> {
         let block_hash = self.get_block_hash(height)?;
         Ok(self.get_aux_block_header(&block_hash)?.0)
     }
@@ -260,6 +275,7 @@ impl Client {
     }
 }
 
+#[cfg(not(feature = "zcash"))]
 fn into_json<T>(val: T) -> Result<serde_json::Value, bitcoincore_rpc::Error>
 where
     T: serde::ser::Serialize,
