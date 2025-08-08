@@ -1,0 +1,30 @@
+name: relayer-zebra
+services:
+  zebra:
+    image: zfnd/zebra:latest
+    platform: linux/amd64
+    environment:
+      NETWORK: Mainnet               # or Testnet
+      ZEBRA_RPC_PORT: 8232           # 18232 on Testnet
+      ENABLE_COOKIE_AUTH: "false"
+    tty: true
+    volumes:
+      - zebra-cache:/home/zebra/.cache/zebra
+    ports:
+      - "8232:8232"
+
+  relayer:
+    build:
+      context: ../
+      dockerfile: ./relayer/Dockerfile
+      args:
+        FEATURES: "zcash"
+    depends_on:
+      - zebra
+    environment:
+      ENDPOINT: "http://zebra:8232"
+      NODE_USER: ""
+      NODE_PASSWORD: ""
+
+volumes:
+  zebra-cache:
