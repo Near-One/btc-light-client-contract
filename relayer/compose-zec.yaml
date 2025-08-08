@@ -1,18 +1,22 @@
-name: relayer-zebra
+name: relayer-zcash
 services:
-  zebra:
-    image: zfnd/zebra:latest
-    platform: linux/amd64
-    environment:
-      NETWORK: Mainnet               # or Testnet
-      ZEBRA_RPC_PORT: 8232           # 18232 on Testnet
-      ENABLE_COOKIE_AUTH: "false"
-    tty: true
-    volumes:
-      - zebra-cache:/home/zebra/.cache/zebra
+  zcashd:
+    image: electriccoinco/zcashd:latest
+    command:
+      - -printtoconsole
+      - -rpcuser=zcash
+      - -rpcpassword=zcash
+      - -rpcallowip=0.0.0.0/0
+      - -rpcbind=0.0.0.0
+      - -prune=550          # 550 MB target for block files
+      - -txindex=0          # prune mode is incompatible with txindex
+      # -testnet             # uncomment if you want testnet (uses ports 18232/18233)
     ports:
-      - "8232:8232"
-
+      - "8232:8232"         # RPC (18232 on testnet)
+      - "8233:8233"         # P2P (18233 on testnet)
+    volumes:
+      - zec-data:/home/zcash/.zcash
+      - ./configs/zcash.conf:/srv/zcashd/.zcash/zcash.conf
   relayer:
     build:
       context: ../
@@ -20,11 +24,11 @@ services:
       args:
         FEATURES: "zcash"
     depends_on:
-      - zebra
+      - zcashd
     environment:
-      ENDPOINT: "http://zebra:8232"
-      NODE_USER: ""
-      NODE_PASSWORD: ""
+      ENDPOINT: "http://zcashd:8232"
+      NODE_USER: "zcash"
+      NODE_PASSWORD: "zcash"
 
 volumes:
-  zebra-cache:
+  zec-data:
