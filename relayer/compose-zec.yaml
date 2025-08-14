@@ -2,6 +2,7 @@ name: relayer-zcash
 services:
   zcashd:
     image: electriccoinco/zcashd:latest
+    platform: ${PLATFORM:-linux/amd64}
     command:
       - -printtoconsole
       - -rpcuser=zcash
@@ -23,6 +24,7 @@ services:
       dockerfile: ./relayer/Dockerfile
       args:
         FEATURES: "zcash"
+    platform: ${PLATFORM:-linux/amd64}
     depends_on:
       - zcashd
     environment:
