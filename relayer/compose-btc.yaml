@@ -4,7 +4,7 @@ services:
     image: lncm/bitcoind:v28.0
     platform: ${PLATFORM:-linux/amd64}
     command:
-      -prune=550
+      -prune=4000
       -rpcuser=bitcoin
       -rpcpassword=bitcoin
       -rpcallowip=0.0.0.0/0
