@@ -1,7 +1,7 @@
 GCP_PROJECT ?= bridge-misc
 PLATFORM ?= linux/amd64
 
-CHAINS = btc ltc
+CHAINS = btc ltc zec
 
 docker-build-all: $(addprefix docker-build-,$(CHAINS))
 docker-push-all: $(addprefix docker-push-,$(CHAINS))
