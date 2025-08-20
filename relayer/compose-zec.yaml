@@ -9,7 +9,7 @@ services:
       - -rpcpassword=zcash
       - -rpcallowip=0.0.0.0/0
       - -rpcbind=0.0.0.0
-      - -prune=550          # 550 MB target for block files
+      - -prune=16000          # 16 GB target for block files
       - -txindex=0          # prune mode is incompatible with txindex
       # -testnet             # uncomment if you want testnet (uses ports 18232/18233)
     ports:
