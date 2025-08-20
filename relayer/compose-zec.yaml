@@ -19,6 +19,7 @@ services:
       - zec-data:/home/zcash/.zcash
       - ./configs/zcash.conf:/srv/zcashd/.zcash/zcash.conf
   relayer:
+    image: zec-relayer
     build:
       context: ../
       dockerfile: ./relayer/Dockerfile
