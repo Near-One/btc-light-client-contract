@@ -101,7 +101,7 @@ impl Config {
         }
 
         // Environment variables with structured naming
-        figment = figment.merge(Env::prefixed("RELAYER_").split("_"));
+        figment = figment.merge(Env::prefixed("RELAYER__").split("__"));
 
         let config: Config = figment.extract().context(
             "Failed to load configuration - check required environment variables or config file",
