@@ -108,13 +108,17 @@ impl Client {
     pub fn new(config: &Config) -> Self {
         let config = config.bitcoin.clone();
 
+        let basic_auth = match (config.node_user, config.node_password) {
+            (Some(user), Some(password)) => {
+                Some(CustomMinreqHttpTransport::basic_auth(user, Some(&password)))
+            }
+            _ => None,
+        };
+
         let client = CustomMinreqHttpTransport {
             url: config.endpoint,
             timeout: std::time::Duration::from_secs(15),
-            basic_auth: Some(CustomMinreqHttpTransport::basic_auth(
-                config.node_user,
-                Some(&config.node_password),
-            )),
+            basic_auth,
             headers: config.node_headers.unwrap_or_default(),
         };
 

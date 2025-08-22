@@ -30,8 +30,8 @@ pub struct Config {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BitcoinConfig {
     pub endpoint: String,
-    pub node_user: String,
-    pub node_password: String,
+    pub node_user: Option<String>,
+    pub node_password: Option<String>,
     pub node_headers: Option<Vec<(String, String)>>,
 }
 
@@ -85,9 +85,13 @@ impl Config {
     /// Load configuration from multiple sources using Figment
     ///
     /// Priority (highest to lowest):
-    /// 1. Environment variables (ENDPOINT, NODE_USER, etc.)
+    /// 1. Environment variables (ENDPOINT, `NODE_USER`, etc.)
     /// 2. Config file (if provided)
     /// 3. Default values
+    ///
+    /// # Errors
+    /// * `Figment::extract` error
+    /// * `Config::validate` error
     pub fn load(config_file: Option<PathBuf>) -> Result<Self> {
         let mut figment = Figment::new();
 
@@ -114,12 +118,6 @@ impl Config {
         // Bitcoin node connection is required
         if self.bitcoin.endpoint.is_empty() {
             missing.push("RELAYER_BITCOIN_ENDPOINT (Bitcoin node RPC endpoint)");
-        }
-        if self.bitcoin.node_user.is_empty() {
-            missing.push("RELAYER_BITCOIN_NODE_USER (Bitcoin node RPC username)");
-        }
-        if self.bitcoin.node_password.is_empty() {
-            missing.push("RELAYER_BITCOIN_NODE_PASSWORD (Bitcoin node RPC password)");
         }
 
         // NEAR configuration is required
@@ -159,7 +157,6 @@ impl Config {
     pub fn print_summary(&self) {
         log::info!("🎯 Relayer Configuration:");
         log::info!("  Bitcoin endpoint: {}", self.bitcoin.endpoint);
-        log::info!("  Bitcoin user: {}", self.bitcoin.node_user);
         log::info!("  NEAR endpoint: {}", self.near.endpoint);
         log::info!(
             "  Light client contract: {}",
