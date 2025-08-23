@@ -5,12 +5,13 @@ use bitcoin::hashes::Hash;
 use bitcoin::BlockHash;
 use bitcoin_client::AuxData;
 use btc_types::contract_args::InitArgs;
-use log::{debug, info, trace, warn};
+use log::{info, trace, warn};
 
 use crate::bitcoin_client::Client as BitcoinClient;
 use crate::config::{Config, InitConfig};
 use crate::near_client::{CustomError, NearClient};
 use clap::Parser;
+use std::path::PathBuf;
 
 mod bitcoin_client;
 mod config;
@@ -353,9 +354,9 @@ async fn init_contract(
 
 #[derive(Parser)]
 struct CliArgs {
-    /// Path to the configuration file
-    #[clap(short, long, default_value = "config.toml")]
-    config: String,
+    /// Optional path to the configuration file (environment variables take precedence)
+    #[clap(short, long)]
+    config: Option<String>,
     /// Initialize contract
     #[clap(long)]
     init_contract: bool,
@@ -366,9 +367,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
     let args = CliArgs::parse();
 
-    let config = Config::new(args.config).unwrap();
-
-    debug!("Configuration loaded: {config:?}");
+    let config = Config::load(args.config.map(PathBuf::from))?;
+    config.print_summary();
 
     let bitcoin_client = Arc::new(BitcoinClient::new(&config));
     let near_client = NearClient::new(&config.near);

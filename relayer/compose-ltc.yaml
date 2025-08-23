@@ -18,5 +18,7 @@ services:
     build:
       context: ../
       dockerfile: ./relayer/Dockerfile
+      args:
+        FEATURES: "litecoin"
     depends_on:
       - litecoind

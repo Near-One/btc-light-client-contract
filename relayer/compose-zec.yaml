@@ -18,6 +18,8 @@ services:
     volumes:
       - zec-data:/home/zcash/.zcash
       - ./configs/zcash.conf:/srv/zcashd/.zcash/zcash.conf
+    networks:
+      - relayer-network
   relayer:
     image: zec-relayer
     build:
@@ -28,10 +30,11 @@ services:
     platform: ${PLATFORM:-linux/amd64}
     depends_on:
       - zcashd
-    environment:
-      ENDPOINT: "http://zcashd:8232"
-      NODE_USER: "zcash"
-      NODE_PASSWORD: "zcash"
+    networks:
+      - relayer-network
 
 volumes:
   zec-data:
+
+networks:
+  relayer-network:
