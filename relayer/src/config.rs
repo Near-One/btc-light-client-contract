@@ -101,7 +101,7 @@ impl Config {
         builder = builder.add_source(
             Environment::with_prefix("RELAYER")
                 .separator("__")
-                .try_parsing(true)
+                .try_parsing(true),
         );
 
         let config: Config = builder.build()
