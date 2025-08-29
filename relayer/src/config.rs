@@ -1,9 +1,6 @@
 use anyhow::{Context, Result};
 use btc_types::network::Network;
-use figment::{
-    providers::{Env, Format, Toml},
-    Figment,
-};
+use config::{Config as ConfigBuilder, Environment, File};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -82,30 +79,35 @@ mod defaults {
 }
 
 impl Config {
-    /// Load configuration from multiple sources using Figment
+    /// Load configuration from multiple sources using config-rs
     ///
     /// Priority (highest to lowest):
-    /// 1. Environment variables (ENDPOINT, `NODE_USER`, etc.)
+    /// 1. Environment variables (RELAYER__*, etc.)
     /// 2. Config file (if provided)
     /// 3. Default values
     ///
     /// # Errors
-    /// * `Figment::extract` error
+    /// * Configuration build or deserialization error
     /// * `Config::validate` error
     pub fn load(config_file: Option<PathBuf>) -> Result<Self> {
-        let mut figment = Figment::new();
+        let mut builder = ConfigBuilder::builder();
 
         // Add config file if provided
         if let Some(path) = config_file {
-            figment = figment.merge(Toml::file(&path));
+            builder = builder.add_source(File::from(path));
         }
 
         // Environment variables with structured naming
-        figment = figment.merge(Env::prefixed("RELAYER__").split("__"));
+        builder = builder.add_source(
+            Environment::with_prefix("RELAYER")
+                .separator("__")
+                .try_parsing(true)
+        );
 
-        let config: Config = figment.extract().context(
-            "Failed to load configuration - check required environment variables or config file",
-        )?;
+        let config: Config = builder.build()
+            .context("Failed to build configuration")?
+            .try_deserialize()
+            .context("Failed to load configuration - check required environment variables or config file")?;
 
         config.validate()?;
         Ok(config)
