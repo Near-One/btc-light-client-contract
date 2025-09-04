@@ -338,6 +338,7 @@ async fn init_contract(
         skip_pow_verification: init_config.skip_pow_verification,
         gc_threshold: init_config.gc_threshold,
         network: init_config.network,
+        aux_chain_id: None,
         submit_blocks: headers,
     };
 

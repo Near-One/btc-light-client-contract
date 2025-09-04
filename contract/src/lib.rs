@@ -3,12 +3,14 @@ use btc_types::hash::H256;
 use btc_types::header::{BlockHeader, ExtendedHeader, Header, LightHeader};
 use btc_types::network::Network;
 use btc_types::u256::U256;
-use btc_types::utils::{target_from_bits, work_from_bits};
+#[cfg(not(feature = "dogecoin"))]
+use btc_types::utils::target_from_bits;
+use btc_types::utils::work_from_bits;
 use near_plugins::{
     access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::collections::{LookupMap, LookupSet};
+use near_sdk::collections::LookupMap;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
 
@@ -71,7 +73,6 @@ enum StorageKey {
     MainchainHeightToHeader,
     MainchainHeaderToHeight,
     HeadersPool,
-    AuxParentBlocks,
 }
 
 /// Contract implementing Bitcoin light client.
@@ -109,8 +110,9 @@ pub struct BtcLightClient {
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
     gc_threshold: u64,
 
-    // Used only for networks with AuxPoW (Dogecoin). These are the hashes of already used parent blocks (Litecoin blocks for Dogecoin)
-    used_aux_parent_blocks: LookupSet<H256>,
+    // https://github.com/dogecoin/dogecoin/blob/master/src/chainparams.cpp#L276
+    #[cfg(feature = "dogecoin")]
+    aux_chain_id: Option<i32>,
 
     // Network type Mainnet/Testnet
     network: Network,
@@ -135,7 +137,8 @@ impl BtcLightClient {
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
-            used_aux_parent_blocks: LookupSet::new(StorageKey::AuxParentBlocks),
+            #[cfg(feature = "dogecoin")]
+            aux_chain_id: args.aux_chain_id,
             network: args.network,
         };
 
@@ -400,8 +403,6 @@ impl BtcLightClient {
             block_height,
             block_hash: current_block_hash.clone(),
             chain_work,
-            #[cfg(feature = "dogecoin")]
-            aux_parent_block: None,
         };
 
         self.store_block_header(&header);
@@ -446,31 +447,25 @@ impl BtcLightClient {
             block_height: 1 + prev_block_header.block_height,
         };
 
-        self.submit_block_header_inner(
-            &header,
-            current_header,
-            &prev_block_header,
-            skip_pow_verification,
-        );
-    }
-
-    fn submit_block_header_inner(
-        &mut self,
-        block_header: &Header,
-        current_header: ExtendedHeader,
-        prev_block_header: &ExtendedHeader,
-        skip_pow_verification: bool,
-    ) {
-        let pow_hash = block_header.block_hash_pow();
         if !skip_pow_verification {
-            self.check_target(block_header, prev_block_header);
+            self.check_target(&header, &prev_block_header);
+
+            let pow_hash = header.block_hash_pow();
             // Check if the block hash is less than or equal to the target
             require!(
-                U256::from_le_bytes(&pow_hash.0) <= target_from_bits(block_header.bits),
+                U256::from_le_bytes(&pow_hash.0) <= target_from_bits(header.bits),
                 format!("block should have correct pow")
             );
         }
 
+        self.submit_block_header_inner(current_header, &prev_block_header);
+    }
+
+    fn submit_block_header_inner(
+        &mut self,
+        current_header: ExtendedHeader,
+        prev_block_header: &ExtendedHeader,
+    ) {
         // Main chain submission
         if prev_block_header.block_hash == self.mainchain_tip_blockhash {
             // Probably we should check if it is not in a mainchain?
@@ -596,12 +591,7 @@ impl BtcLightClient {
     /// Remove block header and meta information
     fn remove_block_header(&mut self, header_block_hash: &H256) {
         self.mainchain_header_to_height.remove(header_block_hash);
-        if let Some(_header) = self.headers_pool.remove(header_block_hash) {
-            #[cfg(feature = "dogecoin")]
-            if let Some(aux_parent_blockhash) = _header.aux_parent_block {
-                self.used_aux_parent_blocks.remove(&aux_parent_blockhash);
-            }
-        }
+        self.headers_pool.remove(header_block_hash);
     }
 
     /// Stores and handles fork submissions
@@ -628,7 +618,7 @@ impl BlocksGetter for BtcLightClient {
 mod migrate {
     use crate::{
         borsh, env, near, BorshDeserialize, BorshSerialize, BtcLightClient, BtcLightClientExt,
-        ExtendedHeader, LookupMap, LookupSet, Network, PanicOnDefault, StorageKey, H256,
+        ExtendedHeader, LookupMap, Network, PanicOnDefault, H256,
     };
 
     #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
@@ -670,7 +660,8 @@ mod migrate {
                 headers_pool: old_state.headers_pool,
                 skip_pow_verification: old_state.skip_pow_verification,
                 gc_threshold: old_state.gc_threshold,
-                used_aux_parent_blocks: LookupSet::new(StorageKey::AuxParentBlocks),
+                #[cfg(feature = "dogecoin")]
+                aux_chain_id: None,
                 network,
             }
         }
@@ -756,6 +747,7 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
+            aux_chain_id: None,
             submit_blocks: [genesis_block].to_vec(),
         }
     }
@@ -768,6 +760,7 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 3,
+            aux_chain_id: None,
             submit_blocks: [genesis_block].to_vec(),
         }
     }

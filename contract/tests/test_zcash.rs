@@ -41,6 +41,7 @@ mod test_zcash {
             genesis_block_height: 2940821,
             skip_pow_verification: false,
             gc_threshold: 2000,
+            aux_chain_id: None,
             network: btc_types::network::Network::Mainnet,
             submit_blocks: initial_blocks[..29].to_vec(),
         };
