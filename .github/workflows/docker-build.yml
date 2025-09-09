@@ -26,9 +26,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Authenticate to Google Cloud
         id: auth
         uses: google-github-actions/auth@v2
@@ -65,7 +62,7 @@ jobs:
           esac
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: Warpbuilds/build-push-action@v6
         with:
           context: .
           file: ./relayer/Dockerfile
@@ -74,10 +71,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             FEATURES=${{ steps.build-args.outputs.features }}
-          cache-from: |
-            type=gha
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ matrix.chain }}-relayer:cache
-          cache-to: |
-            type=gha,mode=max
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ matrix.chain }}-relayer:cache,mode=max
+          profile-name: "bridge-docker-builder"
           platforms: linux/amd64
