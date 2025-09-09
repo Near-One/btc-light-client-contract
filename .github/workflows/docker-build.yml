@@ -14,7 +14,7 @@ env:
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-2x
     strategy:
       matrix:
         chain: [btc, ltc, zec]
