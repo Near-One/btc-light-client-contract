@@ -83,10 +83,16 @@ When a fork accumulates more work than the main chain:
 
 `verify_transaction_inclusion(ProofArgs)` — SPV proof: given a tx hash, block hash, and merkle proof, verifies the transaction is in the block by recomputing the merkle root.
 
+**Important**: This function is vulnerable to the standard Bitcoin merkle tree second-preimage attack — it may return `true` for an internal node hash rather than a real transaction hash. Block headers do not contain the transaction count, so proof depth cannot be validated on-chain. Callers MUST validate that the `tx_id` corresponds to a valid transaction (e.g., by verifying raw transaction data) before trusting the inclusion proof.
+
 
 ### Garbage Collection
 
 `run_mainchain_gc(batch_size)` removes the oldest blocks from storage when chain exceeds `gc_threshold`. Blocks older than the initial block are pruned.
+
+## Important Build Flags
+
+The release profile sets `overflow-checks = true` in `Cargo.toml`. This ensures all arithmetic overflows/underflows panic safely instead of wrapping. Do not remove this flag — several view functions rely on it for safe behavior with untrusted inputs.
 
 ## Chain-Specific Implementation Details
 
