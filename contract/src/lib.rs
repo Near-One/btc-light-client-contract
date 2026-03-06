@@ -197,6 +197,13 @@ impl BtcLightClient {
             .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
     }
 
+    pub fn get_last_block_height(&self) -> u64 {
+        self.headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
+            .block_height
+    }
+
     pub fn get_block_hash_by_height(&self, height: u64) -> Option<H256> {
         self.mainchain_height_to_header.get(&height)
     }
@@ -290,6 +297,8 @@ impl BtcLightClient {
             .get(&args.tx_block_blockhash)
             .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
 
+        require!(args.merkle_proof.len() > 0, "Merkle proof is empty");
+
         // compute merkle tree root and check if it matches block's original merkle tree root
         merkle_tools::compute_root_from_merkle_proof(
             args.tx_id,
@@ -377,7 +386,7 @@ impl BtcLightClient {
         #[cfg(feature = "zcash")]
         {
             require!(
-                btc_types::network::ZCASH_MEDIAN_TIME_SPAN
+                btc_types::network::MEDIAN_TIME_SPAN
                     + usize::try_from(config.pow_averaging_window).unwrap()
                     == submit_blocks.len() - 1,
                 "ERR_NOT_ENOUGH_BLOCKS_FOR_ZCASH"

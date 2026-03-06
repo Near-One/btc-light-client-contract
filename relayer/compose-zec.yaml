@@ -1,0 +1,40 @@
+name: relayer-zcash
+services:
+  zcashd:
+    image: electriccoinco/zcashd:latest
+    platform: ${PLATFORM:-linux/amd64}
+    command:
+      - -printtoconsole
+      - -rpcuser=zcash
+      - -rpcpassword=zcash
+      - -rpcallowip=0.0.0.0/0
+      - -rpcbind=0.0.0.0
+      - -prune=16000          # 16 GB target for block files
+      - -txindex=0          # prune mode is incompatible with txindex
+      # -testnet             # uncomment if you want testnet (uses ports 18232/18233)
+    ports:
+      - "8232:8232"         # RPC (18232 on testnet)
+      - "8233:8233"         # P2P (18233 on testnet)
+    volumes:
+      - zec-data:/home/zcash/.zcash
+      - ./configs/zcash.conf:/srv/zcashd/.zcash/zcash.conf
+    networks:
+      - relayer-network
+  relayer:
+    image: zec-relayer
+    build:
+      context: ../
+      dockerfile: ./relayer/Dockerfile
+      args:
+        FEATURES: "zcash"
+    platform: ${PLATFORM:-linux/amd64}
+    depends_on:
+      - zcashd
+    networks:
+      - relayer-network
+
+volumes:
+  zec-data:
+
+networks:
+  relayer-network:
