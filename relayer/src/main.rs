@@ -178,8 +178,7 @@ impl Synchronizer {
         for tx in signed_submit_blocks_txs {
             let cloned_self = self.clone();
             let first_block_height_to_submit = first_block_height_to_submit.clone();
-            let num_blocks_in_tx = (tx.last_block_height + 1)
-                .saturating_sub(tx.first_block_height);
+            let num_blocks_in_tx = (tx.last_block_height + 1).saturating_sub(tx.first_block_height);
 
             handles.push(tokio::spawn(async move {
             info!(target: "relay", "Submit blocks with height: [{} - {}]", tx.first_block_height, tx.last_block_height);
