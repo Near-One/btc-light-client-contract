@@ -305,14 +305,14 @@ impl NearClient {
                 },
                 Ok(response) => {
                     info!("Success response gotten after: {delta}s");
-                    return Ok(Self::parse_submit_blocks_response(response));
+                    return Ok(Self::parse_submit_blocks_response(&response));
                 }
             }
         }
     }
 
     fn parse_submit_blocks_response(
-        response: RpcTransactionResponse,
+        response: &RpcTransactionResponse,
     ) -> Result<SubmitResult, CustomError> {
         if let Some(ref final_execution_outcome) = response.final_execution_outcome {
             let outcome = final_execution_outcome.clone().into_outcome();
@@ -323,9 +323,8 @@ impl NearClient {
                     return Err(CustomError::PrevBlockNotFound);
                 } else if err_str.contains("Exceeded the maximum amount of gas") {
                     return Err(CustomError::GasExceeded);
-                } else {
-                    return Err(CustomError::TxExecutionError(err_str));
                 }
+                return Err(CustomError::TxExecutionError(err_str));
             }
 
             let gas_burnt = outcome.transaction_outcome.outcome.gas_burnt

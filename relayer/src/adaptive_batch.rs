@@ -3,17 +3,17 @@ use std::time::Instant;
 
 use crate::config::Config;
 
-/// Target gas budget per transaction, leaving 50 TGas headroom from the 300 TGas max.
+/// Target gas budget per transaction, leaving 50 Tgas headroom from the 300 Tgas max.
 const TARGET_GAS_BUDGET: u64 = 250_000_000_000_000;
 
 /// Adaptive batch sizer using AIMD (Additive Increase, Multiplicative Decrease)
 /// combined with proactive gas-based sizing.
 ///
-/// - On gas exceeded: halve batch_size (multiplicative decrease), start cooldown
-/// - On success: compute optimal batch_size from gas_burnt, clamp to max
+/// - On gas exceeded: halve `batch_size` (multiplicative decrease), start cooldown
+/// - On success: compute optimal `batch_size` from `gas_burnt`, clamp to max
 /// - On cooldown expiry: additive increase (+1) toward max
 ///
-/// fetch_size = batch_size * num_parallel_txs (capped at max_fetch_size)
+/// `fetch_size` = `batch_size` * `num_parallel_txs` (capped at `max_fetch_size`)
 pub struct AdaptiveBatchSizer {
     max_batch_size: u64,
     max_fetch_size: u64,
@@ -29,7 +29,8 @@ impl AdaptiveBatchSizer {
     /// Create a new `AdaptiveBatchSizer` from config.
     ///
     /// `num_parallel_txs` (N) is computed as `config.fetch_batch_size / config.submit_batch_size`
-    /// and stays constant. When batch_size changes, fetch_size = batch_size * N.
+    /// and stays constant. When `batch_size` changes, `fetch_size` = `batch_size` * N.
+    #[must_use]
     pub fn new(config: &Config) -> Self {
         let num_parallel_txs = if config.submit_batch_size > 0 {
             config.fetch_batch_size / config.submit_batch_size
@@ -61,11 +62,13 @@ impl AdaptiveBatchSizer {
     }
 
     /// Current submit batch size.
+    #[must_use]
     pub fn current_batch_size(&self) -> u64 {
         self.current_batch_size
     }
 
-    /// Current fetch size = batch_size * num_parallel_txs, capped at max_fetch_size.
+    /// Current fetch size = `batch_size` * `num_parallel_txs`, capped at `max_fetch_size`.
+    #[must_use]
     pub fn current_fetch_size(&self) -> u64 {
         let computed = self.current_batch_size * self.num_parallel_txs;
         computed.min(self.max_fetch_size)
@@ -87,8 +90,8 @@ impl AdaptiveBatchSizer {
         );
     }
 
-    /// Called on successful transaction with gas_burnt and the number of blocks in that tx.
-    /// Proactively adjusts batch_size based on observed gas cost per block.
+    /// Called on successful transaction with `gas_burnt` and the number of blocks in that tx.
+    /// Proactively adjusts `batch_size` based on observed gas cost per block.
     pub fn on_success(&mut self, gas_burnt: u64, num_blocks: u64) {
         if num_blocks == 0 || gas_burnt == 0 {
             return;
