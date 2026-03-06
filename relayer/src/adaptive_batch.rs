@@ -22,7 +22,6 @@ pub struct AdaptiveBatchSizer {
     num_parallel_txs: u64,
     cooldown_until: Option<Instant>,
     cooldown_duration: std::time::Duration,
-    last_gas_per_block: Option<u64>,
 }
 
 impl AdaptiveBatchSizer {
@@ -57,7 +56,6 @@ impl AdaptiveBatchSizer {
             num_parallel_txs,
             cooldown_until: None,
             cooldown_duration: std::time::Duration::from_secs(config.batch_size_cooldown_sec),
-            last_gas_per_block: None,
         }
     }
 
@@ -98,7 +96,9 @@ impl AdaptiveBatchSizer {
         }
 
         let gas_per_block = gas_burnt / num_blocks;
-        self.last_gas_per_block = Some(gas_per_block);
+        if gas_per_block == 0 {
+            return;
+        }
 
         let optimal = TARGET_GAS_BUDGET / gas_per_block;
         let optimal = optimal.clamp(self.min_batch_size, self.max_batch_size);
@@ -113,7 +113,7 @@ impl AdaptiveBatchSizer {
                 "Proactive decrease: batch_size {} -> {} (gas_per_block={}, gas_burnt={}, blocks={})",
                 old, self.current_batch_size, gas_per_block, gas_burnt, num_blocks,
             );
-        } else if optimal > self.current_batch_size && self.cooldown_expired() {
+        } else if optimal > self.current_batch_size {
             self.current_batch_size = optimal;
             info!(
                 target: "adaptive_batch",
