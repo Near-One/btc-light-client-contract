@@ -3,7 +3,7 @@ use crate::{BtcLightClient, BtcLightClientExt, Header, H256, U256};
 use bitcoin::hashes::Hash;
 use btc_types::aux::AuxData;
 use btc_types::header::ExtendedHeader;
-use btc_types::network::{Network, NetworkConfig};
+use btc_types::network::{DogecoinConfig, Network};
 use btc_types::utils::{target_from_bits, work_from_bits};
 use near_sdk::{env, near, require};
 
@@ -12,7 +12,7 @@ const MERGED_MINING_HEADER: &str = "fabe6d6d";
 
 #[near]
 impl BtcLightClient {
-    pub fn get_config(&self) -> btc_types::network::NetworkConfig {
+    pub fn get_config(&self) -> btc_types::network::DogecoinConfig {
         btc_types::network::get_dogecoin_config(self.network)
     }
 
@@ -39,17 +39,20 @@ impl BtcLightClient {
             "Aux POW chain merkle branch too long"
         );
 
-        if let Some(chain_id) = self.aux_chain_id {
-            require!(
-                chain_id == block_header.get_chain_id(),
-                format!("block does not have our chain ID (got {block_header.get_chain_id()}, expected {chain_id})")
-            );
+        let chain_id = self.get_config().aux_chain_id;
 
-            require!(
-                chain_id != aux_data.parent_block.get_chain_id(),
-                "Aux POW parent has our chain ID"
-            );
-        }
+        require!(
+            chain_id == block_header.get_chain_id(),
+            format!(
+                "block does not have our chain ID (got {}, expected {chain_id})",
+                block_header.get_chain_id()
+            )
+        );
+
+        require!(
+            chain_id != aux_data.parent_block.get_chain_id(),
+            "Aux POW parent has our chain ID"
+        );
 
         let chain_root = merkle_tools::compute_root_from_merkle_proof(
             block_header.block_hash(),
@@ -182,7 +185,7 @@ impl BtcLightClient {
 
 // source https://github.com/dogecoin/dogecoin/blob/2c513d0172e8bc86fe9a337693b26f2fdf68a013/src/pow.cpp#L17
 fn allow_min_difficulty_for_block(
-    config: &NetworkConfig,
+    config: &DogecoinConfig,
     block_header: &Header,
     prev_block_header: &ExtendedHeader,
 ) -> bool {
@@ -203,7 +206,7 @@ fn allow_min_difficulty_for_block(
 
 // source https://github.com/dogecoin/dogecoin/blob/2c513d0172e8bc86fe9a337693b26f2fdf68a013/src/pow.cpp#L17
 fn get_next_work_required(
-    config: &NetworkConfig,
+    config: &DogecoinConfig,
     block_header: &Header,
     prev_block_header: &ExtendedHeader,
     blocks_getter: &impl BlocksGetter,
@@ -275,7 +278,7 @@ fn get_next_work_required(
 
 // source https://github.com/dogecoin/dogecoin/blob/2c513d0172e8bc86fe9a337693b26f2fdf68a013/src/dogecoin.cpp#L41
 fn calculate_next_work_required(
-    config: &NetworkConfig,
+    config: &DogecoinConfig,
     prev_block_header: &ExtendedHeader,
     first_block_time: i64,
 ) -> u32 {

@@ -10,7 +10,6 @@ pub struct InitArgs {
     pub skip_pow_verification: bool,
     pub gc_threshold: u64,
     pub network: Network,
-    pub aux_chain_id: Option<i32>,
     pub submit_blocks: Vec<Header>,
 }
 
