@@ -291,7 +291,7 @@ impl BtcLightClient {
             .get(&args.tx_block_blockhash)
             .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
 
-        require!(args.merkle_proof.len() > 0, "Merkle proof is empty");
+        require!(!args.merkle_proof.is_empty(), "Merkle proof is empty");
 
         // compute merkle tree root and check if it matches block's original merkle tree root
         merkle_tools::compute_root_from_merkle_proof(

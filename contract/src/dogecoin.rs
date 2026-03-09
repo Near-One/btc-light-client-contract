@@ -1,9 +1,9 @@
-use crate::utils::BlocksGetter;
+use crate::utils::{get_median_time_past, BlocksGetter};
 use crate::{BtcLightClient, BtcLightClientExt, Header, H256, U256};
 use bitcoin::hashes::Hash;
 use btc_types::aux::AuxData;
 use btc_types::header::ExtendedHeader;
-use btc_types::network::{DogecoinConfig, Network};
+use btc_types::network::{DogecoinConfig, Network, MAX_FUTURE_BLOCK_TIME_LOCAL};
 use btc_types::utils::{target_from_bits, work_from_bits};
 use near_sdk::{env, near, require};
 
@@ -31,12 +31,33 @@ impl BtcLightClient {
                 expected_bits, block_header.bits
             )
         );
+
+        // Check timestamp against median time past of the previous 11 blocks
+        require!(
+            block_header.time > get_median_time_past(prev_block_header.clone(), self),
+            "time-too-old: block's timestamp is too early"
+        );
+
+        // Reject blocks whose timestamp is more than 2 hours ahead of local time
+        let current_timestamp = u32::try_from(env::block_timestamp_ms() / 1000).unwrap();
+        require!(
+            block_header.time <= current_timestamp + MAX_FUTURE_BLOCK_TIME_LOCAL,
+            "time-too-new: block timestamp too far in the future"
+        );
     }
 
     pub(crate) fn check_aux(&mut self, block_header: &Header, aux_data: &AuxData) {
         require!(
             aux_data.chain_merkle_proof.len() <= 30,
             "Aux POW chain merkle branch too long"
+        );
+
+        // The Dogecoin block must have the AuxPoW flag set (bit 8) when AuxPoW data is present.
+        // https://github.com/dogecoin/dogecoin/blob/master/src/auxpow.h
+        const BLOCK_VERSION_AUXPOW: i32 = 0x100;
+        require!(
+            block_header.version & BLOCK_VERSION_AUXPOW != 0,
+            "Aux POW block does not have AuxPoW flag set in version"
         );
 
         let chain_id = self.get_config().aux_chain_id;
