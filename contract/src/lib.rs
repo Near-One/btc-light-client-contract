@@ -373,8 +373,11 @@ impl BtcLightClient {
         {
             require!((block_height + 1) % config.difficulty_adjustment_interval == 0, format!("Error: The initial block height  + 1 must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
             require!(
-                submit_blocks.len() == 2,
-                format!("Exactly two initial blocks must be submitted")
+                submit_blocks.len() >= btc_types::network::MEDIAN_TIME_SPAN + 1,
+                format!(
+                    "At least {} initial blocks must be submitted to support MTP computation",
+                    btc_types::network::MEDIAN_TIME_SPAN + 1
+                )
             );
         }
         #[cfg(feature = "zcash")]
