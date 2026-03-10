@@ -1092,5 +1092,4 @@ mod tests {
 
         contract.submit_block_header(fork_block_header_example_2(), false);
     }
-
 }

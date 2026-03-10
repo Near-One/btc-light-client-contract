@@ -532,7 +532,6 @@ mod test_basics {
         serde_json::from_value(json_value).expect("value is invalid")
     }
 
-
     fn fork_block_header_example_2() -> Header {
         let json_value = serde_json::json!({
             // "hash": "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd",
