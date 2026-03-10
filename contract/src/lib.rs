@@ -868,6 +868,30 @@ mod tests {
         }
     }
 
+    // Builds 12-block init list: genesis + 11 fake blocks all branching from genesis.
+    // Fakes have bits=0x207FFFFF (near-zero work), so any normally-difficulty block
+    // submitted afterward (bits=486_604_799, work≈2^32) outweighs the fake mainchain
+    // tip and gets promoted. This satisfies the MEDIAN_TIME_SPAN+1 init requirement
+    // without disrupting tests that check block_height=1, chain_work=2W, etc.
+    fn make_default_submit_blocks() -> Vec<Header> {
+        let genesis = genesis_block_header();
+        let genesis_hash = genesis.block_hash().to_string();
+        let mut blocks = vec![genesis];
+        for i in 0u32..11 {
+            let fake: Header = serde_json::from_value(serde_json::json!({
+                "version": 1,
+                "prev_block_hash": genesis_hash,
+                "merkle_root": "0000000000000000000000000000000000000000000000000000000000000000",
+                "time": 1_231_006_506u32 + i,
+                "bits": 0x207fffffu32,
+                "nonce": i,
+            }))
+            .unwrap();
+            blocks.push(fake);
+        }
+        blocks
+    }
+
     fn get_default_init_args() -> InitArgs {
         let genesis_block = genesis_block_header();
         InitArgs {
@@ -876,7 +900,7 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
-            submit_blocks: [genesis_block].to_vec(),
+            submit_blocks: make_default_submit_blocks(),
         }
     }
 
@@ -888,7 +912,7 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: true,
             gc_threshold: 3,
-            submit_blocks: [genesis_block].to_vec(),
+            submit_blocks: make_default_submit_blocks(),
         }
     }
 
