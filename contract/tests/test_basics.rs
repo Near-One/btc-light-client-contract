@@ -49,15 +49,25 @@ mod test_basics {
 
         let contract = sandbox.dev_deploy(&contract_wasm).await?;
 
-        let block_headers =
+        let all_block_headers =
             read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
+
+        // Init with 12 blocks (685440-685451) so that MTP can be computed for the
+        // first submitted block (needs 11 ancestors in storage).
+        // Layout in JSON: batch[0]=[685440], batch[1]=[685441-685446], batch[2][0..5]=[685447-685451]
+        let mut init_blocks: Vec<Header> = Vec::new();
+        init_blocks.push(all_block_headers[0][0].clone());
+        init_blocks.extend_from_slice(&all_block_headers[1]);
+        init_blocks.extend_from_slice(&all_block_headers[2][..5]);
+        assert_eq!(init_blocks.len(), 12);
+
         let args = InitArgs {
-            genesis_block_hash: block_headers[0][0].block_hash(),
+            genesis_block_hash: init_blocks[0].block_hash(),
             genesis_block_height: 685_440,
             skip_pow_verification: false,
             gc_threshold,
             network: btc_types::network::Network::Mainnet,
-            submit_blocks: [block_headers[0][0].clone()].to_vec(),
+            submit_blocks: init_blocks,
         };
         // Call the init method on the contract
         let outcome = contract
@@ -71,7 +81,20 @@ mod test_basics {
 
         let user_account = sandbox.dev_create_account().await?;
 
-        Ok((contract, user_account, block_headers))
+        // Return blocks NOT yet submitted (batch[2][5..] onward).
+        let remaining = remaining_after_init(&all_block_headers);
+        Ok((contract, user_account, remaining))
+    }
+
+    // Returns the blocks from the JSON that are not included in the 12-block init.
+    // The first 12 blocks are: batch[0] (1) + batch[1] (6) + batch[2][0..5] (5).
+    fn remaining_after_init(all_headers: &[Vec<Header>]) -> Vec<Vec<Header>> {
+        let mut result = Vec::new();
+        if all_headers[2].len() > 5 {
+            result.push(all_headers[2][5..].to_vec());
+        }
+        result.extend_from_slice(&all_headers[3..]);
+        result
     }
 
     #[tokio::test]
@@ -159,7 +182,7 @@ mod test_basics {
                 tx_id: merkle_tools::H256::default(),
                 tx_block_blockhash: genesis_block_header().block_hash(),
                 tx_index: 0,
-                merkle_proof: vec![],
+                merkle_proof: vec![merkle_tools::H256::default()],
                 confirmations: 0,
             })
             .await?
@@ -180,7 +203,7 @@ mod test_basics {
     async fn test_submit_blocks_for_period() -> Result<(), Box<dyn std::error::Error>> {
         let (contract, user_account, block_headers) = init_contract_from_file(2017).await?;
 
-        for block_headers_batch in &block_headers[1..] {
+        for block_headers_batch in &block_headers[..] {
             let outcome = user_account
                 .call(contract.id(), "submit_blocks")
                 .args_borsh(block_headers_batch.clone())
@@ -199,7 +222,8 @@ mod test_basics {
     async fn test_get_last_n_blocks() -> Result<(), Box<dyn std::error::Error>> {
         let (contract, user_account, block_headers) = init_contract_from_file(2017).await?;
 
-        for block_headers_batch in &block_headers[1..=2] {
+        // Submit remaining[0] (85 blocks). Together with the 12 in init = 97 total.
+        for block_headers_batch in &block_headers[..=0] {
             let outcome = user_account
                 .call(contract.id(), "submit_blocks")
                 .args_borsh(block_headers_batch.clone())
@@ -255,9 +279,10 @@ mod test_basics {
     async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
         let (contract, user_account, block_headers) = init_contract_from_file(10).await?;
 
-        let mut submitted_blocks_count: usize = 1;
+        // 12 blocks already loaded in init; submit remaining[0] (85 blocks) = 97 total.
+        let mut submitted_blocks_count: usize = 12;
 
-        for block_headers_batch in &block_headers[1..=2] {
+        for block_headers_batch in &block_headers[..=0] {
             let outcome = user_account
                 .call(contract.id(), "submit_blocks")
                 .args_borsh(block_headers_batch.clone())
@@ -276,7 +301,9 @@ mod test_basics {
             .args_json(json!({}))
             .await?;
 
-        assert_eq!(outcome.json::<u64>().unwrap(), 10);
+        // After submitting 85 blocks in one call, GC removes 85 (= batch_size), leaving 12.
+        // The explicit run_mainchain_gc(100) below will then bring it down to 10.
+        assert_eq!(outcome.json::<u64>().unwrap(), 12);
 
         let outcome = contract
             .view("get_last_n_blocks_hashes")
@@ -284,11 +311,11 @@ mod test_basics {
             .await?;
 
         let mainchain_blocks = outcome.json::<Vec<H256>>().unwrap();
-        assert_eq!(mainchain_blocks.len(), 10);
+        assert_eq!(mainchain_blocks.len(), 12);
         for i in 0..mainchain_blocks.len() {
             assert_eq!(
                 mainchain_blocks[mainchain_blocks.len() - i - 1],
-                block_headers[2][block_headers[2].len() - i - 1].block_hash()
+                block_headers[0][block_headers[0].len() - i - 1].block_hash()
             );
         }
 
@@ -311,11 +338,14 @@ mod test_basics {
 
     #[tokio::test]
     async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Error>> {
-        let (contract, user_account, block_headers) = init_contract_from_file(10).await?;
+        // gc_threshold=200: init (12 blocks) is well below threshold, so the first few
+        // batches require deposit. After 3 batches with deposit (~12+85+85+85=267 total),
+        // GC kicks in and subsequent batches can be submitted for free.
+        let (contract, user_account, block_headers) = init_contract_from_file(200).await?;
 
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
-            .args_borsh(block_headers[1].clone())
+            .args_borsh(block_headers[0].clone())
             .max_gas()
             .transact()
             .await?;
@@ -323,7 +353,7 @@ mod test_basics {
         assert!(format!("{:?}", outcome.failures()[0].clone().into_result())
             .contains("Required deposit"));
 
-        for block_headers_batch in block_headers.iter().take(3).skip(1) {
+        for block_headers_batch in block_headers.iter().take(3) {
             let outcome = user_account
                 .call(contract.id(), "submit_blocks")
                 .args_borsh(block_headers_batch.clone())
@@ -377,7 +407,7 @@ mod test_basics {
             }
         }
 
-        for i in 1..block_headers.len() {
+        for i in 0..block_headers.len() {
             let outcome = user_account
                 .call(contract.id(), "submit_blocks")
                 .args_borsh(block_headers[i].clone())
