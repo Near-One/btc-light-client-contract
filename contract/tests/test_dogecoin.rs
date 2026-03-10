@@ -42,8 +42,7 @@ mod test_dogecoin {
             .expect("Failed to run cargo near build for dogecoin WASM");
         assert!(status.success(), "Failed to build dogecoin WASM");
 
-        let wasm_path =
-            format!("{manifest_dir}/target/near/btc_light_client_contract.wasm");
+        let wasm_path = format!("{manifest_dir}/target/near/btc_light_client_contract.wasm");
         tokio::fs::read(&wasm_path)
             .await
             .unwrap_or_else(|e| panic!("Failed to read dogecoin WASM at {wasm_path}: {e}"))
@@ -93,7 +92,11 @@ mod test_dogecoin {
             .max_gas()
             .transact()
             .await?;
-        assert!(outcome.is_success(), "Init failed: {:?}", outcome.failures());
+        assert!(
+            outcome.is_success(),
+            "Init failed: {:?}",
+            outcome.failures()
+        );
 
         let user_account = sandbox.dev_create_account().await?;
         Ok((contract, user_account))
@@ -107,12 +110,7 @@ mod test_dogecoin {
     // version=6422788 (0x620104): chain_id=0x62 (Dogecoin), AuxPoW flag (bit 8) set.
     // ---------------------------------------------------------------------------
 
-    fn make_block(
-        prev_block_hash: &str,
-        merkle_root: &str,
-        time: u32,
-        bits: u32,
-    ) -> Header {
+    fn make_block(prev_block_hash: &str, merkle_root: &str, time: u32, bits: u32) -> Header {
         serde_json::from_value(json!({
             "version": 6422788,
             "prev_block_hash": prev_block_hash,
@@ -128,61 +126,103 @@ mod test_dogecoin {
     fn mainnet_blocks() -> Vec<Header> {
         vec![
             // 5_800_000  hash: 8d1540c92ec87451d73573fec3720ca7e835e630538096e3e11c56dec8205e2e
-            make_block("fbf1d4af85612424aa08c4b14df869aca3fe1518446d4e675595bf83b9766c87",
-                       "23038370556fd5b6d5881001aa748dd53129e3901ebffafc9b7d82df41928650",
-                       1753007429, 436262933),
+            make_block(
+                "fbf1d4af85612424aa08c4b14df869aca3fe1518446d4e675595bf83b9766c87",
+                "23038370556fd5b6d5881001aa748dd53129e3901ebffafc9b7d82df41928650",
+                1753007429,
+                436262933,
+            ),
             // 5_800_001  hash: afa3f83d1afbbd2ed26efbafc57ea5410e790874120915d06548256094c8a609
-            make_block("8d1540c92ec87451d73573fec3720ca7e835e630538096e3e11c56dec8205e2e",
-                       "5d88372c5341db5591d678e669fc539316bf550f176a80368b4359c68b96cf86",
-                       1753007473, 436261089),
+            make_block(
+                "8d1540c92ec87451d73573fec3720ca7e835e630538096e3e11c56dec8205e2e",
+                "5d88372c5341db5591d678e669fc539316bf550f176a80368b4359c68b96cf86",
+                1753007473,
+                436261089,
+            ),
             // 5_800_002  hash: 0f34eb5e729a97c8fd557ea5a128c932e056c21e7edb8ef36c4537ca70e5d48c
-            make_block("afa3f83d1afbbd2ed26efbafc57ea5410e790874120915d06548256094c8a609",
-                       "b0e867993a3a57d17918b0aac81bcdd5268faf76dc8c3a79d64ce124f2b9178d",
-                       1753007499, 436259306),
+            make_block(
+                "afa3f83d1afbbd2ed26efbafc57ea5410e790874120915d06548256094c8a609",
+                "b0e867993a3a57d17918b0aac81bcdd5268faf76dc8c3a79d64ce124f2b9178d",
+                1753007499,
+                436259306,
+            ),
             // 5_800_003  hash: ccdf48cde084529f9099b054983060c3cdb87eb5ff8c344cab355aae0e736cfd
-            make_block("0f34eb5e729a97c8fd557ea5a128c932e056c21e7edb8ef36c4537ca70e5d48c",
-                       "205e3576dab3c3f88d7e3a92fa61c46fe36e9e382a5a3884ac1c21cd0fba60e4",
-                       1753007552, 436255860),
+            make_block(
+                "0f34eb5e729a97c8fd557ea5a128c932e056c21e7edb8ef36c4537ca70e5d48c",
+                "205e3576dab3c3f88d7e3a92fa61c46fe36e9e382a5a3884ac1c21cd0fba60e4",
+                1753007552,
+                436255860,
+            ),
             // 5_800_004  hash: 49cfcda2406983505c19970999a506b54008373ce27d2743fd0968ac0ffb4c0c
-            make_block("ccdf48cde084529f9099b054983060c3cdb87eb5ff8c344cab355aae0e736cfd",
-                       "ad279b894d947eb2d11d37528e0245b2a3a93412deebd45b789ab727a67fc197",
-                       1753007561, 436255860),
+            make_block(
+                "ccdf48cde084529f9099b054983060c3cdb87eb5ff8c344cab355aae0e736cfd",
+                "ad279b894d947eb2d11d37528e0245b2a3a93412deebd45b789ab727a67fc197",
+                1753007561,
+                436255860,
+            ),
             // 5_800_005  hash: 8dd2b088ebb3a8e9529935beed8db00cfbcc71440ca8d3ada9d3e68187c63170
-            make_block("49cfcda2406983505c19970999a506b54008373ce27d2743fd0968ac0ffb4c0c",
-                       "1dc7bc810faa6122c8f8459bf9d3928a87a0e1777902c34e3912d1c87e9d3ad0",
-                       1753007611, 436251035),
+            make_block(
+                "49cfcda2406983505c19970999a506b54008373ce27d2743fd0968ac0ffb4c0c",
+                "1dc7bc810faa6122c8f8459bf9d3928a87a0e1777902c34e3912d1c87e9d3ad0",
+                1753007611,
+                436251035,
+            ),
             // 5_800_006  hash: dd8dd477409b51a9e046270a04d762c999ae1e65c707ff20acce0d1787180ac4
-            make_block("8dd2b088ebb3a8e9529935beed8db00cfbcc71440ca8d3ada9d3e68187c63170",
-                       "18dc598772ffa0ecf5b6467e3ebda5d3c8f3580bda413778df701c810666c997",
-                       1753007671, 436250311),
+            make_block(
+                "8dd2b088ebb3a8e9529935beed8db00cfbcc71440ca8d3ada9d3e68187c63170",
+                "18dc598772ffa0ecf5b6467e3ebda5d3c8f3580bda413778df701c810666c997",
+                1753007671,
+                436250311,
+            ),
             // 5_800_007  hash: 646865ff3b66d65e0e7824904873236d970821495d1bf085b260f3491961b2b8
-            make_block("dd8dd477409b51a9e046270a04d762c999ae1e65c707ff20acce0d1787180ac4",
-                       "7944974d1084400707550887e1c122aa6c73cff44a26998f261320408094e64d",
-                       1753007730, 436250311),
+            make_block(
+                "dd8dd477409b51a9e046270a04d762c999ae1e65c707ff20acce0d1787180ac4",
+                "7944974d1084400707550887e1c122aa6c73cff44a26998f261320408094e64d",
+                1753007730,
+                436250311,
+            ),
             // 5_800_008  hash: 93bdeeafdc34aed94d6ababbbe3c9af8f7609ab0141e1d462bcc7aed3f50eaab
-            make_block("646865ff3b66d65e0e7824904873236d970821495d1bf085b260f3491961b2b8",
-                       "46317b3c4a87bdbd52b2167666c81fed94a5f717a0ee256e8b433283632ff5ec",
-                       1753007882, 436250311),
+            make_block(
+                "646865ff3b66d65e0e7824904873236d970821495d1bf085b260f3491961b2b8",
+                "46317b3c4a87bdbd52b2167666c81fed94a5f717a0ee256e8b433283632ff5ec",
+                1753007882,
+                436250311,
+            ),
             // 5_800_009  hash: 2784b47216f76bb35b0f31bba70bb8bb7db771228ed46d09893755d9317733f4
-            make_block("93bdeeafdc34aed94d6ababbbe3c9af8f7609ab0141e1d462bcc7aed3f50eaab",
-                       "9f59d1aaa4220fd8be905646a8824204b0c1842b8842ff9867767bc409576efe",
-                       1753007889, 436258138),
+            make_block(
+                "93bdeeafdc34aed94d6ababbbe3c9af8f7609ab0141e1d462bcc7aed3f50eaab",
+                "9f59d1aaa4220fd8be905646a8824204b0c1842b8842ff9867767bc409576efe",
+                1753007889,
+                436258138,
+            ),
             // 5_800_010  hash: b2b36ed6153b789ea70518cebbd6ef90c7056cb209a38de05cd3342d1bc96942
-            make_block("2784b47216f76bb35b0f31bba70bb8bb7db771228ed46d09893755d9317733f4",
-                       "51ffd63f21a101ca906f5d01f2cadd176975610feabc071d6216984711216e00",
-                       1753007899, 436253085),
+            make_block(
+                "2784b47216f76bb35b0f31bba70bb8bb7db771228ed46d09893755d9317733f4",
+                "51ffd63f21a101ca906f5d01f2cadd176975610feabc071d6216984711216e00",
+                1753007899,
+                436253085,
+            ),
             // 5_800_011  hash: 18958cb77ab6e736afb871bec28cb9d734f720367a007185e650fb5646d46170
-            make_block("b2b36ed6153b789ea70518cebbd6ef90c7056cb209a38de05cd3342d1bc96942",
-                       "ba4deb0bebcdb1b81b928ef798899b1f17868281af8350c310886880ab3eca65",
-                       1753007955, 436248538),
+            make_block(
+                "b2b36ed6153b789ea70518cebbd6ef90c7056cb209a38de05cd3342d1bc96942",
+                "ba4deb0bebcdb1b81b928ef798899b1f17868281af8350c310886880ab3eca65",
+                1753007955,
+                436248538,
+            ),
             // 5_800_012  hash: c6dbc782fa5a3c89dbf5ff62305a3c2890000771cc2553f6c054b422d458d74d
-            make_block("18958cb77ab6e736afb871bec28cb9d734f720367a007185e650fb5646d46170",
-                       "edd234664db51bdf968b575e965fb672c21d6d48338d949547e2734d57fb4001",
-                       1753008034, 436248538),
+            make_block(
+                "18958cb77ab6e736afb871bec28cb9d734f720367a007185e650fb5646d46170",
+                "edd234664db51bdf968b575e965fb672c21d6d48338d949547e2734d57fb4001",
+                1753008034,
+                436248538,
+            ),
             // 5_800_013  hash: 919970f385fa583800f89d8b84249b98a1cb73ef732ea30d5fa176ffcbf88e18
-            make_block("c6dbc782fa5a3c89dbf5ff62305a3c2890000771cc2553f6c054b422d458d74d",
-                       "37cf538c3571c620657e468dcc88598222c08b4e101cc010d5f3a87818004015",
-                       1753008073, 436249902),
+            make_block(
+                "c6dbc782fa5a3c89dbf5ff62305a3c2890000771cc2553f6c054b422d458d74d",
+                "37cf538c3571c620657e468dcc88598222c08b4e101cc010d5f3a87818004015",
+                1753008073,
+                436249902,
+            ),
         ]
     }
 
@@ -279,7 +319,11 @@ mod test_dogecoin {
             .max_gas()
             .transact()
             .await?;
-        assert!(outcome.is_success(), "Init failed: {:?}", outcome.failures());
+        assert!(
+            outcome.is_success(),
+            "Init failed: {:?}",
+            outcome.failures()
+        );
 
         let user_account = sandbox.dev_create_account().await?;
 
