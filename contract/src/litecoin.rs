@@ -54,7 +54,7 @@ fn get_next_work_required(
     prev_block_header: &ExtendedHeader,
     blocks_getter: &impl BlocksGetter,
 ) -> u32 {
-    if !(prev_block_header.block_height + 1).is_multiple_of(config.difficulty_adjustment_interval) {
+    if (prev_block_header.block_height + 1) % config.difficulty_adjustment_interval != 0 {
         if config.pow_allow_min_difficulty_blocks {
             if block_header.time
                 > prev_block_header.block_header.time + 2 * config.pow_target_spacing
@@ -64,9 +64,7 @@ fn get_next_work_required(
 
             let mut current_block_header = prev_block_header.clone();
             while current_block_header.block_header.bits == config.proof_of_work_limit_bits
-                && !current_block_header
-                    .block_height
-                    .is_multiple_of(config.difficulty_adjustment_interval)
+                && current_block_header.block_height % config.difficulty_adjustment_interval != 0
             {
                 current_block_header =
                     blocks_getter.get_prev_header(&current_block_header.block_header);
