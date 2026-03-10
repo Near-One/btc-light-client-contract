@@ -64,7 +64,9 @@ fn get_next_work_required(
 
             let mut current_block_header = prev_block_header.clone();
             while current_block_header.block_header.bits == config.proof_of_work_limit_bits
-                && !current_block_header.block_height.is_multiple_of(config.difficulty_adjustment_interval)
+                && !current_block_header
+                    .block_height
+                    .is_multiple_of(config.difficulty_adjustment_interval)
             {
                 current_block_header =
                     blocks_getter.get_prev_header(&current_block_header.block_header);
