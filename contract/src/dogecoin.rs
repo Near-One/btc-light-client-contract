@@ -47,14 +47,14 @@ impl BtcLightClient {
     }
 
     pub(crate) fn check_aux(&mut self, block_header: &Header, aux_data: &AuxData) {
+        // The Dogecoin block must have the AuxPoW flag set (bit 8) when AuxPoW data is present.
+        // https://github.com/dogecoin/dogecoin/blob/master/src/auxpow.h
+        const BLOCK_VERSION_AUXPOW: i32 = 0x100;
+
         require!(
             aux_data.chain_merkle_proof.len() <= 30,
             "Aux POW chain merkle branch too long"
         );
-
-        // The Dogecoin block must have the AuxPoW flag set (bit 8) when AuxPoW data is present.
-        // https://github.com/dogecoin/dogecoin/blob/master/src/auxpow.h
-        const BLOCK_VERSION_AUXPOW: i32 = 0x100;
         require!(
             block_header.version & BLOCK_VERSION_AUXPOW != 0,
             "Aux POW block does not have AuxPoW flag set in version"
@@ -248,7 +248,7 @@ fn get_next_work_required(
         config.difficulty_adjustment_interval
     };
 
-    if (prev_block_header.block_height + 1) % difficulty_adjustment_interval != 0 {
+    if !(prev_block_header.block_height + 1).is_multiple_of(difficulty_adjustment_interval) {
         if config.pow_allow_min_difficulty_blocks {
             // Special difficulty rule for testnet:
             // If the new block's timestamp is more than 2* 10 minutes
@@ -263,7 +263,7 @@ fn get_next_work_required(
             let mut current_block_header = prev_block_header.clone();
 
             while current_block_header.block_header.bits == config.proof_of_work_limit_bits
-                && current_block_header.block_height % config.difficulty_adjustment_interval != 0
+                && !current_block_header.block_height.is_multiple_of(config.difficulty_adjustment_interval)
             {
                 current_block_header =
                     blocks_getter.get_prev_header(&current_block_header.block_header);

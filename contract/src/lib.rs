@@ -250,12 +250,12 @@ impl BtcLightClient {
 
     /// Verifies that a transaction is included in a block at a given block height
     ///
-    /// @param tx_id transaction identifier
-    /// @param tx_block_blockhash block hash at which transacton is supposedly included
-    /// @param tx_index index of transaction in the block's tx merkle tree
-    /// @param merkle_proof  merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
+    /// @param `tx_id` transaction identifier
+    /// @param `tx_block_blockhash` block hash at which transacton is supposedly included
+    /// @param `tx_index` index of transaction in the block's tx merkle tree
+    /// @param `merkle_proof` merkle tree path (concatenated LE sha256 hashes) (does not contain initial `transaction_hash` and `merkle_root`)
     /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
-    /// @return True if tx_id is at the claimed position in the block at the given blockhash, False otherwise
+    /// @return True if `tx_id` is at the claimed position in the block at the given blockhash, False otherwise
     ///
     /// # Warning
     /// This function may return `true` if the provided `tx_id` is a hash of an internal node in the Merkle tree rather than a valid transaction hash.
@@ -302,7 +302,7 @@ impl BtcLightClient {
     }
 
     /// Public call to run GC on a mainchain.
-    /// batch_size is how many block headers should be removed in the execution
+    /// `batch_size` is how many block headers should be removed in the execution
     ///
     /// # Panics
     /// If initial blockheader or tip blockheader are not in a header pool
@@ -367,11 +367,11 @@ impl BtcLightClient {
         let config = self.get_config();
         #[cfg(feature = "bitcoin")]
         {
-            require!(block_height % config.difficulty_adjustment_interval == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
+            require!(block_height.is_multiple_of(config.difficulty_adjustment_interval), format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
         }
         #[cfg(any(feature = "litecoin", feature = "dogecoin"))]
         {
-            require!((block_height + 1) % config.difficulty_adjustment_interval == 0, format!("Error: The initial block height  + 1 must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
+            require!((block_height + 1).is_multiple_of(config.difficulty_adjustment_interval), format!("Error: The initial block height  + 1 must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
         }
         #[cfg(any(feature = "litecoin", feature = "dogecoin", feature = "bitcoin"))]
         {
