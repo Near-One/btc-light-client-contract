@@ -297,17 +297,14 @@ mod test_basics {
         let (contract, user_account, block_headers) = init_contract_from_file(2017).await?;
 
         // Submit remaining[0] (85 blocks). Together with the 12 in init = 97 total.
-        for block_headers_batch in &block_headers[..=0] {
-            let outcome = user_account
-                .call(contract.id(), "submit_blocks")
-                .args_borsh(block_headers_batch.clone())
-                .deposit(STORAGE_DEPOSIT_PER_BLOCK)
-                .max_gas()
-                .transact()
-                .await?;
-
-            assert!(outcome.is_success());
-        }
+        let outcome = user_account
+            .call(contract.id(), "submit_blocks")
+            .args_borsh(block_headers[0].clone())
+            .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(outcome.is_success());
 
         let outcome = contract
             .view("get_last_n_blocks_hashes")
@@ -354,21 +351,15 @@ mod test_basics {
         let (contract, user_account, block_headers) = init_contract_from_file(10).await?;
 
         // 12 blocks already loaded in init; submit remaining[0] (85 blocks) = 97 total.
-        let mut submitted_blocks_count: usize = 12;
-
-        for block_headers_batch in &block_headers[..=0] {
-            let outcome = user_account
-                .call(contract.id(), "submit_blocks")
-                .args_borsh(block_headers_batch.clone())
-                .deposit(STORAGE_DEPOSIT_PER_BLOCK)
-                .max_gas()
-                .transact()
-                .await?;
-
-            assert!(outcome.is_success());
-            submitted_blocks_count += block_headers_batch.len();
-        }
-        assert_eq!(submitted_blocks_count, 97);
+        let outcome = user_account
+            .call(contract.id(), "submit_blocks")
+            .args_borsh(block_headers[0].clone())
+            .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(outcome.is_success());
+        assert_eq!(12 + block_headers[0].len(), 97);
 
         let outcome = contract
             .view("get_mainchain_size")
