@@ -376,7 +376,7 @@ impl BtcLightClient {
         #[cfg(any(feature = "litecoin", feature = "dogecoin", feature = "bitcoin"))]
         {
             require!(
-                submit_blocks.len() >= btc_types::network::MEDIAN_TIME_SPAN + 1,
+                submit_blocks.len() > btc_types::network::MEDIAN_TIME_SPAN,
                 format!(
                     "At least {} initial blocks must be submitted to support MTP computation",
                     btc_types::network::MEDIAN_TIME_SPAN + 1
