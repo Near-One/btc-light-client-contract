@@ -46,7 +46,7 @@ mod test_basics {
             genesis_block_hash: submit_blocks[0].block_hash(),
             genesis_block_height: 0,
             skip_pow_verification: true,
-            gc_threshold: 5,
+            gc_threshold: 20,
             network: btc_types::network::Network::Mainnet,
             submit_blocks,
         };
@@ -139,36 +139,98 @@ mod test_basics {
         Ok(())
     }
 
+    /// Build three test blocks branching from fake_0 (the init mainchain tip):
+    ///   - main_block: extends fake_0 on mainchain (height 2)
+    ///   - fork_1:     extends fake_0 as fork      (height 2, same chainwork as main_block)
+    ///   - fork_2:     extends fork_1               (height 3, higher chainwork → triggers reorg)
+    fn make_reorg_test_blocks() -> (Header, Header, Header) {
+        let init_blocks = make_init_submit_blocks();
+        let fake_0_hash = init_blocks[1].block_hash().to_string();
+
+        let main_block: Header = serde_json::from_value(json!({
+            "version": 1,
+            "prev_block_hash": fake_0_hash,
+            "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
+            "time": 1_231_006_510,
+            "bits": 486_604_799,
+            "nonce": 2_083_236_893_u32,
+        }))
+        .unwrap();
+
+        let fork_1: Header = serde_json::from_value(json!({
+            "version": 1,
+            "prev_block_hash": fake_0_hash,
+            "merkle_root": "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098",
+            "time": 1_231_469_665,
+            "nonce": 2_573_394_689_u32,
+            "bits": 486_604_799,
+        }))
+        .unwrap();
+
+        let fork_1_hash = fork_1.block_hash().to_string();
+        let fork_2: Header = serde_json::from_value(json!({
+            "version": 1,
+            "prev_block_hash": fork_1_hash,
+            "merkle_root": "9b0fc92260312ce44e74ef369f5c66bbb85848f2eddd5a7a1cde251e54ccfdd5",
+            "time": 1_231_469_744,
+            "nonce": 1_639_830_024_u32,
+            "bits": 486_604_799,
+        }))
+        .unwrap();
+
+        (main_block, fork_1, fork_2)
+    }
+
     #[tokio::test]
     async fn test_setting_chain_reorg() -> Result<(), Box<dyn std::error::Error>> {
         let (contract, user_account) = init_contract().await?;
+        let (main_block, fork_1, fork_2) = make_reorg_test_blocks();
 
-        // block_header_example (prev=genesis) outweighs the fake init tip and gets promoted
+        let storage_usage_init = contract.view_account().await.unwrap().storage_usage;
+
+        // main_block extends fake_0 (current tip) → goes to mainchain at height 2
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
-            .args_borsh([block_header_example()].to_vec())
+            .args_borsh([main_block].to_vec())
             .deposit(STORAGE_DEPOSIT_PER_BLOCK)
             .transact()
             .await?;
         assert!(outcome.is_success());
 
-        // first fork block (same chainwork as block_header_example → not promoted)
+        let storage_usage_one_block = contract.view_account().await.unwrap().storage_usage;
+
+        // fork_1 also extends fake_0 but as a fork (same chainwork → not promoted)
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
-            .args_borsh([fork_block_header_example()].to_vec())
+            .args_borsh([fork_1].to_vec())
             .deposit(STORAGE_DEPOSIT_PER_BLOCK)
             .transact()
             .await?;
         assert!(outcome.is_success());
 
-        // second fork block (higher chainwork → reorg, becomes new tip)
+        let storage_usage_fork = contract.view_account().await.unwrap().storage_usage;
+
+        // fork_2 extends fork_1 (higher chainwork → reorg, becomes new tip)
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
-            .args_borsh([fork_block_header_example_2()].to_vec())
+            .args_borsh([fork_2.clone()].to_vec())
             .deposit(STORAGE_DEPOSIT_PER_BLOCK)
             .transact()
             .await?;
         assert!(outcome.is_success());
+
+        let storage_usage_after = contract.view_account().await.unwrap().storage_usage;
+        // Reorg removes main_block from storage (replaced by fork_1 at height 2).
+        // delta_reorg = mainchain map overhead only (pool nets to zero: +fork_2, −main_block).
+        // delta_one  = pool entry + mainchain map overhead.
+        // delta_fork = pool entry only.
+        // Therefore: delta_reorg == delta_one − delta_fork.
+        assert_eq!(
+            storage_usage_after - storage_usage_fork,
+            storage_usage_one_block
+                - storage_usage_init
+                - (storage_usage_fork - storage_usage_one_block)
+        );
 
         let outcome = contract
             .view("get_last_block_header")
@@ -177,7 +239,7 @@ mod test_basics {
 
         assert_eq!(
             outcome.json::<ExtendedHeader>()?.block_header,
-            fork_block_header_example_2()
+            fork_2.into_light()
         );
 
         Ok(())
@@ -479,35 +541,6 @@ mod test_basics {
         serde_json::from_value(json_value).expect("value is invalid")
     }
 
-    // Bitcoin header example
-    fn block_header_example() -> Header {
-        let json_value = serde_json::json!({
-            // block_hash: 62703463e75c025987093c6fa96e7261ac982063ea048a0550407ddbbe865345
-            "version": 1,
-            "prev_block_hash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-            "merkle_root": "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b",
-            "time": 1_231_006_506,
-            "bits": 486_604_799,
-            "nonce": 2_083_236_893
-        });
-
-        serde_json::from_value(json_value).expect("value is invalid")
-    }
-
-    fn fork_block_header_example() -> Header {
-        let json_value = serde_json::json!({
-            // "hash": "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048",
-            //"chainwork": "0000000000000000000000000000000000000000000000000000000200020002",
-            "version": 1,
-            "merkle_root": "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098",
-            "time": 1_231_469_665,
-            "nonce": 2_573_394_689_u32,
-            "bits": 486_604_799,
-            "prev_block_hash": "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-        });
-
-        serde_json::from_value(json_value).expect("value is invalid")
-    }
 
     fn fork_block_header_example_2() -> Header {
         let json_value = serde_json::json!({
