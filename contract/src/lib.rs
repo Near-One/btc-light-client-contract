@@ -11,6 +11,7 @@ use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::{LookupMap, LookupSet};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{env, log, near, require, NearToken, PanicOnDefault, Promise, PromiseOrValue};
+use omni_utils::macros::trusted_relayer;
 
 use crate::utils::BlocksGetter;
 
@@ -65,6 +66,8 @@ pub enum Role {
     /// Using this pattern grantees of a single role are authorized to call multiple (but not all)
     /// protected `Upgradable` methods.
     DurationManager,
+    /// May manage trusted relayer staking: reject applications and update relayer config.
+    RelayerManager,
 }
 #[derive(BorshSerialize, near_sdk::BorshStorageKey)]
 enum StorageKey {
@@ -116,6 +119,10 @@ pub struct BtcLightClient {
     network: Network,
 }
 
+#[trusted_relayer(
+    bypass_roles(Role::DAO, Role::UnrestrictedSubmitBlocks),
+    manager_roles(Role::DAO, Role::RelayerManager)
+)]
 #[near]
 impl BtcLightClient {
     /// Recommended initialization parameters:
@@ -156,6 +163,7 @@ impl BtcLightClient {
     }
 
     #[payable]
+    #[trusted_relayer]
     #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
     pub fn submit_blocks(
         &mut self,
