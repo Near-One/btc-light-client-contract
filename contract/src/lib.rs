@@ -121,7 +121,8 @@ pub struct BtcLightClient {
 
 #[trusted_relayer(
     bypass_roles(Role::DAO, Role::UnrestrictedSubmitBlocks),
-    manager_roles(Role::DAO, Role::RelayerManager)
+    manager_roles(Role::DAO, Role::RelayerManager),
+    config_roles(Role::DAO)
 )]
 #[near]
 impl BtcLightClient {
