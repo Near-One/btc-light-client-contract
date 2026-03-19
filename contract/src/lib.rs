@@ -160,6 +160,9 @@ impl BtcLightClient {
         contract
     }
 
+    /// This method submits provided headers
+    /// # Panics
+    /// Cannot parse headers len as u64
     #[payable]
     #[trusted_relayer]
     pub fn submit_blocks(
