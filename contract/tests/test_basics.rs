@@ -35,6 +35,29 @@ mod test_basics {
         blocks
     }
 
+    /// Grant the `UnrestrictedSubmitBlocks` role to an account so it passes the
+    /// `#[trusted_relayer]` guard on `submit_blocks`. The contract itself is the
+    /// super admin (set during `init`), so it can grant any role.
+    async fn grant_relayer_role(
+        contract: &Contract,
+        account: &Account,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let outcome = contract
+            .call("acl_grant_role")
+            .args_json(json!({
+                "role": "UnrestrictedSubmitBlocks",
+                "account_id": account.id(),
+            }))
+            .transact()
+            .await?;
+        assert!(
+            outcome.is_success(),
+            "Failed to grant role: {:?}",
+            outcome.failures()
+        );
+        Ok(())
+    }
+
     async fn init_contract() -> Result<(Contract, Account), Box<dyn std::error::Error>> {
         let sandbox = near_workspaces::sandbox().await?;
         let contract_wasm = near_workspaces::compile_project("./").await?;
@@ -61,6 +84,7 @@ mod test_basics {
         assert!(outcome.is_success());
 
         let user_account = sandbox.dev_create_account().await?;
+        grant_relayer_role(&contract, &user_account).await?;
 
         Ok((contract, user_account))
     }
@@ -104,6 +128,7 @@ mod test_basics {
         assert!(outcome.is_success());
 
         let user_account = sandbox.dev_create_account().await?;
+        grant_relayer_role(&contract, &user_account).await?;
 
         // Return blocks NOT yet submitted (batch[2][5..] onward).
         let remaining = remaining_after_init(&all_block_headers);
