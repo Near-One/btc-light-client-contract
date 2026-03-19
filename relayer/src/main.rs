@@ -6,13 +6,16 @@ use bitcoin::BlockHash;
 use bitcoin_client::AuxData;
 use btc_types::contract_args::InitArgs;
 use log::{info, trace, warn};
+use tokio::sync::Mutex;
 
+use crate::adaptive_batch::AdaptiveBatchSizer;
 use crate::bitcoin_client::Client as BitcoinClient;
 use crate::config::{Config, InitConfig};
 use crate::near_client::{CustomError, NearClient};
 use clap::Parser;
 use std::path::PathBuf;
 
+mod adaptive_batch;
 mod bitcoin_client;
 mod config;
 mod near_client;
@@ -21,6 +24,7 @@ struct Synchronizer {
     bitcoin_client: Arc<BitcoinClient>,
     near_client: NearClient,
     config: Config,
+    batch_sizer: Mutex<AdaptiveBatchSizer>,
 }
 
 macro_rules! continue_on_fail {
@@ -59,10 +63,12 @@ impl Synchronizer {
         near_client: NearClient,
         config: Config,
     ) -> Self {
+        let batch_sizer = Mutex::new(AdaptiveBatchSizer::new(&config));
         Self {
             bitcoin_client,
             near_client,
             config,
+            batch_sizer,
         }
     }
 
@@ -150,10 +156,11 @@ impl Synchronizer {
         self: Arc<Self>,
         blocks_to_submit: Vec<(u64, btc_types::header::Header, Option<AuxData>)>,
         first_block_height_to_submit: Arc<AtomicU64>,
+        batch_size: usize,
     ) {
         let signed_submit_blocks_txs = match self
             .near_client
-            .sign_submit_blocks(blocks_to_submit, self.config.submit_batch_size)
+            .sign_submit_blocks(blocks_to_submit, batch_size)
             .await
         {
             Ok(txs) => txs,
@@ -171,6 +178,7 @@ impl Synchronizer {
         for tx in signed_submit_blocks_txs {
             let cloned_self = self.clone();
             let first_block_height_to_submit = first_block_height_to_submit.clone();
+            let num_blocks_in_tx = (tx.last_block_height + 1).saturating_sub(tx.first_block_height);
 
             handles.push(tokio::spawn(async move {
             info!(target: "relay", "Submit blocks with height: [{} - {}]", tx.first_block_height, tx.last_block_height);
@@ -181,8 +189,24 @@ impl Synchronizer {
                     };
                     first_block_height_to_submit.store(last_block_height + 1, std::sync::atomic::Ordering::SeqCst);
                 }
-                Ok(Ok(_)) => {
+                Ok(Err(CustomError::GasExceeded)) => {
+                    warn!(target: "relay", "Gas exceeded for blocks [{} - {}], reducing batch size",
+                        tx.first_block_height, tx.last_block_height);
+                    {
+                        let mut sizer = cloned_self.batch_sizer.lock().await;
+                        sizer.on_gas_exceeded();
+                    }
+                    let Ok(last_block_height) = cloned_self.get_last_correct_block_height().await else {
+                        return Err("Error on get_last_block_height".to_string());
+                    };
+                    first_block_height_to_submit.store(last_block_height + 1, std::sync::atomic::Ordering::SeqCst);
+                }
+                Ok(Ok(result)) => {
                     first_block_height_to_submit.store(tx.last_block_height + 1, std::sync::atomic::Ordering::SeqCst);
+                    if result.gas_burnt > 0 {
+                        let mut sizer = cloned_self.batch_sizer.lock().await;
+                        sizer.on_success(result.gas_burnt, num_blocks_in_tx);
+                    }
                 }
                 Ok(Err(err)) => return Err(format!("Error on block submission (not panic): {err:?}")),
                 Err(err) => return Err(format!("Task failed with error: {err:?}")),
@@ -207,6 +231,12 @@ impl Synchronizer {
         ));
 
         'main_loop: loop {
+            let (current_fetch_size, current_batch_size) = {
+                let mut sizer = self.batch_sizer.lock().await;
+                sizer.try_recover();
+                (sizer.current_fetch_size(), sizer.current_batch_size())
+            };
+
             let latest_height = continue_on_fail!(
                 self.bitcoin_client.get_block_count(),
                 "Bitcoin Client: Error on get_block_count",
@@ -216,8 +246,7 @@ impl Synchronizer {
 
             let start_height =
                 first_block_height_to_submit.load(std::sync::atomic::Ordering::Relaxed);
-            let end_height =
-                latest_height.min(start_height.saturating_add(self.config.fetch_batch_size));
+            let end_height = latest_height.min(start_height.saturating_add(current_fetch_size));
 
             let blocks_to_submit = self.fetch_blocks_to_submit(start_height, end_height).await;
 
@@ -244,8 +273,18 @@ impl Synchronizer {
                 continue;
             }
 
+            info!(
+                target: "relay",
+                "Adaptive batch: fetch_size={}, batch_size={}, blocks_fetched={}",
+                current_fetch_size, current_batch_size, blocks_to_submit.len(),
+            );
+
             self.clone()
-                .prepare_and_submit_batches(blocks_to_submit, first_block_height_to_submit.clone())
+                .prepare_and_submit_batches(
+                    blocks_to_submit,
+                    first_block_height_to_submit.clone(),
+                    usize::try_from(current_batch_size).unwrap(),
+                )
                 .await;
 
             tokio::time::sleep(std::time::Duration::from_secs(

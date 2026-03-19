@@ -17,7 +17,11 @@ pub struct Config {
     #[serde(default = "defaults::fetch_batch_size")]
     pub fetch_batch_size: u64,
     #[serde(default = "defaults::submit_batch_size")]
-    pub submit_batch_size: usize,
+    pub submit_batch_size: u64,
+    #[serde(default = "defaults::min_batch_size")]
+    pub min_batch_size: u64,
+    #[serde(default = "defaults::batch_size_cooldown_sec")]
+    pub batch_size_cooldown_sec: u64,
 
     pub bitcoin: BitcoinConfig,
     pub near: NearConfig,
@@ -70,8 +74,14 @@ mod defaults {
     pub fn fetch_batch_size() -> u64 {
         150
     }
-    pub fn submit_batch_size() -> usize {
+    pub fn submit_batch_size() -> u64 {
         15
+    }
+    pub fn min_batch_size() -> u64 {
+        1
+    }
+    pub fn batch_size_cooldown_sec() -> u64 {
+        1800
     }
     pub fn transaction_timeout_sec() -> u64 {
         120
@@ -173,8 +183,10 @@ impl Config {
         }
 
         log::info!("  Max fork length: {}", self.max_fork_len);
-        log::info!("  Fetch batch size: {}", self.fetch_batch_size);
-        log::info!("  Submit batch size: {}", self.submit_batch_size);
+        log::info!("  Fetch batch size (max): {}", self.fetch_batch_size);
+        log::info!("  Submit batch size (max): {}", self.submit_batch_size);
+        log::info!("  Min batch size: {}", self.min_batch_size);
+        log::info!("  Batch size cooldown: {}s", self.batch_size_cooldown_sec);
         log::info!("  Sync sleep: {}s", self.sleep_time_on_reach_last_block_sec);
     }
 }
