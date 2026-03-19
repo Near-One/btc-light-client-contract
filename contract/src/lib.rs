@@ -162,7 +162,6 @@ impl BtcLightClient {
 
     #[payable]
     #[trusted_relayer]
-    #[pause(except(roles(Role::UnrestrictedSubmitBlocks)))]
     pub fn submit_blocks(
         &mut self,
         #[serializer(borsh)] headers: Vec<BlockHeader>,
