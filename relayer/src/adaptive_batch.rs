@@ -1,17 +1,14 @@
 use log::{info, warn};
-use std::time::Instant;
 
 use crate::config::Config;
 
 /// Target gas budget per transaction, leaving 50 Tgas headroom from the 300 Tgas max.
 const TARGET_GAS_BUDGET: u64 = 250_000_000_000_000;
 
-/// Adaptive batch sizer using AIMD (Additive Increase, Multiplicative Decrease)
-/// combined with proactive gas-based sizing.
+/// Adaptive batch sizer that proactively adjusts batch size based on observed gas usage.
 ///
-/// - On gas exceeded: halve `batch_size` (multiplicative decrease), start cooldown
-/// - On success: compute optimal `batch_size` from `gas_burnt`, clamp to max
-/// - On cooldown expiry: additive increase (+1) toward max
+/// - On gas exceeded: halve `batch_size` (multiplicative decrease)
+/// - On success: compute optimal `batch_size` from `gas_burnt`, clamp to bounds
 ///
 /// `fetch_size` = `batch_size` * `num_parallel_txs` (capped at `max_fetch_size`)
 pub struct AdaptiveBatchSizer {
@@ -20,8 +17,6 @@ pub struct AdaptiveBatchSizer {
     current_batch_size: u64,
     min_batch_size: u64,
     num_parallel_txs: u64,
-    cooldown_until: Option<Instant>,
-    cooldown_duration: std::time::Duration,
 }
 
 impl AdaptiveBatchSizer {
@@ -40,12 +35,11 @@ impl AdaptiveBatchSizer {
 
         info!(
             target: "adaptive_batch",
-            "Initialized: max_batch_size={}, max_fetch_size={}, num_parallel_txs={}, min_batch_size={}, cooldown={}s",
+            "Initialized: max_batch_size={}, max_fetch_size={}, num_parallel_txs={}, min_batch_size={}",
             config.submit_batch_size,
             config.fetch_batch_size,
             num_parallel_txs,
             config.min_batch_size,
-            config.batch_size_cooldown_sec,
         );
 
         Self {
@@ -54,18 +48,14 @@ impl AdaptiveBatchSizer {
             current_batch_size: config.submit_batch_size,
             min_batch_size: config.min_batch_size,
             num_parallel_txs,
-            cooldown_until: None,
-            cooldown_duration: std::time::Duration::from_secs(config.batch_size_cooldown_sec),
         }
     }
 
-    /// Current submit batch size.
     #[must_use]
     pub fn current_batch_size(&self) -> u64 {
         self.current_batch_size
     }
 
-    /// Current fetch size = `batch_size` * `num_parallel_txs`, capped at `max_fetch_size`.
     #[must_use]
     pub fn current_fetch_size(&self) -> u64 {
         let computed = self.current_batch_size * self.num_parallel_txs;
@@ -73,18 +63,16 @@ impl AdaptiveBatchSizer {
     }
 
     /// Called when a transaction fails with "Exceeded the maximum amount of gas".
-    /// Halves the batch size (multiplicative decrease) and starts a cooldown period.
+    /// Halves the batch size (multiplicative decrease).
     pub fn on_gas_exceeded(&mut self) {
         let old = self.current_batch_size;
         self.current_batch_size = (self.current_batch_size / 2).max(self.min_batch_size);
-        self.cooldown_until = Some(Instant::now() + self.cooldown_duration);
 
         warn!(
             target: "adaptive_batch",
-            "Gas exceeded! Batch size: {} -> {} (cooldown for {}s)",
+            "Gas exceeded! Batch size: {} -> {}",
             old,
             self.current_batch_size,
-            self.cooldown_duration.as_secs(),
         );
     }
 
@@ -107,7 +95,6 @@ impl AdaptiveBatchSizer {
 
         if optimal < self.current_batch_size {
             self.current_batch_size = optimal;
-            self.cooldown_until = Some(Instant::now() + self.cooldown_duration);
             info!(
                 target: "adaptive_batch",
                 "Proactive decrease: batch_size {} -> {} (gas_per_block={}, gas_burnt={}, blocks={})",
@@ -120,35 +107,6 @@ impl AdaptiveBatchSizer {
                 "Gas-based increase: batch_size {} -> {} (gas_per_block={}, gas_burnt={}, blocks={})",
                 old, self.current_batch_size, gas_per_block, gas_burnt, num_blocks,
             );
-        }
-    }
-
-    /// Called each sync iteration. If cooldown has expired and we're below max,
-    /// do an additive increase (+1).
-    pub fn try_recover(&mut self) {
-        if self.current_batch_size >= self.max_batch_size {
-            return;
-        }
-
-        if !self.cooldown_expired() {
-            return;
-        }
-
-        let old = self.current_batch_size;
-        self.current_batch_size = (self.current_batch_size + 1).min(self.max_batch_size);
-        self.cooldown_until = Some(Instant::now() + self.cooldown_duration);
-
-        info!(
-            target: "adaptive_batch",
-            "Recovery: batch_size {} -> {} (additive increase)",
-            old, self.current_batch_size,
-        );
-    }
-
-    fn cooldown_expired(&self) -> bool {
-        match self.cooldown_until {
-            None => true,
-            Some(until) => Instant::now() >= until,
         }
     }
 }
@@ -166,7 +124,6 @@ mod tests {
             fetch_batch_size: fetch_batch,
             submit_batch_size: submit_batch,
             min_batch_size: 1,
-            batch_size_cooldown_sec: 0,
             bitcoin: crate::config::BitcoinConfig {
                 endpoint: String::new(),
                 node_user: None,
@@ -243,34 +200,6 @@ mod tests {
         assert_eq!(sizer.current_batch_size(), 7);
 
         sizer.on_success(5_000_000_000_000 * 3, 3);
-        assert_eq!(sizer.current_batch_size(), 15);
-    }
-
-    #[test]
-    fn test_try_recover_additive_increase() {
-        let config = test_config(15, 150);
-        let mut sizer = AdaptiveBatchSizer::new(&config);
-
-        sizer.current_batch_size = 1;
-
-        sizer.try_recover();
-        assert_eq!(sizer.current_batch_size(), 2);
-
-        sizer.try_recover();
-        assert_eq!(sizer.current_batch_size(), 3);
-    }
-
-    #[test]
-    fn test_try_recover_does_not_exceed_max() {
-        let config = test_config(15, 150);
-        let mut sizer = AdaptiveBatchSizer::new(&config);
-
-        sizer.current_batch_size = 14;
-
-        sizer.try_recover();
-        assert_eq!(sizer.current_batch_size(), 15);
-
-        sizer.try_recover();
         assert_eq!(sizer.current_batch_size(), 15);
     }
 

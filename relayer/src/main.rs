@@ -232,8 +232,7 @@ impl Synchronizer {
 
         'main_loop: loop {
             let (current_fetch_size, current_batch_size) = {
-                let mut sizer = self.batch_sizer.lock().await;
-                sizer.try_recover();
+                let sizer = self.batch_sizer.lock().await;
                 (sizer.current_fetch_size(), sizer.current_batch_size())
             };
 

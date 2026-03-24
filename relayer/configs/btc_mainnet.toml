@@ -5,7 +5,6 @@ sleep_time_after_sync_iteration_sec = 5
 fetch_batch_size = 150
 submit_batch_size = 15
 min_batch_size = 1
-batch_size_cooldown_sec = 1800
 
 [near]
 endpoint = "https://rpc.mainnet.near.org"
