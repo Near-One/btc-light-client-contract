@@ -164,6 +164,7 @@ impl BtcLightClient {
     /// # Panics
     /// Cannot parse headers len as u64
     #[payable]
+    #[pause]
     #[trusted_relayer]
     pub fn submit_blocks(
         &mut self,
