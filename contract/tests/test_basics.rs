@@ -649,10 +649,9 @@ mod test_basics {
             "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"
                 .parse()
                 .unwrap();
-        let tx_hash: H256 =
-            "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"
-                .parse()
-                .unwrap();
+        let tx_hash: H256 = "0e3e2357e806b6cdb1f70b54c3a3a17b6714ee1f0e68bebb44a74b1efd512098"
+            .parse()
+            .unwrap();
 
         let mut concat = Vec::with_capacity(64);
         concat.extend(coinbase_hash.0);
@@ -685,8 +684,7 @@ mod test_basics {
     async fn test_verify_transaction_inclusion_v2_valid() -> Result<(), Box<dyn std::error::Error>>
     {
         let (contract, user_account) = init_contract().await?;
-        let (block, coinbase_hash, tx_hash) =
-            submit_two_tx_block(&contract, &user_account).await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
 
         // Verify tx at index 1; coinbase proof for coinbase at index 0.
         // Both proofs have depth 1: sibling is the other tx.
@@ -742,8 +740,7 @@ mod test_basics {
     async fn test_verify_transaction_inclusion_v2_mismatched_proof_lengths(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (contract, user_account) = init_contract().await?;
-        let (block, coinbase_hash, tx_hash) =
-            submit_two_tx_block(&contract, &user_account).await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
 
         // merkle_proof has 1 element, coinbase_merkle_proof has 0 — lengths don't match
         let result = user_account
@@ -771,8 +768,7 @@ mod test_basics {
     async fn test_verify_transaction_inclusion_v2_valid_coinbase_invalid_tx_proof(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (contract, user_account) = init_contract().await?;
-        let (block, coinbase_hash, tx_hash) =
-            submit_two_tx_block(&contract, &user_account).await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
 
         // Coinbase proof is valid, but tx proof uses wrong tx_id -> returns false
         let result: bool = user_account
