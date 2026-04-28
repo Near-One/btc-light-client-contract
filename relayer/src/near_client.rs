@@ -488,9 +488,7 @@ impl NearClient {
             "[{method_label}] gas_burnt = {gas_burnt} ({} TGas, rounded), tokens_burnt = {tokens_burnt}",
             gas_burnt / 1_000_000_000_000
         );
-        info!(
-            "[{method_label}] gas_burnt = {gas_burnt}, tokens_burnt = {tokens_burnt}"
-        );
+        info!("[{method_label}] gas_burnt = {gas_burnt}, tokens_burnt = {tokens_burnt}");
 
         match outcome.status {
             near_primitives::views::FinalExecutionStatus::SuccessValue(value) => {
