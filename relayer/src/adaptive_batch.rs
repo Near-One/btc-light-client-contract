@@ -26,12 +26,11 @@ impl AdaptiveBatchSizer {
     /// and stays constant. When `batch_size` changes, `fetch_size` = `batch_size` * N.
     #[must_use]
     pub fn new(config: &Config) -> Self {
-        let num_parallel_txs = if config.submit_batch_size > 0 {
-            config.fetch_batch_size / config.submit_batch_size
-        } else {
-            1
-        }
-        .max(1);
+        let num_parallel_txs = config
+            .fetch_batch_size
+            .checked_div(config.submit_batch_size)
+            .unwrap_or(1)
+            .max(1);
 
         info!(
             target: "adaptive_batch",
