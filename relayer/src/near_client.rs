@@ -39,8 +39,15 @@ const GET_HEIGHT_BY_BLOCK_HASH: &str = "get_height_by_block_hash";
 pub enum CustomError {
     #[error("Prev Block Not Found")]
     PrevBlockNotFound,
+    #[error("Exceeded the maximum amount of gas")]
+    GasExceeded,
     #[error("Tx execution Error: {0:?}")]
     TxExecutionError(String),
+}
+
+/// Result of a successful block submission, including gas telemetry.
+pub struct SubmitResult {
+    pub gas_burnt: u64,
 }
 
 #[derive(Clone)]
@@ -271,8 +278,7 @@ impl NearClient {
     pub async fn submit_blocks(
         &self,
         signed_tx: SignedTransaction,
-    ) -> Result<Result<RpcTransactionResponse, CustomError>, Box<dyn std::error::Error + Send + Sync>>
-    {
+    ) -> Result<Result<SubmitResult, CustomError>, Box<dyn std::error::Error + Send + Sync>> {
         let sent_at = time::Instant::now();
         let tx_hash = self.submit_tx(signed_tx).await?;
 
@@ -299,28 +305,39 @@ impl NearClient {
                 },
                 Ok(response) => {
                     info!("Success response gotten after: {delta}s");
-                    return Ok(Self::parse_submit_blocks_response(response));
+                    return Ok(Self::parse_submit_blocks_response(&response));
                 }
             }
         }
     }
 
     fn parse_submit_blocks_response(
-        response: RpcTransactionResponse,
-    ) -> Result<RpcTransactionResponse, CustomError> {
-        if let Some(final_execution_outcome) = response.final_execution_outcome.clone() {
-            if let near_primitives::views::FinalExecutionStatus::Failure(err) =
-                final_execution_outcome.into_outcome().status
-            {
-                if format!("{err:?}").contains("PrevBlockNotFound") {
-                    Err(CustomError::PrevBlockNotFound)?;
-                } else {
-                    Err(CustomError::TxExecutionError(format!("{err:?}")))?;
+        response: &RpcTransactionResponse,
+    ) -> Result<SubmitResult, CustomError> {
+        if let Some(ref final_execution_outcome) = response.final_execution_outcome {
+            let outcome = final_execution_outcome.clone().into_outcome();
+
+            if let near_primitives::views::FinalExecutionStatus::Failure(ref err) = outcome.status {
+                let err_str = format!("{err:?}");
+                if err_str.contains("PrevBlockNotFound") {
+                    return Err(CustomError::PrevBlockNotFound);
+                } else if err_str.contains("Exceeded the maximum amount of gas") {
+                    return Err(CustomError::GasExceeded);
                 }
+                return Err(CustomError::TxExecutionError(err_str));
             }
+
+            let gas_burnt = outcome.transaction_outcome.outcome.gas_burnt
+                + outcome
+                    .receipts_outcome
+                    .iter()
+                    .map(|r| r.outcome.gas_burnt)
+                    .sum::<u64>();
+
+            return Ok(SubmitResult { gas_burnt });
         }
 
-        Ok(response)
+        Ok(SubmitResult { gas_burnt: 0 })
     }
 
     /// Get last Bitcoin Block Header on Near
