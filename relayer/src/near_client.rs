@@ -428,7 +428,7 @@ impl NearClient {
     /// # Errors
     /// * Connection issue
     /// * Transaction fails
-    #[allow(dead_code)]
+    #[allow(dead_code, clippy::too_many_arguments)]
     pub async fn verify_transaction_inclusion_v2(
         &self,
         transaction_hash: H256,
