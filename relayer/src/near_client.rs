@@ -208,14 +208,14 @@ impl NearClient {
             })
             .await?;
 
-        let mut current_nonce = match access_key_query_response.kind {
+        let start_nonce = match access_key_query_response.kind {
             near_jsonrpc_primitives::types::query::QueryResponseKind::AccessKey(access_key) => {
                 access_key.nonce + 1
             }
             _ => return Err("failed to extract current nonce".into()),
         };
 
-        for header_chunk in headers.chunks(batch_size) {
+        for (current_nonce, header_chunk) in (start_nonce..).zip(headers.chunks(batch_size)) {
             for header in header_chunk {
                 info!(
                     "Block to submit: height = {}, hash = {}",
@@ -257,8 +257,6 @@ impl NearClient {
                     )
                     .await?,
             });
-
-            current_nonce += 1;
         }
 
         Ok(signed_txs)
