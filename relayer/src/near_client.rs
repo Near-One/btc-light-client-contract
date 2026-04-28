@@ -30,6 +30,8 @@ const SUBMIT_BLOCKS: &str = "submit_blocks";
 const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 #[allow(dead_code)]
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
+#[allow(dead_code)]
+const VERIFY_TRANSACTION_INCLUSION_V2: &str = "verify_transaction_inclusion_v2";
 const RECEIVE_LAST_N_BLOCKS: &str = "get_last_n_blocks_hashes";
 const GET_HEIGHT_BY_BLOCK_HASH: &str = "get_height_by_block_hash";
 
@@ -416,38 +418,90 @@ impl NearClient {
             )
             .await?;
         let response = self.get_tx_status(tx_hash).await?;
+        Self::parse_verify_response(response, VERIFY_TRANSACTION_INCLUSION)
+    }
 
-        match response
+    /// Verify transaction inclusion using the v2 contract method,
+    /// which additionally validates a coinbase merkle proof
+    /// (mitigates the 64-byte tx Merkle proof forgery vulnerability).
+    ///
+    /// # Errors
+    /// * Connection issue
+    /// * Transaction fails
+    #[allow(dead_code)]
+    pub async fn verify_transaction_inclusion_v2(
+        &self,
+        transaction_hash: H256,
+        transaction_position: usize,
+        transaction_block_blockhash: H256,
+        merkle_proof: Vec<H256>,
+        coinbase_tx_id: H256,
+        coinbase_merkle_proof: Vec<H256>,
+        confirmations: u64,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let args = btc_types::contract_args::ProofArgsV2 {
+            tx_id: transaction_hash,
+            tx_block_blockhash: transaction_block_blockhash,
+            tx_index: transaction_position.try_into()?,
+            merkle_proof,
+            coinbase_tx_id,
+            coinbase_merkle_proof,
+            confirmations,
+        };
+
+        let tx_hash = self
+            .submit_tx(
+                self.sign_tx(VERIFY_TRANSACTION_INCLUSION_V2, to_vec(&args)?, 0, None)
+                    .await?,
+            )
+            .await?;
+        let response = self.get_tx_status(tx_hash).await?;
+        Self::parse_verify_response(response, VERIFY_TRANSACTION_INCLUSION_V2)
+    }
+
+    #[allow(dead_code)]
+    fn parse_verify_response(
+        response: RpcTransactionResponse,
+        method_label: &str,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let outcome = response
             .final_execution_outcome
-            .clone()
             .ok_or("No final execution outcome")?
-            .into_outcome()
-            .status
-        {
-            near_primitives::views::FinalExecutionStatus::SuccessValue(value) => {
-                let parsed_output = String::from_utf8(value.clone())?;
-                info!(
-                    "Transaction succeeded with result: {:?}",
-                    String::from_utf8(value.clone())
-                );
+            .into_outcome();
 
-                if parsed_output == "true" {
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
+        let gas_burnt: u64 = outcome.transaction_outcome.outcome.gas_burnt
+            + outcome
+                .receipts_outcome
+                .iter()
+                .map(|r| r.outcome.gas_burnt)
+                .sum::<u64>();
+        let tokens_burnt: u128 = outcome.transaction_outcome.outcome.tokens_burnt
+            + outcome
+                .receipts_outcome
+                .iter()
+                .map(|r| r.outcome.tokens_burnt)
+                .sum::<u128>();
+
+        // Always print so the gas measurement is visible under
+        // `cargo test ... -- --nocapture`, regardless of RUST_LOG.
+        println!(
+            "[{method_label}] gas_burnt = {gas_burnt} ({} TGas, rounded), tokens_burnt = {tokens_burnt}",
+            gas_burnt / 1_000_000_000_000
+        );
+        info!(
+            "[{method_label}] gas_burnt = {gas_burnt}, tokens_burnt = {tokens_burnt}"
+        );
+
+        match outcome.status {
+            near_primitives::views::FinalExecutionStatus::SuccessValue(value) => {
+                let parsed_output = String::from_utf8(value)?;
+                info!("Transaction succeeded with result: {parsed_output:?}");
+                Ok(parsed_output == "true")
             }
             near_primitives::views::FinalExecutionStatus::Failure(err) => {
                 Err(format!("Transaction failed with error: {err:?}"))?
             }
-            _ => Err(format!(
-                "Transaction status: {:?}",
-                response
-                    .final_execution_outcome
-                    .ok_or("No final execution outcome")?
-                    .into_outcome()
-                    .status
-            ))?,
+            other => Err(format!("Transaction status: {other:?}"))?,
         }
     }
 
