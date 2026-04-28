@@ -280,6 +280,10 @@ impl BtcLightClient {
     ///
     /// # Panics
     /// Multiple cases
+    #[deprecated(
+        since = "0.5.0",
+        note = "Use `verify_transaction_inclusion_v2` instead."
+    )]
     #[pause]
     pub fn verify_transaction_inclusion(&self, #[serializer(borsh)] args: ProofArgs) -> bool {
         require!(
@@ -360,6 +364,7 @@ impl BtcLightClient {
             "Incorrect coinbase merkle proof"
         );
 
+        #[allow(deprecated)]
         self.verify_transaction_inclusion(args.into())
     }
 
