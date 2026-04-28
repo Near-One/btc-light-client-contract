@@ -818,4 +818,66 @@ mod test_basics {
 
         Ok(())
     }
+
+    /// Verifying the coinbase as if it were the target tx itself: `tx_id == coinbase_tx_id`,
+    /// `tx_index == 0`, and both merkle proofs identical. This is a degenerate-but-valid
+    /// case — v2 must still accept it.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_v2_coinbase_self(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
+
+        let result: bool = user_account
+            .view(contract.id(), "verify_transaction_inclusion_v2")
+            .args_borsh(ProofArgsV2 {
+                tx_id: coinbase_hash.clone(),
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 0,
+                merkle_proof: vec![tx_hash.clone()],
+                coinbase_tx_id: coinbase_hash,
+                coinbase_merkle_proof: vec![tx_hash],
+                confirmations: 0,
+            })
+            .await?
+            .json()?;
+
+        assert!(
+            result,
+            "Verifying the coinbase itself (tx_id == coinbase_tx_id, both proofs equal) \
+             should return true"
+        );
+
+        Ok(())
+    }
+
+    /// The test block is at the chain tip after `submit_two_tx_block`, so only 1
+    /// confirmation is available. Asking for 2 must trigger the
+    /// "Not enough blocks confirmed" require in `verify_transaction_inclusion`.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_v2_insufficient_confirmations(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
+
+        let result = user_account
+            .view(contract.id(), "verify_transaction_inclusion_v2")
+            .args_borsh(ProofArgsV2 {
+                tx_id: tx_hash.clone(),
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![coinbase_hash.clone()],
+                coinbase_tx_id: coinbase_hash,
+                coinbase_merkle_proof: vec![tx_hash],
+                confirmations: 2,
+            })
+            .await;
+
+        assert!(
+            result.is_err(),
+            "Should fail when fewer confirmations are available than requested"
+        );
+
+        Ok(())
+    }
 }
