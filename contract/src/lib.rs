@@ -1,4 +1,6 @@
-use btc_types::contract_args::{InitArgs, ProofArgs};
+use btc_types::contract_args::{
+    InitArgs, ProofArgs, TxBlockMeta, TxInclusionInfo, TxInclusionProof,
+};
 use btc_types::hash::H256;
 use btc_types::header::{BlockHeader, ExtendedHeader, Header, LightHeader};
 use btc_types::network::Network;
@@ -282,35 +284,66 @@ impl BtcLightClient {
             "The required number of confirmations exceeds the number of blocks stored in memory"
         );
 
-        let heaviest_block_header = self
-            .headers_pool
-            .get(&self.mainchain_tip_blockhash)
-            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
-        let target_block_height = self
-            .mainchain_header_to_height
-            .get(&args.tx_block_blockhash)
-            .unwrap_or_else(|| env::panic_str("block does not belong to the current main chain"));
+        let confirmations = args.confirmations;
+        let proof = TxInclusionProof {
+            tx_id: args.tx_id,
+            tx_block_blockhash: args.tx_block_blockhash,
+            tx_index: args.tx_index,
+            merkle_proof: args.merkle_proof,
+        };
 
-        // Check requested confirmations. No need to compute proof if insufficient confirmations.
-        require!(
-            (heaviest_block_header.block_height).saturating_sub(target_block_height) + 1
-                >= args.confirmations,
-            "Not enough blocks confirmed"
-        );
+        match self.verify_transaction_inclusion_with_heights(proof) {
+            Some(TxInclusionInfo {
+                tx_block_height,
+                mainchain_tip_height,
+            }) => {
+                require!(
+                    mainchain_tip_height.saturating_sub(tx_block_height) + 1 >= confirmations,
+                    "Not enough blocks confirmed"
+                );
+                true
+            }
+            None => false,
+        }
+    }
 
-        let header = self
-            .headers_pool
-            .get(&args.tx_block_blockhash)
-            .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
+    /// Same SPV checks as `verify_transaction_inclusion`, but returns block heights
+    /// instead of a bool and does not enforce a `confirmations` threshold (the caller
+    /// can derive the confirmation depth from the returned heights).
+    ///
+    /// @param `args` see `TxInclusionProof`
+    /// @return `Some(TxInclusionInfo { tx_block_height, mainchain_tip_height })` if the
+    ///         referenced block is part of the current main chain and the merkle proof
+    ///         reconstructs the block's merkle root; `None` if the merkle proof does not match.
+    ///
+    /// # Warning
+    /// Same merkle second-preimage caveat as `verify_transaction_inclusion`: callers
+    /// MUST validate independently that `tx_id` corresponds to a real transaction
+    /// (and not an internal merkle-tree node).
+    ///
+    /// # Panics
+    /// - if the referenced block is not part of the current main chain;
+    /// - if the referenced block header is missing from storage;
+    /// - if `merkle_proof` is empty.
+    #[pause]
+    pub fn verify_transaction_inclusion_with_heights(
+        &self,
+        #[serializer(borsh)] args: TxInclusionProof,
+    ) -> Option<TxInclusionInfo> {
+        let meta = self.lookup_tx_block_meta(&args.tx_block_blockhash);
 
         require!(!args.merkle_proof.is_empty(), "Merkle proof is empty");
 
-        // compute merkle tree root and check if it matches block's original merkle tree root
-        merkle_tools::compute_root_from_merkle_proof(
+        let computed_root = merkle_tools::compute_root_from_merkle_proof(
             args.tx_id,
             usize::try_from(args.tx_index).unwrap(),
             &args.merkle_proof,
-        ) == header.block_header.merkle_root
+        );
+
+        (computed_root == meta.expected_merkle_root).then_some(TxInclusionInfo {
+            tx_block_height: meta.target_block_height,
+            mainchain_tip_height: meta.tip_block_height,
+        })
     }
 
     /// Public call to run GC on a mainchain.
@@ -362,6 +395,26 @@ impl BtcLightClient {
 }
 
 impl BtcLightClient {
+    fn lookup_tx_block_meta(&self, tx_block_blockhash: &H256) -> TxBlockMeta {
+        let heaviest_block_header = self
+            .headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        let target_block_height = self
+            .mainchain_header_to_height
+            .get(tx_block_blockhash)
+            .unwrap_or_else(|| env::panic_str("block does not belong to the current main chain"));
+        let header = self
+            .headers_pool
+            .get(tx_block_blockhash)
+            .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
+        TxBlockMeta {
+            target_block_height,
+            tip_block_height: heaviest_block_header.block_height,
+            expected_merkle_root: header.block_header.merkle_root,
+        }
+    }
+
     fn init_genesis(
         &mut self,
         block_hash: &H256,

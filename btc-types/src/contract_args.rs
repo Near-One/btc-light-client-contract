@@ -22,3 +22,27 @@ pub struct ProofArgs {
     pub merkle_proof: Vec<H256>,
     pub confirmations: u64,
 }
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug)]
+pub struct TxInclusionProof {
+    pub tx_id: H256,
+    pub tx_block_blockhash: H256,
+    pub tx_index: u64,
+    pub merkle_proof: Vec<H256>,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug)]
+pub struct TxBlockMeta {
+    pub target_block_height: u64,
+    pub tip_block_height: u64,
+    pub expected_merkle_root: H256,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug)]
+pub struct TxInclusionInfo {
+    pub tx_block_height: u64,
+    pub mainchain_tip_height: u64,
+}
