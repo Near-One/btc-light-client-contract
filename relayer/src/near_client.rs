@@ -497,13 +497,10 @@ impl NearClient {
                 .map(|r| r.outcome.tokens_burnt)
                 .sum::<u128>();
 
-        // Always print so the gas measurement is visible under
-        // `cargo test ... -- --nocapture`, regardless of RUST_LOG.
-        println!(
+        info!(
             "[{method_label}] gas_burnt = {gas_burnt} ({} TGas, rounded), tokens_burnt = {tokens_burnt}",
             gas_burnt / 1_000_000_000_000
         );
-        info!("[{method_label}] gas_burnt = {gas_burnt}, tokens_burnt = {tokens_burnt}");
 
         match outcome.status {
             near_primitives::views::FinalExecutionStatus::SuccessValue(value) => {
