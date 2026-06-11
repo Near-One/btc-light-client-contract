@@ -688,6 +688,8 @@ mod migrate {
         ExtendedHeader, LookupMap, Network, PanicOnDefault, H256,
     };
 
+    /// State layout used between 2025-06 and PR #116, which contained the
+    /// `used_aux_parent_blocks` field in all chain builds.
     #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
     pub struct BtcLightClientV1 {
         mainchain_height_to_header: LookupMap<u64, H256>,
@@ -697,27 +699,29 @@ mod migrate {
         headers_pool: LookupMap<H256, ExtendedHeader>,
         skip_pow_verification: bool,
         gc_threshold: u64,
+        used_aux_parent_blocks: near_sdk::collections::LookupSet<H256>,
+        network: Network,
     }
 
     #[near]
     impl BtcLightClient {
-        /// Migrates the contract state from `BtcLightClientV1` to the current `BtcLightClient` version.
+        /// Migrates the contract state from `BtcLightClientV1` (the layout that
+        /// included `used_aux_parent_blocks`, removed in PR #116) to the current
+        /// `BtcLightClient` version. The `network` value is carried over from the
+        /// old state, so no arguments are required.
         ///
-        /// This function reads the old contract state and constructs the new contract instance
-        /// with updated fields.
-        ///
-        /// # Arguments
-        /// * `network` - The network identifier (e.g., Mainnet, Testnet) to use in the new state.
-        ///
-        /// # Returns
-        /// A new `BtcLightClient` instance containing the migrated state.
+        /// Note: any entries stored under the dropped `LookupSet` prefix are left
+        /// orphaned in storage. They are only present on Dogecoin deployments;
+        /// other chains never wrote to the set.
         ///
         /// # Panics
-        /// This function will panic if:
-        /// - Reading the old state from storage (`env::state_read()`) fails, i.e., if no previous state is found or if deserialization fails.
+        /// This function will panic if reading the old state from storage
+        /// (`env::state_read()`) fails, i.e., if no previous state is found or if
+        /// deserialization fails.
         #[private]
         #[init(ignore_state)]
-        pub fn migrate(network: Network) -> Self {
+        #[must_use]
+        pub fn migrate() -> Self {
             let old_state: BtcLightClientV1 = env::state_read().expect("failed");
             Self {
                 mainchain_height_to_header: old_state.mainchain_height_to_header,
@@ -727,7 +731,7 @@ mod migrate {
                 headers_pool: old_state.headers_pool,
                 skip_pow_verification: old_state.skip_pow_verification,
                 gc_threshold: old_state.gc_threshold,
-                network,
+                network: old_state.network,
             }
         }
     }
