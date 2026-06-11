@@ -170,7 +170,7 @@ mod test_zcash {
 
         let outcome = contract
             .call("migrate")
-            .args_json(json!({ "network": null }))
+            .args_json(json!({}))
             .max_gas()
             .transact()
             .await?;
