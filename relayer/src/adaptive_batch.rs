@@ -2,8 +2,8 @@ use log::{info, warn};
 
 use crate::config::Config;
 
-/// Target gas budget per transaction, leaving 50 Tgas headroom from the 300 Tgas max.
-const TARGET_GAS_BUDGET: u64 = 250_000_000_000_000;
+/// Target gas budget per transaction, leaving 100 Tgas headroom from the 1 Petagas max.
+const TARGET_GAS_BUDGET: u64 = 900_000_000_000_000;
 
 /// Adaptive batch sizer that proactively adjusts batch size based on observed gas usage.
 ///
