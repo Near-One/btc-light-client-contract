@@ -400,7 +400,6 @@ impl NearClient {
             .await?;
 
         let block_hashes = from_slice::<Vec<String>>(&result)?;
-        info!("{block_hashes:#?}");
         Ok(block_hashes)
     }
 
@@ -565,7 +564,7 @@ impl NearClient {
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: method_name.to_string(),
                 args,
-                gas: 300_000_000_000_000, // 300 TeraGas
+                gas: 1_000_000_000_000_000, // 1 PetaGas
                 deposit,
             }))],
         };
