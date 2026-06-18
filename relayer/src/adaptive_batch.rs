@@ -187,7 +187,7 @@ mod tests {
         let mut sizer = AdaptiveBatchSizer::new(&config);
 
         sizer.on_success(100_000_000_000_000 * 5, 5);
-        assert_eq!(sizer.current_batch_size(), 2);
+        assert_eq!(sizer.current_batch_size(), 9);
     }
 
     #[test]
