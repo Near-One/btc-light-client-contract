@@ -2,8 +2,8 @@ use log::{info, warn};
 
 use crate::config::Config;
 
-/// Target gas budget per transaction, leaving 50 Tgas headroom from the 300 Tgas max.
-const TARGET_GAS_BUDGET: u64 = 250_000_000_000_000;
+/// Target gas budget per transaction, leaving 100 Tgas headroom from the 1 Petagas max.
+const TARGET_GAS_BUDGET: u64 = 900_000_000_000_000;
 
 /// Adaptive batch sizer that proactively adjusts batch size based on observed gas usage.
 ///
@@ -26,12 +26,11 @@ impl AdaptiveBatchSizer {
     /// and stays constant. When `batch_size` changes, `fetch_size` = `batch_size` * N.
     #[must_use]
     pub fn new(config: &Config) -> Self {
-        let num_parallel_txs = if config.submit_batch_size > 0 {
-            config.fetch_batch_size / config.submit_batch_size
-        } else {
-            1
-        }
-        .max(1);
+        let num_parallel_txs = config
+            .fetch_batch_size
+            .checked_div(config.submit_batch_size)
+            .unwrap_or(1)
+            .max(1);
 
         info!(
             target: "adaptive_batch",
@@ -188,7 +187,7 @@ mod tests {
         let mut sizer = AdaptiveBatchSizer::new(&config);
 
         sizer.on_success(100_000_000_000_000 * 5, 5);
-        assert_eq!(sizer.current_batch_size(), 2);
+        assert_eq!(sizer.current_batch_size(), 9);
     }
 
     #[test]

@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use log::{debug, error, info};
 use merkle_tools::H256;
@@ -24,7 +26,8 @@ fn setup() {
 #[serial]
 async fn verify_correct_transaction_test() {
     setup();
-    let config = Config::new().expect("we expect config.toml to be next to executable in `./`");
+    let config = Config::load(Some(PathBuf::from("config.toml")))
+        .expect("we expect config.toml to be next to executable in `./`");
 
     debug!("Configuration loaded: {:?}", config);
 
@@ -52,7 +55,8 @@ async fn verify_correct_transaction_test() {
 #[serial]
 async fn verify_incorrect_transaction_test() {
     setup();
-    let config = Config::new().expect("we expect config.toml to be next to executable in `./`");
+    let config = Config::load(Some(PathBuf::from("config.toml")))
+        .expect("we expect config.toml to be next to executable in `./`");
 
     debug!("Configuration loaded: {:?}", config);
 
@@ -73,6 +77,33 @@ async fn verify_incorrect_transaction_test() {
         transaction_block_height,
         force_transaction_hash,
         false,
+    )
+    .await;
+}
+
+#[tokio::test]
+#[serial]
+async fn verify_correct_transaction_v2_test() {
+    setup();
+    let config = Config::load(Some(PathBuf::from("config.toml")))
+        .expect("we expect config.toml to be next to executable in `./`");
+
+    debug!("Configuration loaded: {:?}", config);
+
+    let bitcoin_client = BitcoinClient::new(&config);
+    let near_client = NearClient::new(&config.near);
+
+    // Position 1 = first non-coinbase tx, so the coinbase proof is meaningful.
+    let transaction_position = 1usize;
+    let transaction_block_height = 277_136usize;
+
+    info!("running v2 transaction verification");
+    verify_transaction_v2_flow(
+        bitcoin_client,
+        near_client,
+        transaction_position,
+        transaction_block_height,
+        true,
     )
     .await;
 }
@@ -127,6 +158,67 @@ async fn verify_transaction_flow(
     match result {
         Ok(true) => info!("Transaction is found in the provided block"),
         Ok(false) => info!("Transaction is NOT found in the provided block"),
+        Err(ref e) => error!("Error: {:?}", e),
+    }
+
+    assert_eq!(result.unwrap(), expected_value);
+}
+
+async fn verify_transaction_v2_flow(
+    bitcoin_client: BitcoinClient,
+    near_client: NearClient,
+    transaction_position: usize,
+    transaction_block_height: usize,
+    expected_value: bool,
+) {
+    let block = bitcoin_client
+        .get_block_by_height(
+            u64::try_from(transaction_block_height).expect("correct transaction height"),
+        )
+        .unwrap();
+    let transaction_block_blockhash = block.header.block_hash();
+
+    let transactions: Vec<H256> = block
+        .txdata
+        .iter()
+        .map(|tx| H256(tx.compute_txid().to_byte_array()))
+        .collect();
+
+    assert!(
+        transaction_position < transactions.len(),
+        "transaction_position out of bounds for block at height {transaction_block_height} ({} txs)",
+        transactions.len()
+    );
+
+    let transaction_hash = transactions[transaction_position].clone();
+    let merkle_proof = BitcoinClient::compute_merkle_proof(&block, transaction_position);
+
+    let coinbase_tx_id = transactions[0].clone();
+    let coinbase_merkle_proof = BitcoinClient::compute_merkle_proof(&block, 0);
+
+    info!(
+        "block at height {} has {} txs; merkle proof depth: tx = {}, coinbase = {}",
+        transaction_block_height,
+        transactions.len(),
+        merkle_proof.len(),
+        coinbase_merkle_proof.len(),
+    );
+
+    let result = near_client
+        .verify_transaction_inclusion_v2(
+            transaction_hash,
+            transaction_position,
+            transaction_block_blockhash.to_byte_array().into(),
+            merkle_proof,
+            coinbase_tx_id,
+            coinbase_merkle_proof,
+            0,
+        )
+        .await;
+
+    match result {
+        Ok(true) => info!("Transaction is found in the provided block (v2)"),
+        Ok(false) => info!("Transaction is NOT found in the provided block (v2)"),
         Err(ref e) => error!("Error: {:?}", e),
     }
 
