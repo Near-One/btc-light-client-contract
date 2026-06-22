@@ -46,7 +46,6 @@ pub struct TxInclusionProof {
     pub coinbase_merkle_proof: Vec<H256>,
 }
 
-
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug)]
 pub struct TxBlockMeta {
