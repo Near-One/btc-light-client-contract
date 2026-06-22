@@ -27,6 +27,7 @@ use tokio::time;
 use crate::config::NearConfig;
 
 const SUBMIT_BLOCKS: &str = "submit_blocks";
+const TRUNCATE_TIP: &str = "truncate_tip";
 const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 #[allow(dead_code)]
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
@@ -155,6 +156,44 @@ impl NearClient {
                 self.sign_tx(
                     "init",
                     json!({"args": args}).to_string().into_bytes(),
+                    0,
+                    None,
+                )
+                .await?,
+            )
+            .await?;
+
+        self.get_tx_status(tx_hash)
+            .await
+            .map_err(std::convert::Into::into)
+            .map(|response| {
+                if let Some(final_execution_outcome) = response.final_execution_outcome.clone() {
+                    if let near_primitives::views::FinalExecutionStatus::Failure(err) =
+                        final_execution_outcome.into_outcome().status
+                    {
+                        Err(format!("Transaction failed with error: {err:?}"))?;
+                    }
+                }
+                Ok(response)
+            })
+            .and_then(|result| result)
+    }
+
+    /// Calls the `truncate_tip` method on the contract, rolling the main chain tip back by up
+    /// to `num_blocks` of the newest blocks. Used to resolve a reorg too deep to process
+    /// on-chain: truncate down to the divergence point, then submit the heavier chain forward.
+    ///
+    /// # Errors
+    /// * Connection issue, transaction signing failure, or the transaction failing on-chain.
+    pub async fn truncate_tip(
+        &self,
+        num_blocks: u64,
+    ) -> Result<RpcTransactionResponse, Box<dyn std::error::Error + Send + Sync>> {
+        let tx_hash = self
+            .submit_tx(
+                self.sign_tx(
+                    TRUNCATE_TIP,
+                    json!({ "num_blocks": num_blocks }).to_string().into_bytes(),
                     0,
                     None,
                 )
