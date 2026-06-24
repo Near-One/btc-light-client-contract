@@ -42,7 +42,7 @@ pub struct TxInclusionProof {
     pub tx_block_blockhash: H256,
     pub tx_index: u64,
     pub merkle_proof: Vec<H256>,
-    pub coinbase_tx_id: Option<H256>,
+    pub coinbase_tx_id: H256,
     pub coinbase_merkle_proof: Vec<H256>,
 }
 
