@@ -760,7 +760,14 @@ mod test_basics {
         let genesis: H256 = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
             .parse()
             .unwrap();
-        submit_two_tx_block_on(contract, user_account, genesis, 1_231_006_506, 2_083_236_893).await
+        submit_two_tx_block_on(
+            contract,
+            user_account,
+            genesis,
+            1_231_006_506,
+            2_083_236_893,
+        )
+        .await
     }
 
     /// Same 2-tx merkle tree as `submit_two_tx_block`, but built on top of an
@@ -1406,9 +1413,14 @@ mod test_basics {
 
         // The tx block on top of b3 -> height 4. Chain is now exactly 5 blocks
         // (heights 0..4), so no GC has happened yet and genesis is still stored.
-        let (tx_block, coinbase_hash, tx_hash) =
-            submit_two_tx_block_on(&contract, &user_account, b3.block_hash(), 1_231_006_700, 7_000)
-                .await?;
+        let (tx_block, coinbase_hash, tx_hash) = submit_two_tx_block_on(
+            &contract,
+            &user_account,
+            b3.block_hash(),
+            1_231_006_700,
+            7_000,
+        )
+        .await?;
 
         let proof = TxInclusionProof {
             tx_id: tx_hash.clone(),
@@ -1510,7 +1522,10 @@ mod test_basics {
             .args_json(json!({ "blockhash": fork_block.block_hash() }))
             .await?
             .json()?;
-        assert_eq!(fork_height, None, "the tx block must be on a fork, not the main chain");
+        assert_eq!(
+            fork_height, None,
+            "the tx block must be on a fork, not the main chain"
+        );
 
         // Even with a valid coinbase + tx proof, verification fails: the block is
         // not part of the current main chain.
