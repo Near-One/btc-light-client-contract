@@ -1,6 +1,8 @@
 #[cfg(feature = "bitcoin")]
 mod test_basics {
-    use btc_types::contract_args::{InitArgs, ProofArgs, ProofArgsV2};
+    use btc_types::contract_args::{
+        InitArgs, ProofArgs, ProofArgsV2, TxInclusionInfo, TxInclusionProof,
+    };
     use btc_types::hash::H256;
     use btc_types::header::{ExtendedHeader, Header};
     use near_sdk::NearToken;
@@ -59,6 +61,12 @@ mod test_basics {
     }
 
     async fn init_contract() -> Result<(Contract, Account), Box<dyn std::error::Error>> {
+        init_contract_with_gc(20).await
+    }
+
+    async fn init_contract_with_gc(
+        gc_threshold: u64,
+    ) -> Result<(Contract, Account), Box<dyn std::error::Error>> {
         let sandbox = near_workspaces::sandbox().await?;
         let contract_wasm = near_workspaces::compile_project("./").await?;
 
@@ -69,7 +77,7 @@ mod test_basics {
             genesis_block_hash: submit_blocks[0].block_hash(),
             genesis_block_height: 0,
             skip_pow_verification: true,
-            gc_threshold: 20,
+            gc_threshold,
             network: btc_types::network::Network::Mainnet,
             submit_blocks,
         };
@@ -748,6 +756,23 @@ mod test_basics {
         contract: &Contract,
         user_account: &Account,
     ) -> Result<(Header, H256, H256), Box<dyn std::error::Error>> {
+        // Builds directly on genesis -> tx block lands at height 1.
+        let genesis: H256 = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+            .parse()
+            .unwrap();
+        submit_two_tx_block_on(contract, user_account, genesis, 1_231_006_506, 2_083_236_893).await
+    }
+
+    /// Same 2-tx merkle tree as `submit_two_tx_block`, but built on top of an
+    /// arbitrary parent block hash (so the tx block can sit at any height).
+    /// Returns (block_header, coinbase_hash, tx_hash).
+    async fn submit_two_tx_block_on(
+        contract: &Contract,
+        user_account: &Account,
+        prev_block_hash: H256,
+        time: u32,
+        nonce: u32,
+    ) -> Result<(Header, H256, H256), Box<dyn std::error::Error>> {
         let coinbase_hash: H256 =
             "4a5e1e4baab89f3a32518a88c31bc87f618f76673e2cc77ab2127b7afdeda33b"
                 .parse()
@@ -763,13 +788,11 @@ mod test_basics {
 
         let block = Header {
             version: 1,
-            prev_block_hash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-                .parse()
-                .unwrap(),
+            prev_block_hash,
             merkle_root,
-            time: 1_231_006_506,
+            time,
             bits: 486_604_799,
-            nonce: 2_083_236_893,
+            nonce,
         };
 
         let outcome = user_account
@@ -781,6 +804,37 @@ mod test_basics {
         assert!(outcome.is_success());
 
         Ok((block, coinbase_hash, tx_hash))
+    }
+
+    /// Submits `count` empty blocks chained on top of `parent`, advancing the
+    /// mainchain tip. `init_contract` sets `skip_pow_verification = true`, so any
+    /// prev-linked header extends the chain. Returns the new tip header.
+    async fn extend_chain(
+        contract: &Contract,
+        user_account: &Account,
+        parent: &Header,
+        count: u32,
+    ) -> Result<Header, Box<dyn std::error::Error>> {
+        let mut prev = parent.clone();
+        for i in 0..count {
+            let next = Header {
+                version: 1,
+                prev_block_hash: prev.block_hash(),
+                merkle_root: H256::default(),
+                time: 1_231_006_600 + i,
+                bits: 486_604_799,
+                nonce: 1_000 + i,
+            };
+            let outcome = user_account
+                .call(contract.id(), "submit_blocks")
+                .args_borsh([next.clone()].to_vec())
+                .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+                .transact()
+                .await?;
+            assert!(outcome.is_success());
+            prev = next;
+        }
+        Ok(prev)
     }
 
     #[tokio::test]
@@ -979,6 +1033,502 @@ mod test_basics {
         assert!(
             result.is_err(),
             "Should fail when fewer confirmations are available than requested"
+        );
+
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------------
+    // verify_transaction_inclusion_with_heights
+    //
+    // Same SPV + coinbase checks as v2, but returns `Option<TxInclusionInfo>`
+    // (heights) instead of a bool and does NOT enforce a confirmations threshold.
+    // The block produced by `submit_two_tx_block` builds directly on genesis
+    // (height 0) and becomes the chain tip, so it lands at height 1 and is also
+    // the mainchain tip -> tx_block_height == mainchain_tip_height == 1.
+    // ---------------------------------------------------------------------
+
+    /// Valid coinbase + tx proof -> Some with the correct heights.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_valid(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
+
+        let result: Option<TxInclusionInfo> = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: tx_hash.clone(),
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![coinbase_hash.clone()],
+                coinbase_tx_id: coinbase_hash,
+                coinbase_merkle_proof: vec![tx_hash],
+            })
+            .await?
+            .json()?;
+
+        let info = result.expect("Valid inclusion proof should return Some(TxInclusionInfo)");
+        assert_eq!(info.tx_block_height, 1, "tx block is at height 1");
+        assert_eq!(
+            info.mainchain_tip_height, 1,
+            "the tx block is also the mainchain tip"
+        );
+
+        Ok(())
+    }
+
+    /// Coinbase proof is valid, but the tx proof reconstructs the wrong root ->
+    /// returns `None` (NOT an error: a mismatching tx proof is a normal negative).
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_invalid_tx_proof(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
+
+        let result: Option<TxInclusionInfo> = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: H256::default(),
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![coinbase_hash.clone()],
+                coinbase_tx_id: coinbase_hash,
+                coinbase_merkle_proof: vec![tx_hash],
+            })
+            .await?
+            .json()?;
+
+        assert!(
+            result.is_none(),
+            "A non-matching transaction proof must return None"
+        );
+
+        Ok(())
+    }
+
+    /// Wrong coinbase_tx_id -> coinbase proof does not match the merkle root -> panics.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_invalid_coinbase_proof(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, _coinbase_hash, tx_hash) =
+            submit_two_tx_block(&contract, &user_account).await?;
+
+        let result = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: tx_hash.clone(),
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![H256::default()],
+                coinbase_tx_id: H256::default(),
+                coinbase_merkle_proof: vec![tx_hash],
+            })
+            .await;
+
+        assert!(
+            result.is_err(),
+            "Should fail when the coinbase merkle proof is incorrect"
+        );
+
+        Ok(())
+    }
+
+    /// merkle_proof and coinbase_merkle_proof have different lengths -> panics
+    /// (only when the coinbase check is NOT skipped).
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_mismatched_proof_lengths(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
+
+        // coinbase_merkle_proof len 2 != merkle_proof len 1; coinbase_tx_id non-zero
+        // so the skip branch is not taken and the length check fires.
+        let result = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: tx_hash.clone(),
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![coinbase_hash.clone()],
+                coinbase_tx_id: coinbase_hash,
+                coinbase_merkle_proof: vec![tx_hash.clone(), tx_hash],
+            })
+            .await;
+
+        assert!(
+            result.is_err(),
+            "Should fail when merkle proof and coinbase merkle proof have different lengths"
+        );
+
+        Ok(())
+    }
+
+    /// Empty coinbase proof + zero coinbase_tx_id -> coinbase verification is
+    /// skipped entirely (incl. the length-equality check), and a valid tx proof
+    /// still returns Some.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_skips_empty_coinbase(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
+
+        let result: Option<TxInclusionInfo> = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: tx_hash,
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![coinbase_hash],
+                coinbase_tx_id: H256::default(),
+                coinbase_merkle_proof: vec![],
+            })
+            .await?
+            .json()?;
+
+        let info = result.expect("Skipping coinbase check should still verify the tx proof");
+        assert_eq!(info.tx_block_height, 1);
+        assert_eq!(info.mainchain_tip_height, 1);
+
+        Ok(())
+    }
+
+    /// Empty coinbase proof but a NON-zero coinbase_tx_id -> the skip branch is
+    /// NOT taken (it requires both an empty proof AND a zero id). The coinbase
+    /// check stays active, so the length-equality check fires on the mismatch
+    /// (merkle_proof len 1 vs coinbase_merkle_proof len 0) and the call panics.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_empty_coinbase_proof_nonzero_id(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
+
+        let result = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: tx_hash,
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![coinbase_hash.clone()],
+                coinbase_tx_id: coinbase_hash,
+                coinbase_merkle_proof: vec![],
+            })
+            .await;
+
+        assert!(
+            result.is_err(),
+            "Empty coinbase proof with a non-zero coinbase_tx_id must NOT skip the coinbase check"
+        );
+
+        Ok(())
+    }
+
+    /// Coinbase check skipped (empty proof + zero id), but the tx proof is wrong
+    /// -> still returns None rather than erroring.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_skipped_coinbase_invalid_tx(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, coinbase_hash, _tx_hash) =
+            submit_two_tx_block(&contract, &user_account).await?;
+
+        let result: Option<TxInclusionInfo> = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: H256::default(),
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![coinbase_hash],
+                coinbase_tx_id: H256::default(),
+                coinbase_merkle_proof: vec![],
+            })
+            .await?
+            .json()?;
+
+        assert!(
+            result.is_none(),
+            "Skipping the coinbase check must not bypass tx proof validation"
+        );
+
+        Ok(())
+    }
+
+    /// Coinbase check skipped, but merkle_proof is empty -> the
+    /// "Merkle proof is empty" require fires.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_empty_merkle_proof(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, _coinbase_hash, _tx_hash) =
+            submit_two_tx_block(&contract, &user_account).await?;
+
+        let result = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: H256::default(),
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 0,
+                merkle_proof: vec![],
+                coinbase_tx_id: H256::default(),
+                coinbase_merkle_proof: vec![],
+            })
+            .await;
+
+        assert!(
+            result.is_err(),
+            "Should fail when the transaction merkle proof is empty"
+        );
+
+        Ok(())
+    }
+
+    /// Referenced block is absent from the mainchain index -> panics.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_block_not_found(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+
+        let result = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: H256::default(),
+                tx_block_blockhash: H256::default(),
+                tx_index: 0,
+                merkle_proof: vec![H256::default()],
+                coinbase_tx_id: H256::default(),
+                coinbase_merkle_proof: vec![],
+            })
+            .await;
+
+        assert!(
+            result.is_err(),
+            "Should fail when the referenced block is not in the mainchain"
+        );
+
+        Ok(())
+    }
+
+    /// Bury the tx block under more mainchain blocks: `tx_block_height` must stay
+    /// pinned to the tx block while `mainchain_tip_height` tracks the new tip.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_reports_tip_above_tx_block(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
+
+        // tx block is at height 1 and is the tip; add 5 blocks -> tip at height 6.
+        let tip = extend_chain(&contract, &user_account, &block, 5).await?;
+
+        let result: Option<TxInclusionInfo> = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: tx_hash.clone(),
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![coinbase_hash.clone()],
+                coinbase_tx_id: coinbase_hash,
+                coinbase_merkle_proof: vec![tx_hash],
+            })
+            .await?
+            .json()?;
+
+        let info = result.expect("Valid inclusion proof should return Some(TxInclusionInfo)");
+        assert_eq!(
+            info.tx_block_height, 1,
+            "tx block stays at height 1 after the chain is extended"
+        );
+        assert_eq!(
+            info.mainchain_tip_height, 6,
+            "tip height must reflect the 5 blocks added on top"
+        );
+
+        // Cross-check both heights against the contract's own height index.
+        let tx_block_height: Option<u64> = contract
+            .view("get_height_by_block_hash")
+            .args_json(json!({ "blockhash": block.block_hash() }))
+            .await?
+            .json()?;
+        assert_eq!(tx_block_height, Some(info.tx_block_height));
+
+        let tip_height: Option<u64> = contract
+            .view("get_height_by_block_hash")
+            .args_json(json!({ "blockhash": tip.block_hash() }))
+            .await?
+            .json()?;
+        assert_eq!(tip_height, Some(info.mainchain_tip_height));
+
+        Ok(())
+    }
+
+    /// A second extension depth confirms the heights are computed from the actual
+    /// chain state, not hard-coded: tx block at height 1, tip at height 11.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_tip_tracks_deeper_chain(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
+
+        let _tip = extend_chain(&contract, &user_account, &block, 10).await?;
+
+        let result: Option<TxInclusionInfo> = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: tx_hash.clone(),
+                tx_block_blockhash: block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![coinbase_hash.clone()],
+                coinbase_tx_id: coinbase_hash,
+                coinbase_merkle_proof: vec![tx_hash],
+            })
+            .await?
+            .json()?;
+
+        let info = result.expect("Valid inclusion proof should return Some(TxInclusionInfo)");
+        assert_eq!(info.tx_block_height, 1);
+        assert_eq!(info.mainchain_tip_height, 11);
+
+        Ok(())
+    }
+
+    /// Heights are absolute (anchored to `genesis_block_height`), so garbage
+    /// collecting the *oldest* blocks must NOT shift the height of a block that
+    /// survives. Scenario: build a few blocks, then the tx block, then grow the
+    /// chain so GC prunes the first blocks — the tx block keeps the same height.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_stable_after_gc(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        // gc_threshold = 5: at most 5 mainchain blocks are kept.
+        let (contract, user_account) = init_contract_with_gc(5).await?;
+
+        // Blocks below the tx block: genesis(0) -> b1(1) -> b2(2) -> b3(3).
+        let b3 = extend_chain(&contract, &user_account, &genesis_block_header(), 3).await?;
+
+        // The tx block on top of b3 -> height 4. Chain is now exactly 5 blocks
+        // (heights 0..4), so no GC has happened yet and genesis is still stored.
+        let (tx_block, coinbase_hash, tx_hash) =
+            submit_two_tx_block_on(&contract, &user_account, b3.block_hash(), 1_231_006_700, 7_000)
+                .await?;
+
+        let proof = TxInclusionProof {
+            tx_id: tx_hash.clone(),
+            tx_block_blockhash: tx_block.block_hash(),
+            tx_index: 1,
+            merkle_proof: vec![coinbase_hash.clone()],
+            coinbase_tx_id: coinbase_hash.clone(),
+            coinbase_merkle_proof: vec![tx_hash.clone()],
+        };
+
+        // --- Before pruning: tx block at height 4, tip at height 4, genesis present.
+        let before: Option<TxInclusionInfo> = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(proof.clone())
+            .await?
+            .json()?;
+        let before = before.expect("tx block should be verifiable before GC");
+        assert_eq!(before.tx_block_height, 4);
+        assert_eq!(before.mainchain_tip_height, 4);
+
+        let genesis_height: Option<u64> = contract
+            .view("get_height_by_block_hash")
+            .args_json(json!({ "blockhash": genesis_block_header().block_hash() }))
+            .await?
+            .json()?;
+        assert_eq!(genesis_height, Some(0), "genesis is still stored before GC");
+
+        // Grow the chain by 3 -> tip reaches height 7. Each submission pushes the
+        // mainchain past gc_threshold=5, so the oldest blocks (genesis, b1, b2)
+        // are pruned. An explicit run_mainchain_gc confirms there is nothing left
+        // to trim afterwards.
+        extend_chain(&contract, &user_account, &tx_block, 3).await?;
+        let outcome = user_account
+            .call(contract.id(), "run_mainchain_gc")
+            .args_json(json!({ "batch_size": 100 }))
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(outcome.is_success());
+
+        // --- After pruning: the tx block KEPT height 4; only the tip moved to 7.
+        let after: Option<TxInclusionInfo> = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(proof)
+            .await?
+            .json()?;
+        let after = after.expect("tx block must still be verifiable after GC");
+        assert_eq!(
+            after.tx_block_height, before.tx_block_height,
+            "pruning the first blocks must not change the tx block height"
+        );
+        assert_eq!(after.tx_block_height, 4);
+        assert_eq!(after.mainchain_tip_height, 7, "tip advanced to height 7");
+
+        // The first blocks were actually removed, while the tx block survives.
+        let genesis_height: Option<u64> = contract
+            .view("get_height_by_block_hash")
+            .args_json(json!({ "blockhash": genesis_block_header().block_hash() }))
+            .await?
+            .json()?;
+        assert_eq!(genesis_height, None, "genesis must be pruned by GC");
+
+        let tx_block_height: Option<u64> = contract
+            .view("get_height_by_block_hash")
+            .args_json(json!({ "blockhash": tx_block.block_hash() }))
+            .await?
+            .json()?;
+        assert_eq!(tx_block_height, Some(4), "tx block survived GC at height 4");
+
+        Ok(())
+    }
+
+    /// If the block holding the transaction is on a fork (stored in the headers
+    /// pool but not part of the main chain) it has no main-chain height, so
+    /// `lookup_tx_block_meta` panics and the call fails — even with a valid proof.
+    #[tokio::test]
+    async fn test_verify_transaction_inclusion_with_heights_fork_block(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+
+        // Build a high-work main chain: genesis(0) -> b1(1) -> b2(2) -> b3(3).
+        let _b3 = extend_chain(&contract, &user_account, &genesis_block_header(), 3).await?;
+
+        // Submit the 2-tx block as a single block on genesis. Its accumulated work
+        // is below the main-chain tip, so it is stored as a FORK (not promoted) and
+        // gets no main-chain height.
+        let (fork_block, coinbase_hash, tx_hash) = submit_two_tx_block_on(
+            &contract,
+            &user_account,
+            genesis_block_header().block_hash(),
+            1_231_006_700,
+            7_000,
+        )
+        .await?;
+
+        // Sanity: the fork block is not indexed on the main chain.
+        let fork_height: Option<u64> = contract
+            .view("get_height_by_block_hash")
+            .args_json(json!({ "blockhash": fork_block.block_hash() }))
+            .await?
+            .json()?;
+        assert_eq!(fork_height, None, "the tx block must be on a fork, not the main chain");
+
+        // Even with a valid coinbase + tx proof, verification fails: the block is
+        // not part of the current main chain.
+        let result = user_account
+            .view(contract.id(), "verify_transaction_inclusion_with_heights")
+            .args_borsh(TxInclusionProof {
+                tx_id: tx_hash.clone(),
+                tx_block_blockhash: fork_block.block_hash(),
+                tx_index: 1,
+                merkle_proof: vec![coinbase_hash.clone()],
+                coinbase_tx_id: coinbase_hash,
+                coinbase_merkle_proof: vec![tx_hash],
+            })
+            .await;
+
+        assert!(
+            result.is_err(),
+            "A tx whose block is on a fork must not be found on the main chain"
         );
 
         Ok(())
