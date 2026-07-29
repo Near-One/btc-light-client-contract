@@ -269,7 +269,7 @@ impl BtcLightClient {
     /// # Deprecated
     /// Use [`verify_transaction_inclusion_v2`] instead, which includes coinbase merkle proof validation
     /// to mitigate the 64-byte transaction Merkle proof forgery vulnerability:
-    /// https://www.bitmex.com/blog/64-Byte-Transactions
+    /// <https://www.bitmex.com/blog/64-Byte-Transactions>
     ///
     /// @param `tx_id` transaction identifier
     /// @param `tx_block_blockhash` block hash at which transacton is supposedly included
@@ -329,16 +329,16 @@ impl BtcLightClient {
     /// Verifies that a transaction is included in a block at a given block height,
     /// with an additional coinbase merkle proof validation.
     /// This is needed to mitigate the 64-byte transaction Merkle proof forgery vulnerability:
-    /// https://www.bitmex.com/blog/64-Byte-Transactions
+    /// <https://www.bitmex.com/blog/64-Byte-Transactions>
     ///
-    /// @param tx_id transaction identifier
-    /// @param tx_block_blockhash block hash at which transaction is supposedly included
-    /// @param tx_index index of transaction in the block's tx merkle tree
-    /// @param merkle_proof merkle tree path (concatenated LE sha256 hashes) (does not contain initial transaction_hash and merkle_root)
-    /// @param coinbase_tx_id coinbase transaction hash
-    /// @param coinbase_merkle_proof merkle proof for the coinbase transaction (must have the same length as merkle_proof)
+    /// @param `tx_id` transaction identifier
+    /// @param `tx_block_blockhash` block hash at which transaction is supposedly included
+    /// @param `tx_index` index of transaction in the block's tx merkle tree
+    /// @param `merkle_proof` merkle tree path (concatenated LE sha256 hashes) (does not contain initial `transaction_hash` and `merkle_root`)
+    /// @param `coinbase_tx_id` coinbase transaction hash
+    /// @param `coinbase_merkle_proof` merkle proof for the coinbase transaction (must have the same length as `merkle_proof`)
     /// @param confirmations how many confirmed blocks we want to have before the transaction is valid
-    /// @return True if tx_id is at the claimed position in the block at the given blockhash, False otherwise
+    /// @return True if `tx_id` is at the claimed position in the block at the given blockhash, False otherwise
     ///
     /// # Security: the 64-byte transaction forgery
     /// A leaf txid is `SHA256d(raw tx bytes)`, while an interior node is `SHA256d(left || right)` —
@@ -353,7 +353,7 @@ impl BtcLightClient {
     /// is one longer than any genuine transaction's. v2 blocks this by also
     /// requiring a coinbase proof (leaf index 0) of equal length: since all genuine leaves sit at
     /// the same depth, this pins `tx_id` to a real leaf position and rejects the deeper forged `A`.
-    /// See https://www.bitmex.com/blog/64-Byte-Transactions
+    /// See <https://www.bitmex.com/blog/64-Byte-Transactions>
     ///
     /// # Warning
     /// This function does not protect against `tx_id` being the hash of an internal Merkle node
@@ -459,11 +459,11 @@ impl BtcLightClient {
         let config = self.get_config();
         #[cfg(feature = "bitcoin")]
         {
-            require!(block_height % config.difficulty_adjustment_interval == 0, format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
+            require!(block_height.is_multiple_of(config.difficulty_adjustment_interval), format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
         }
         #[cfg(any(feature = "litecoin", feature = "dogecoin"))]
         {
-            require!((block_height + 1) % config.difficulty_adjustment_interval == 0, format!("Error: The initial block height  + 1 must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
+            require!((block_height + 1).is_multiple_of(config.difficulty_adjustment_interval), format!("Error: The initial block height  + 1 must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
         }
         #[cfg(any(feature = "litecoin", feature = "dogecoin", feature = "bitcoin"))]
         {
