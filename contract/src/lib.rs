@@ -435,9 +435,54 @@ impl BtcLightClient {
                 .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         }
     }
+
+    #[pause]
+    #[trusted_relayer]
+    pub fn truncate_tip(&mut self, num_blocks: u64) {
+        self.truncate_tip_inner(num_blocks);
+    }
 }
 
 impl BtcLightClient {
+    fn truncate_tip_inner(&mut self, num_blocks: u64) {
+        let initial_height = self
+            .headers_pool
+            .get(&self.mainchain_initial_blockhash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
+            .block_height;
+
+        let tip_height = self
+            .headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
+            .block_height;
+
+        let to_remove = std::cmp::min(num_blocks, tip_height - initial_height);
+        if to_remove == 0 {
+            return;
+        }
+
+        let new_tip_height = tip_height - to_remove;
+
+        for height in (new_tip_height + 1)..=tip_height {
+            let blockhash = self
+                .mainchain_height_to_header
+                .get(&height)
+                .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+            self.remove_block_header(&blockhash);
+            self.mainchain_height_to_header.remove(&height);
+        }
+
+        self.mainchain_tip_blockhash = self
+            .mainchain_height_to_header
+            .get(&new_tip_height)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+
+        env::log_str(&format!(
+            "Truncated {to_remove} block(s) from tip; new tip height {new_tip_height}"
+        ));
+    }
+
     fn init_genesis(
         &mut self,
         block_hash: &H256,
@@ -1022,6 +1067,40 @@ mod tests {
         }
     }
 
+    // Builds a linear chain: genesis followed by `count` headers, each linking to the
+    // previous block's hash. `blocks[i]` sits at height `i`.
+    fn linear_chain_blocks(count: u32) -> Vec<Header> {
+        let genesis = genesis_block_header();
+        let mut prev = genesis.block_hash().to_string();
+        let mut blocks = vec![genesis];
+        for i in 0u32..count {
+            let header: Header = serde_json::from_value(serde_json::json!({
+                "version": 1,
+                "prev_block_hash": prev,
+                "merkle_root": "0000000000000000000000000000000000000000000000000000000000000000",
+                "time": 1_231_006_506u32 + i,
+                "bits": 0x207f_ffffu32,
+                "nonce": i,
+            }))
+            .unwrap();
+            prev = header.block_hash().to_string();
+            blocks.push(header);
+        }
+        blocks
+    }
+
+    fn linear_init_args(count: u32) -> InitArgs {
+        let blocks = linear_chain_blocks(count);
+        InitArgs {
+            network: Network::Mainnet,
+            genesis_block_hash: blocks[0].block_hash(),
+            genesis_block_height: 0,
+            skip_pow_verification: true,
+            gc_threshold: 1000,
+            submit_blocks: blocks,
+        }
+    }
+
     #[test]
     #[should_panic(expected = "block should have correct pow")]
     fn test_pow_validator_works_correctly_for_wrong_block() {
@@ -1150,6 +1229,73 @@ mod tests {
                 .unwrap(),
             1
         );
+    }
+
+    #[test]
+    fn test_truncate_tip() {
+        let blocks = linear_chain_blocks(11);
+        let mut contract = BtcLightClient::init(linear_init_args(11));
+
+        // Linear chain genesis(0)..block(11).
+        assert_eq!(contract.get_last_block_height(), 11);
+        assert_eq!(
+            contract.get_last_block_header().block_hash,
+            blocks[11].block_hash()
+        );
+
+        // Roll the tip back by 5 blocks: 11 -> 6.
+        contract.truncate_tip_inner(5);
+
+        assert_eq!(contract.get_last_block_height(), 6);
+        assert_eq!(
+            contract.get_last_block_header().block_hash,
+            blocks[6].block_hash()
+        );
+
+        // Removed blocks are gone from both indexes and the pool.
+        assert!(contract.get_block_hash_by_height(7).is_none());
+        assert!(contract
+            .get_height_by_block_hash(blocks[7].block_hash())
+            .is_none());
+        // Kept blocks remain reachable.
+        assert_eq!(
+            contract.get_block_hash_by_height(6).unwrap(),
+            blocks[6].block_hash()
+        );
+
+        // The heavier chain can now be submitted forward as a normal tip extension.
+        let next: Header = serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "prev_block_hash": blocks[6].block_hash().to_string(),
+            "merkle_root": "0000000000000000000000000000000000000000000000000000000000000000",
+            "time": 1_300_000_000u32,
+            "nonce": 42u32,
+            "bits": 0x207f_ffffu32,
+        }))
+        .unwrap();
+        contract.submit_block_header(next.clone(), contract.skip_pow_verification);
+
+        assert_eq!(contract.get_last_block_height(), 7);
+        assert_eq!(
+            contract.get_last_block_header().block_hash,
+            next.block_hash()
+        );
+    }
+
+    #[test]
+    fn test_truncate_tip_never_removes_initial_block() {
+        let blocks = linear_chain_blocks(11);
+        let mut contract = BtcLightClient::init(linear_init_args(11));
+
+        // Request to remove far more blocks than exist; must stop at the initial block.
+        contract.truncate_tip_inner(1000);
+
+        assert_eq!(contract.get_last_block_height(), 0);
+        assert_eq!(
+            contract.get_last_block_header().block_hash,
+            blocks[0].block_hash()
+        );
+        assert!(contract.get_block_hash_by_height(1).is_none());
     }
 
     #[test]

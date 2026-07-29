@@ -243,8 +243,9 @@ impl Synchronizer {
                 'main_loop
             );
 
-            let start_height =
-                first_block_height_to_submit.load(std::sync::atomic::Ordering::Relaxed);
+            info!("first_block_height_to_submit={:?}, latest_height={:?}", first_block_height_to_submit, latest_height);
+
+            let start_height = first_block_height_to_submit.load(std::sync::atomic::Ordering::Relaxed);
             let end_height = latest_height.min(start_height.saturating_add(current_fetch_size));
 
             let blocks_to_submit = self.fetch_blocks_to_submit(start_height, end_height).await;
@@ -298,6 +299,9 @@ impl Synchronizer {
     ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
         let last_block_header = self.near_client.get_last_block_header().await?;
         let last_block_height = last_block_header.block_height;
+
+        info!("{:?}", self.get_bitcoin_block_hash_by_height(last_block_height));
+
         if self.get_bitcoin_block_hash_by_height(last_block_height)?
             == last_block_header.block_hash.to_string()
         {
@@ -313,6 +317,7 @@ impl Synchronizer {
         let mut height: u64 = last_block_height - 1;
 
         for i in 0..last_block_hashes_count {
+            info!("h={:?}, block hash: (from btc rpc={:?}, from near contract={:?})", height, self.get_bitcoin_block_hash_by_height(height), last_block_hashes_in_relay_contract[last_block_hashes_count - i - 1]);
             if last_block_hashes_in_relay_contract[last_block_hashes_count - i - 1]
                 == self.get_bitcoin_block_hash_by_height(height)?
             {
@@ -398,6 +403,10 @@ struct CliArgs {
     /// Initialize contract
     #[clap(long)]
     init_contract: bool,
+    /// Roll the main chain tip back by the given number of blocks, then exit. Used to resolve a
+    /// reorg too deep to process on-chain (e.g. `--truncate-tip 100`).
+    #[clap(long)]
+    truncate_tip: Option<u64>,
 }
 
 #[tokio::main]
@@ -410,6 +419,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let bitcoin_client = Arc::new(BitcoinClient::new(&config));
     let near_client = NearClient::new(&config.near);
+
+    if let Some(num_blocks) = args.truncate_tip {
+        info!("truncate_tip: rolling main chain tip back by {num_blocks} blocks");
+        near_client
+            .truncate_tip(num_blocks)
+            .await
+            .expect("Failed to truncate tip");
+        info!("truncate_tip finished");
+        return Ok(());
+    }
 
     if args.init_contract {
         let init_config = config.init.clone().expect("Init Config not found");
