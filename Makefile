@@ -28,7 +28,7 @@ endif
 
 $(foreach feature,$(FEATURES), \
 	$(eval build-local-$(feature): ; \
-		$(LOCAL_ENV) cargo near build non-reproducible-wasm --no-default-features --features "$(feature)" --manifest-path $(NEAR_MANIFEST) && \
+		$(LOCAL_ENV) cargo near build non-reproducible-wasm --no-abi --no-default-features --features "$(feature)" --manifest-path $(NEAR_MANIFEST) && \
 		mkdir -p res && mv ./contract/target/near/btc_light_client_contract.wasm ./res/$(feature).wasm \
 	) \
 )

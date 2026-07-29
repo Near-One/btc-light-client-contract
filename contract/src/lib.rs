@@ -85,7 +85,7 @@ enum StorageKey {
 #[access_control(role_type(Role))]
 #[near(contract_state)]
 #[derive(Pausable, Upgradable, PanicOnDefault)]
-#[pausable(manager_roles(Role::PauseManager))]
+#[pausable(pause_roles(Role::PauseManager), unpause_roles(Role::DAO))]
 #[upgradable(access_control_roles(
     code_stagers(Role::CodeStager, Role::DAO),
     code_deployers(Role::CodeDeployer, Role::DAO),

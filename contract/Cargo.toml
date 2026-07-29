@@ -9,9 +9,9 @@ repository = "https://github.com/Near-One/btc-light-client-contract"
 # in https://github.com/near/NEPs/blob/master/neps/nep-0330.md
 [package.metadata.near.reproducible_build]
 # docker image, descriptor of build environment
-image = "sourcescan/cargo-near:0.16.0-rust-1.86.0"
+image = "sourcescan/cargo-near:0.21.1-rust-1.96.0"
 # tag after colon above serves only descriptive purpose; image is identified by digest
-image_digest = "sha256:3220302ebb7036c1942e772810f21edd9381edf9a339983da43487c77fbad488"
+image_digest = "sha256:ccb22bb4e677ed022d8b9d1aa1b32f0af52dd0471ef1c32e48dedbf68ee6ee17"
 # list of environment variables names, whose values, if set, will be used as external build parameters
 # in a reproducible manner
 # supported by `sourcescan/cargo-near:0.10.1-rust-1.82.0` image or later images
@@ -40,8 +40,8 @@ doctest = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-near-sdk = { version = "5.24.1", features = ["legacy"] }
-near-plugins = { git = "https://github.com/aurora-is-near/near-plugins", tag = "v0.4.1" }
+near-sdk = { version = "=5.29.0", features = ["legacy"] }
+near-plugins = "0.5.2"
 omni-utils = { git = "https://github.com/near-one/omni-utils", rev = "f9bc3ea4a72e97f02660b8f1c0b2f79a9fbde3a4" }
 borsh = "1.5.0"
 serde_json = "1"
@@ -54,7 +54,7 @@ cfg-if = "1.0.0"
 hex = "0.4.3"
 
 [dev-dependencies]
-near-sdk = { version = "5.24.1", features = ["unit-testing"] }
+near-sdk = { version = "=5.29.0", features = ["unit-testing"] }
 near-workspaces = { version = "0.20.1", features = ["unstable"] }
 tokio = { version = "1.12.0", features = ["full"] }
 serde_json = "1"
