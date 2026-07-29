@@ -38,7 +38,6 @@ minreq = { version = "2.12.0", features = ["https"] }
 clap = { version = "4.5", features = ["derive"] }
 anyhow = "1"
 config = { version = "0.15", features = ["toml"] }
-near-sdk = { version = "=5.29.0", features = ["non-contract-usage"] }
 
 [dev-dependencies]
 lazy_static = "1.4"

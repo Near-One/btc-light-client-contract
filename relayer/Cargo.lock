@@ -423,7 +423,6 @@ dependencies = [
  "near-jsonrpc-client",
  "near-jsonrpc-primitives",
  "near-primitives",
- "near-sdk",
  "near-token",
  "rand_core",
  "reqwest 0.11.27",
