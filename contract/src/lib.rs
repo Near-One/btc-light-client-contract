@@ -70,6 +70,7 @@ pub enum Role {
     DurationManager,
     /// May manage trusted relayer staking: reject applications and update relayer config.
     RelayerManager,
+    UnpauseManager,
 }
 #[derive(BorshSerialize, near_sdk::BorshStorageKey)]
 enum StorageKey {
@@ -85,7 +86,10 @@ enum StorageKey {
 #[access_control(role_type(Role))]
 #[near(contract_state)]
 #[derive(Pausable, Upgradable, PanicOnDefault)]
-#[pausable(pause_roles(Role::PauseManager), unpause_roles(Role::DAO))]
+#[pausable(
+    pause_roles(Role::PauseManager),
+    unpause_roles(Role::DAO, Role::UnpauseManager)
+)]
 #[upgradable(access_control_roles(
     code_stagers(Role::CodeStager, Role::DAO),
     code_deployers(Role::CodeDeployer, Role::DAO),
