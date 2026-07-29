@@ -11,12 +11,6 @@ mod test_basics {
 
     const STORAGE_DEPOSIT_PER_BLOCK: NearToken = NearToken::from_millinear(500);
 
-    /// Waits until the account balance is stable across two consecutive samples.
-    ///
-    /// After `.transact().await?` returns, gas refund receipts may still be in
-    /// flight and land in a subsequent block. Reading `view_account().balance`
-    /// immediately can therefore observe a transient "prepay minus not-yet-
-    /// refunded gas" balance.
     async fn stable_balance(
         sandbox: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
         account: &Account,
