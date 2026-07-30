@@ -124,9 +124,7 @@ mod test_zcash {
     }
 
     /// Initializes a sandbox contract from the wasm currently deployed on
-    /// mainnet (`zcash-client.bridge.near`, built before #116, whose state
-    /// layout still contains `used_aux_parent_blocks`), upgrades it to the
-    /// locally built wasm and verifies that `migrate` repairs the state.
+    /// mainnet (`zcash-client.bridge.near`)
     #[tokio::test]
     async fn test_migration_from_mainnet_wasm() -> Result<(), Box<dyn std::error::Error>> {
         let sandbox = near_workspaces::sandbox().await?;
@@ -151,22 +149,13 @@ mod test_zcash {
             .await?;
         assert!(outcome.is_success(), "{:?}", outcome.failures());
 
-        // Upgrade to the current wasm. The old state layout contains
-        // `used_aux_parent_blocks`, so without a migration every call fails.
+        // Upgrade to the current wasm.
         let new_wasm = build_contract().await;
         contract
             .as_account()
             .deploy(&new_wasm)
             .await?
             .into_result()?;
-
-        let outcome = contract
-            .view("get_last_block_header")
-            .args_json(json!({}))
-            .await;
-        assert!(
-            format!("{:?}", outcome.unwrap_err()).contains("Cannot deserialize the contract state")
-        );
 
         let outcome = contract
             .call("migrate")

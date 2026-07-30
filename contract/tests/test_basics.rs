@@ -11,6 +11,14 @@ mod test_basics {
 
     const STORAGE_DEPOSIT_PER_BLOCK: NearToken = NearToken::from_millinear(500);
 
+    async fn stable_balance(
+        sandbox: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
+        account: &Account,
+    ) -> Result<NearToken, Box<dyn std::error::Error>> {
+        sandbox.fast_forward(1).await?;
+        Ok(account.view_account().await?.balance)
+    }
+
     // 12-block init list: genesis + 11 fake blocks branching from genesis with
     // bits=0x207FFFFF (near-zero work). This satisfies the MEDIAN_TIME_SPAN+1
     // requirement while keeping genesis at height 0. Blocks submitted after init
@@ -91,7 +99,15 @@ mod test_basics {
 
     async fn init_contract_from_file(
         gc_threshold: u64,
-    ) -> Result<(Contract, Account, Vec<Vec<Header>>), Box<dyn std::error::Error>> {
+    ) -> Result<
+        (
+            near_workspaces::Worker<near_workspaces::network::Sandbox>,
+            Contract,
+            Account,
+            Vec<Vec<Header>>,
+        ),
+        Box<dyn std::error::Error>,
+    > {
         let sandbox = near_workspaces::sandbox().await?;
         let contract_wasm = near_workspaces::compile_project("./").await?;
 
@@ -132,7 +148,7 @@ mod test_basics {
 
         // Return blocks NOT yet submitted (batch[2][5..] onward).
         let remaining = remaining_after_init(&all_block_headers);
-        Ok((contract, user_account, remaining))
+        Ok((sandbox, contract, user_account, remaining))
     }
 
     // Returns the blocks from the JSON that are not included in the 12-block init.
@@ -403,7 +419,8 @@ mod test_basics {
 
     #[tokio::test]
     async fn test_submit_blocks_for_period() -> Result<(), Box<dyn std::error::Error>> {
-        let (contract, user_account, block_headers) = init_contract_from_file(2017).await?;
+        let (_sandbox, contract, user_account, block_headers) =
+            init_contract_from_file(2017).await?;
 
         for block_headers_batch in &block_headers[..] {
             let outcome = user_account
@@ -422,7 +439,8 @@ mod test_basics {
 
     #[tokio::test]
     async fn test_get_last_n_blocks() -> Result<(), Box<dyn std::error::Error>> {
-        let (contract, user_account, block_headers) = init_contract_from_file(2017).await?;
+        let (_sandbox, contract, user_account, block_headers) =
+            init_contract_from_file(2017).await?;
 
         // Submit remaining[0] (85 blocks). Together with the 12 in init = 97 total.
         let outcome = user_account
@@ -476,7 +494,7 @@ mod test_basics {
 
     #[tokio::test]
     async fn test_gc() -> Result<(), Box<dyn std::error::Error>> {
-        let (contract, user_account, block_headers) = init_contract_from_file(10).await?;
+        let (_sandbox, contract, user_account, block_headers) = init_contract_from_file(10).await?;
 
         // 12 blocks already loaded in init; submit remaining[0] (85 blocks) = 97 total.
         let outcome = user_account
@@ -534,7 +552,7 @@ mod test_basics {
         // gc_threshold=200: init (12 blocks) is well below threshold, so the first few
         // batches require deposit. After 3 batches with deposit (~12+85+85+85=267 total),
         // GC kicks in and subsequent batches can be submitted for free.
-        let (contract, user_account, block_headers) = init_contract_from_file(200).await?;
+        let (sandbox, contract, user_account, block_headers) = init_contract_from_file(200).await?;
 
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
@@ -558,8 +576,7 @@ mod test_basics {
             assert!(outcome.is_success());
         }
 
-        let amount_init = user_account.view_account().await?.balance;
-
+        let amount_init = stable_balance(&sandbox, &user_account).await?;
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
             .args_borsh(block_headers[3].clone())
@@ -569,7 +586,7 @@ mod test_basics {
 
         assert!(outcome.is_success());
 
-        let amount_before = user_account.view_account().await?.balance;
+        let amount_before = stable_balance(&sandbox, &user_account).await?;
         let outcome = user_account
             .call(contract.id(), "submit_blocks")
             .args_borsh(block_headers[4].clone())
@@ -580,10 +597,16 @@ mod test_basics {
 
         assert!(outcome.is_success());
 
-        let amount_after = user_account.view_account().await?.balance;
+        let amount_after = stable_balance(&sandbox, &user_account).await?;
+        let cost_with_deposit = amount_before
+            .as_yoctonear()
+            .saturating_sub(amount_after.as_yoctonear());
+        let cost_without_deposit = amount_init
+            .as_yoctonear()
+            .saturating_sub(amount_before.as_yoctonear());
         assert!(
-            amount_before.as_yoctonear() - amount_after.as_yoctonear()
-                < 2 * (amount_init.as_yoctonear() - amount_before.as_yoctonear())
+            cost_with_deposit < 2 * cost_without_deposit,
+            "cost_with_deposit={cost_with_deposit}, cost_without_deposit={cost_without_deposit}",
         );
 
         Ok(())
@@ -592,7 +615,8 @@ mod test_basics {
     #[tokio::test]
     async fn test_submit_blocks_for_period_incorrect_target(
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let (contract, user_account, mut block_headers) = init_contract_from_file(2017).await?;
+        let (_sandbox, contract, user_account, mut block_headers) =
+            init_contract_from_file(2017).await?;
 
         for i in 0..block_headers.len() {
             for j in 0..block_headers[i].len() {

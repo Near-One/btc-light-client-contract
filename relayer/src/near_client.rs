@@ -9,16 +9,19 @@ use btc_types::contract_args::InitArgs;
 use btc_types::header::ExtendedHeader;
 use log::info;
 use merkle_tools::H256;
-use near_crypto::InMemorySigner;
+use near_crypto::Signer;
 use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncResponse;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_jsonrpc_client::{methods, JsonRpcClient, MethodCallResult};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, TransactionInfo};
 use near_primitives::borsh;
-use near_primitives::transaction::{Action, FunctionCallAction, SignedTransaction, Transaction};
-use near_primitives::types::{AccountId, BlockReference};
+use near_primitives::transaction::{
+    Action, FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
+};
+use near_primitives::types::{AccountId, BlockReference, Gas};
 use near_primitives::views::TxExecutionStatus;
+use near_token::NearToken;
 use serde_json::{from_slice, json};
 
 use crate::bitcoin_client::AuxData;
@@ -53,7 +56,7 @@ pub struct SubmitResult {
 #[derive(Clone)]
 pub struct NearClient {
     client: JsonRpcClient,
-    signer: InMemorySigner,
+    signer: Signer,
     btc_light_client_account_id: AccountId,
     transaction_timeout_sec: u64,
 }
@@ -209,8 +212,8 @@ impl NearClient {
             .call(methods::query::RpcQueryRequest {
                 block_reference: BlockReference::latest(),
                 request: near_primitives::views::QueryRequest::ViewAccessKey {
-                    account_id: self.signer.account_id.clone(),
-                    public_key: self.signer.public_key.clone(),
+                    account_id: self.signer.get_account_id(),
+                    public_key: self.signer.public_key(),
                 },
             })
             .await?;
@@ -327,11 +330,11 @@ impl NearClient {
                 return Err(CustomError::TxExecutionError(err_str));
             }
 
-            let gas_burnt = outcome.transaction_outcome.outcome.gas_burnt
+            let gas_burnt = outcome.transaction_outcome.outcome.gas_burnt.as_gas()
                 + outcome
                     .receipts_outcome
                     .iter()
-                    .map(|r| r.outcome.gas_burnt)
+                    .map(|r| r.outcome.gas_burnt.as_gas())
                     .sum::<u64>();
 
             return Ok(SubmitResult { gas_burnt });
@@ -484,17 +487,21 @@ impl NearClient {
             .ok_or("No final execution outcome")?
             .into_outcome();
 
-        let gas_burnt: u64 = outcome.transaction_outcome.outcome.gas_burnt
+        let gas_burnt: u64 = outcome.transaction_outcome.outcome.gas_burnt.as_gas()
             + outcome
                 .receipts_outcome
                 .iter()
-                .map(|r| r.outcome.gas_burnt)
+                .map(|r| r.outcome.gas_burnt.as_gas())
                 .sum::<u64>();
-        let tokens_burnt: u128 = outcome.transaction_outcome.outcome.tokens_burnt
+        let tokens_burnt: u128 = outcome
+            .transaction_outcome
+            .outcome
+            .tokens_burnt
+            .as_yoctonear()
             + outcome
                 .receipts_outcome
                 .iter()
-                .map(|r| r.outcome.tokens_burnt)
+                .map(|r| r.outcome.tokens_burnt.as_yoctonear())
                 .sum::<u128>();
 
         info!(
@@ -541,8 +548,8 @@ impl NearClient {
             .call(methods::query::RpcQueryRequest {
                 block_reference: BlockReference::latest(),
                 request: near_primitives::views::QueryRequest::ViewAccessKey {
-                    account_id: self.signer.account_id.clone(),
-                    public_key: self.signer.public_key.clone(),
+                    account_id: self.signer.get_account_id(),
+                    public_key: self.signer.public_key(),
                 },
             })
             .await?;
@@ -556,21 +563,25 @@ impl NearClient {
             }
         };
 
-        let transaction = Transaction {
-            signer_id: self.signer.account_id.clone(),
-            public_key: self.signer.public_key.clone(),
+        let transaction = Transaction::V0(TransactionV0 {
+            signer_id: self.signer.get_account_id(),
+            public_key: self.signer.public_key(),
             nonce,
             receiver_id: self.btc_light_client_account_id.clone(),
             block_hash: access_key_query_response.block_hash,
             actions: vec![Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: method_name.to_string(),
                 args,
-                gas: 1_000_000_000_000_000, // 1 PetaGas
-                deposit,
+                gas: Gas::from_gas(1_000_000_000_000_000), // 1 PetaGas
+                deposit: NearToken::from_yoctonear(deposit),
             }))],
-        };
+        });
 
-        Ok(transaction.sign(&self.signer))
+        let tx_hash = transaction.get_hash_and_size().0;
+        Ok(SignedTransaction::new(
+            self.signer.sign(tx_hash.as_ref()),
+            transaction,
+        ))
     }
 
     async fn submit_tx(
@@ -593,7 +604,7 @@ impl NearClient {
             .call(methods::tx::RpcTransactionStatusRequest {
                 transaction_info: TransactionInfo::TransactionId {
                     tx_hash,
-                    sender_account_id: self.signer.account_id.clone(),
+                    sender_account_id: self.signer.get_account_id(),
                 },
                 wait_until: TxExecutionStatus::Executed,
             })
