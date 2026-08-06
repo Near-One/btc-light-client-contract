@@ -433,16 +433,8 @@ impl BtcLightClient {
         );
 
         let confirmations = args.confirmations;
-        let proof = TxInclusionProof {
-            tx_id: args.tx_id,
-            tx_block_blockhash: args.tx_block_blockhash,
-            tx_index: args.tx_index,
-            merkle_proof: args.merkle_proof,
-            coinbase_tx_id: args.coinbase_tx_id,
-            coinbase_merkle_proof: args.coinbase_merkle_proof,
-        };
 
-        match self.verify_transaction_inclusion_with_heights(proof) {
+        match self.verify_transaction_inclusion_with_heights(args.into()) {
             Some(TxInclusionInfo {
                 tx_block_height,
                 mainchain_tip_height,

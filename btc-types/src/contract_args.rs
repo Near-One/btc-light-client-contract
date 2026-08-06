@@ -72,3 +72,16 @@ impl From<ProofArgsV2> for ProofArgs {
         }
     }
 }
+
+impl From<ProofArgsV2> for TxInclusionProof {
+    fn from(args: ProofArgsV2) -> Self {
+        Self {
+            tx_id: args.tx_id,
+            tx_block_blockhash: args.tx_block_blockhash,
+            tx_index: args.tx_index,
+            merkle_proof: args.merkle_proof,
+            coinbase_tx_id: args.coinbase_tx_id,
+            coinbase_merkle_proof: args.coinbase_merkle_proof,
+        }
+    }
+}
