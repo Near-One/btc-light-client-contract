@@ -1196,16 +1196,16 @@ mod test_basics {
         Ok(())
     }
 
-    /// Empty coinbase proof + zero coinbase_tx_id -> coinbase verification is
-    /// skipped entirely (incl. the length-equality check), and a valid tx proof
-    /// still returns Some.
+    /// The coinbase proof is mandatory: the old "skip" encoding (empty coinbase
+    /// proof + zero coinbase_tx_id) must be rejected — the length-equality check
+    /// fires (merkle_proof len 1 vs coinbase_merkle_proof len 0).
     #[tokio::test]
-    async fn test_verify_transaction_inclusion_with_heights_skips_empty_coinbase(
+    async fn test_verify_transaction_inclusion_with_heights_empty_coinbase_proof_rejected(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let (contract, user_account) = init_contract().await?;
         let (block, coinbase_hash, tx_hash) = submit_two_tx_block(&contract, &user_account).await?;
 
-        let result: Option<TxInclusionInfo> = user_account
+        let result = user_account
             .view(contract.id(), "verify_transaction_inclusion_with_heights")
             .args_borsh(TxInclusionProof {
                 tx_id: tx_hash,
@@ -1215,20 +1215,18 @@ mod test_basics {
                 coinbase_tx_id: H256::default(),
                 coinbase_merkle_proof: vec![],
             })
-            .await?
-            .json()?;
+            .await;
 
-        let info = result.expect("Skipping coinbase check should still verify the tx proof");
-        assert_eq!(info.tx_block_height, 1);
-        assert_eq!(info.mainchain_tip_height, 1);
+        assert!(
+            result.is_err(),
+            "An empty coinbase proof must be rejected: the coinbase check is mandatory"
+        );
 
         Ok(())
     }
 
-    /// Empty coinbase proof but a NON-zero coinbase_tx_id -> the skip branch is
-    /// NOT taken (it requires both an empty proof AND a zero id). The coinbase
-    /// check stays active, so the length-equality check fires on the mismatch
-    /// (merkle_proof len 1 vs coinbase_merkle_proof len 0) and the call panics.
+    /// Empty coinbase proof with a non-zero coinbase_tx_id fails the same
+    /// length-equality check (merkle_proof len 1 vs coinbase_merkle_proof len 0).
     #[tokio::test]
     async fn test_verify_transaction_inclusion_with_heights_empty_coinbase_proof_nonzero_id(
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1249,44 +1247,16 @@ mod test_basics {
 
         assert!(
             result.is_err(),
-            "Empty coinbase proof with a non-zero coinbase_tx_id must NOT skip the coinbase check"
+            "An empty coinbase proof must be rejected regardless of coinbase_tx_id"
         );
 
         Ok(())
     }
 
-    /// Coinbase check skipped (empty proof + zero id), but the tx proof is wrong
-    /// -> still returns None rather than erroring.
-    #[tokio::test]
-    async fn test_verify_transaction_inclusion_with_heights_skipped_coinbase_invalid_tx(
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let (contract, user_account) = init_contract().await?;
-        let (block, coinbase_hash, _tx_hash) =
-            submit_two_tx_block(&contract, &user_account).await?;
-
-        let result: Option<TxInclusionInfo> = user_account
-            .view(contract.id(), "verify_transaction_inclusion_with_heights")
-            .args_borsh(TxInclusionProof {
-                tx_id: H256::default(),
-                tx_block_blockhash: block.block_hash(),
-                tx_index: 1,
-                merkle_proof: vec![coinbase_hash],
-                coinbase_tx_id: H256::default(),
-                coinbase_merkle_proof: vec![],
-            })
-            .await?
-            .json()?;
-
-        assert!(
-            result.is_none(),
-            "Skipping the coinbase check must not bypass tx proof validation"
-        );
-
-        Ok(())
-    }
-
-    /// Coinbase check skipped, but merkle_proof is empty -> the
-    /// "Merkle proof is empty" require fires.
+    /// merkle_proof is empty -> the "Merkle proof is empty" require fires.
+    /// Both proofs are empty so the length check passes, and coinbase_tx_id is
+    /// set to the merkle root itself so the zero-length coinbase proof
+    /// reconstructs the root trivially — isolating the empty-merkle-proof require.
     #[tokio::test]
     async fn test_verify_transaction_inclusion_with_heights_empty_merkle_proof(
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1301,7 +1271,7 @@ mod test_basics {
                 tx_block_blockhash: block.block_hash(),
                 tx_index: 0,
                 merkle_proof: vec![],
-                coinbase_tx_id: H256::default(),
+                coinbase_tx_id: block.merkle_root.clone(),
                 coinbase_merkle_proof: vec![],
             })
             .await;
@@ -1315,6 +1285,8 @@ mod test_basics {
     }
 
     /// Referenced block is absent from the mainchain index -> panics.
+    /// Both proofs have length 1 so the length check passes and the mainchain
+    /// lookup is what fires.
     #[tokio::test]
     async fn test_verify_transaction_inclusion_with_heights_block_not_found(
     ) -> Result<(), Box<dyn std::error::Error>> {
@@ -1328,7 +1300,7 @@ mod test_basics {
                 tx_index: 0,
                 merkle_proof: vec![H256::default()],
                 coinbase_tx_id: H256::default(),
-                coinbase_merkle_proof: vec![],
+                coinbase_merkle_proof: vec![H256::default()],
             })
             .await;
 

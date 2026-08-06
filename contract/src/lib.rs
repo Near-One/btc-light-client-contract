@@ -328,9 +328,9 @@ impl BtcLightClient {
         ) == header.block_header.merkle_root
     }
 
-    /// Same SPV checks as `verify_transaction_inclusion`, but returns block heights
-    /// instead of a bool and does not enforce a `confirmations` threshold (the caller
-    /// can derive the confirmation depth from the returned heights).
+    /// Same SPV + coinbase checks as `verify_transaction_inclusion_v2`, but returns
+    /// block heights instead of a bool and does not enforce a `confirmations`
+    /// threshold (the caller can derive the confirmation depth from the returned heights).
     ///
     /// @param `args` see `TxInclusionProof`
     /// @return `Some(TxInclusionInfo { tx_block_height, mainchain_tip_height })` if the
@@ -338,11 +338,13 @@ impl BtcLightClient {
     ///         reconstructs the block's merkle root; `None` if the merkle proof does not match.
     ///
     /// # Warning
-    /// Same merkle second-preimage caveat as `verify_transaction_inclusion`: callers
-    /// MUST validate independently that `tx_id` corresponds to a real transaction
-    /// (and not an internal merkle-tree node).
+    /// This function does not protect against `tx_id` being the hash of an internal
+    /// Merkle node rather than a real transaction (see `verify_transaction_inclusion_v2`):
+    /// callers MUST validate independently that `tx_id` corresponds to a real transaction.
     ///
     /// # Panics
+    /// - if `merkle_proof` and `coinbase_merkle_proof` have different lengths;
+    /// - if the coinbase merkle proof does not reconstruct the block's merkle root;
     /// - if the referenced block is not part of the current main chain;
     /// - if the referenced block header is missing from storage;
     /// - if `merkle_proof` is empty.
@@ -351,28 +353,21 @@ impl BtcLightClient {
         &self,
         #[serializer(borsh)] args: TxInclusionProof,
     ) -> Option<TxInclusionInfo> {
-        if !(args.coinbase_merkle_proof.is_empty() && args.coinbase_tx_id == H256::default()) {
-            require!(
-                args.merkle_proof.len() == args.coinbase_merkle_proof.len(),
-                "Coinbase merkle proof and transaction merkle proof should have the same length"
-            );
-
-            let header = self
-                .headers_pool
-                .get(&args.tx_block_blockhash)
-                .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
-
-            require!(
-                merkle_tools::compute_root_from_merkle_proof(
-                    args.coinbase_tx_id,
-                    0usize,
-                    &args.coinbase_merkle_proof,
-                ) == header.block_header.merkle_root,
-                "Incorrect coinbase merkle proof"
-            );
-        }
+        require!(
+            args.merkle_proof.len() == args.coinbase_merkle_proof.len(),
+            "Coinbase merkle proof and transaction merkle proof should have the same length"
+        );
 
         let meta = self.lookup_tx_block_meta(&args.tx_block_blockhash);
+
+        require!(
+            merkle_tools::compute_root_from_merkle_proof(
+                args.coinbase_tx_id,
+                0usize,
+                &args.coinbase_merkle_proof,
+            ) == meta.expected_merkle_root,
+            "Incorrect coinbase merkle proof"
+        );
 
         require!(!args.merkle_proof.is_empty(), "Merkle proof is empty");
 
