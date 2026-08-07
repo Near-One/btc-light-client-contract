@@ -1,4 +1,6 @@
-use btc_types::contract_args::{InitArgs, ProofArgs, ProofArgsV2};
+use btc_types::contract_args::{
+    InitArgs, ProofArgs, ProofArgsV2, TxBlockMeta, TxInclusionInfo, TxInclusionProof,
+};
 use btc_types::hash::H256;
 use btc_types::header::{BlockHeader, ExtendedHeader, Header, LightHeader};
 use btc_types::network::Network;
@@ -326,6 +328,61 @@ impl BtcLightClient {
         ) == header.block_header.merkle_root
     }
 
+    /// Same SPV + coinbase checks as `verify_transaction_inclusion_v2`, but returns
+    /// block heights instead of a bool and does not enforce a `confirmations`
+    /// threshold (the caller can derive the confirmation depth from the returned heights).
+    ///
+    /// @param `args` see `TxInclusionProof`
+    /// @return `Some(TxInclusionInfo { tx_block_height, mainchain_tip_height })` if the
+    ///         referenced block is part of the current main chain and the merkle proof
+    ///         reconstructs the block's merkle root; `None` if the merkle proof does not match.
+    ///
+    /// # Warning
+    /// This function does not protect against `tx_id` being the hash of an internal
+    /// Merkle node rather than a real transaction (see `verify_transaction_inclusion_v2`):
+    /// callers MUST validate independently that `tx_id` corresponds to a real transaction.
+    ///
+    /// # Panics
+    /// - if `merkle_proof` and `coinbase_merkle_proof` have different lengths;
+    /// - if the coinbase merkle proof does not reconstruct the block's merkle root;
+    /// - if the referenced block is not part of the current main chain;
+    /// - if the referenced block header is missing from storage;
+    /// - if `merkle_proof` is empty.
+    #[pause]
+    pub fn verify_transaction_inclusion_with_heights(
+        &self,
+        #[serializer(borsh)] args: TxInclusionProof,
+    ) -> Option<TxInclusionInfo> {
+        require!(
+            args.merkle_proof.len() == args.coinbase_merkle_proof.len(),
+            "Coinbase merkle proof and transaction merkle proof should have the same length"
+        );
+
+        let meta = self.lookup_tx_block_meta(&args.tx_block_blockhash);
+
+        require!(
+            merkle_tools::compute_root_from_merkle_proof(
+                args.coinbase_tx_id,
+                0usize,
+                &args.coinbase_merkle_proof,
+            ) == meta.expected_merkle_root,
+            "Incorrect coinbase merkle proof"
+        );
+
+        require!(!args.merkle_proof.is_empty(), "Merkle proof is empty");
+
+        let computed_root = merkle_tools::compute_root_from_merkle_proof(
+            args.tx_id,
+            usize::try_from(args.tx_index).unwrap(),
+            &args.merkle_proof,
+        );
+
+        (computed_root == meta.expected_merkle_root).then_some(TxInclusionInfo {
+            tx_block_height: meta.target_block_height,
+            mainchain_tip_height: meta.tip_block_height,
+        })
+    }
+
     /// Verifies that a transaction is included in a block at a given block height,
     /// with an additional coinbase merkle proof validation.
     /// This is needed to mitigate the 64-byte transaction Merkle proof forgery vulnerability:
@@ -371,26 +428,25 @@ impl BtcLightClient {
     #[pause]
     pub fn verify_transaction_inclusion_v2(&self, #[serializer(borsh)] args: ProofArgsV2) -> bool {
         require!(
-            args.merkle_proof.len() == args.coinbase_merkle_proof.len(),
-            "Coinbase merkle proof and transaction merkle proof should have the same length"
+            args.confirmations <= self.gc_threshold,
+            "The required number of confirmations exceeds the number of blocks stored in memory"
         );
 
-        let header = self
-            .headers_pool
-            .get(&args.tx_block_blockhash)
-            .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
+        let confirmations = args.confirmations;
 
-        require!(
-            merkle_tools::compute_root_from_merkle_proof(
-                args.coinbase_tx_id.clone(),
-                0usize,
-                &args.coinbase_merkle_proof,
-            ) == header.block_header.merkle_root,
-            "Incorrect coinbase merkle proof"
-        );
-
-        #[allow(deprecated)]
-        self.verify_transaction_inclusion(args.into())
+        match self.verify_transaction_inclusion_with_heights(args.into()) {
+            Some(TxInclusionInfo {
+                tx_block_height,
+                mainchain_tip_height,
+            }) => {
+                require!(
+                    mainchain_tip_height.saturating_sub(tx_block_height) + 1 >= confirmations,
+                    "Not enough blocks confirmed"
+                );
+                true
+            }
+            None => false,
+        }
     }
 
     /// Public call to run GC on a mainchain.
@@ -442,6 +498,26 @@ impl BtcLightClient {
 }
 
 impl BtcLightClient {
+    fn lookup_tx_block_meta(&self, tx_block_blockhash: &H256) -> TxBlockMeta {
+        let heaviest_block_header = self
+            .headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
+        let target_block_height = self
+            .mainchain_header_to_height
+            .get(tx_block_blockhash)
+            .unwrap_or_else(|| env::panic_str("block does not belong to the current main chain"));
+        let header = self
+            .headers_pool
+            .get(tx_block_blockhash)
+            .unwrap_or_else(|| env::panic_str("cannot find requested transaction block"));
+        TxBlockMeta {
+            target_block_height,
+            tip_block_height: heaviest_block_header.block_height,
+            expected_merkle_root: header.block_header.merkle_root,
+        }
+    }
+
     fn init_genesis(
         &mut self,
         block_hash: &H256,
