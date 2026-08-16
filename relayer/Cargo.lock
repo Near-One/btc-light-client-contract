@@ -438,7 +438,7 @@ dependencies = [
 
 [[package]]
 name = "btc-types"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bitcoin",
  "borsh",
@@ -446,7 +446,7 @@ dependencies = [
  "near-sdk",
  "schemars 0.8.22",
  "serde",
- "sha2 0.11.0",
+ "sha2 0.10.9",
 ]
 
 [[package]]

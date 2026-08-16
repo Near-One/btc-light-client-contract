@@ -638,7 +638,11 @@ impl BtcLightClient {
         if prev_block_header.block_hash == self.mainchain_tip_blockhash {
             // Probably we should check if it is not in a mainchain?
             // chainwork > highScore
-            log!("Block {}: saving to mainchain", current_header.block_hash);
+            log!(
+                "Block {} at height {}: saving to mainchain",
+                current_header.block_hash,
+                current_header.block_height
+            );
             // Validate chain
             assert_eq!(
                 self.mainchain_tip_blockhash,
@@ -648,7 +652,11 @@ impl BtcLightClient {
             self.store_block_header(&current_header);
             self.mainchain_tip_blockhash = current_header.block_hash;
         } else {
-            log!("Block {}: saving to fork", current_header.block_hash);
+            log!(
+                "Block {} at height {}: saving to fork",
+                current_header.block_hash,
+                current_header.block_height
+            );
             // Fork submission
             let main_chain_tip_header = self
                 .headers_pool
@@ -662,7 +670,13 @@ impl BtcLightClient {
 
             // Current chainwork is higher than on a current mainchain, let's promote the fork
             if current_header.chain_work > total_main_chain_chainwork {
-                log!("Chain reorg");
+                log!(
+                    "Chain reorg: new tip {} at height {}, replacing tip {} at height {}",
+                    current_header.block_hash,
+                    current_header.block_height,
+                    main_chain_tip_header.block_hash,
+                    last_main_chain_block_height
+                );
                 self.reorg_chain(current_header, last_main_chain_block_height);
             }
         }
