@@ -14,6 +14,8 @@ pub struct Config {
     pub sleep_time_on_reach_last_block_sec: u64,
     #[serde(default = "defaults::sleep_time_after_sync_iteration_sec")]
     pub sleep_time_after_sync_iteration_sec: u64,
+    #[serde(default = "defaults::submit_delay_sec")]
+    pub submit_delay_sec: u64,
     #[serde(default = "defaults::fetch_batch_size")]
     pub fetch_batch_size: u64,
     #[serde(default = "defaults::submit_batch_size")]
@@ -68,6 +70,9 @@ mod defaults {
     }
     pub fn sleep_time_after_sync_iteration_sec() -> u64 {
         5
+    }
+    pub fn submit_delay_sec() -> u64 {
+        0
     }
     pub fn fetch_batch_size() -> u64 {
         150
@@ -182,5 +187,6 @@ impl Config {
         log::info!("  Submit batch size (max): {}", self.submit_batch_size);
         log::info!("  Min batch size: {}", self.min_batch_size);
         log::info!("  Sync sleep: {}s", self.sleep_time_on_reach_last_block_sec);
+        log::info!("  Submit delay (backup mode): {}s", self.submit_delay_sec);
     }
 }
