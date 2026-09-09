@@ -696,11 +696,13 @@ impl BtcLightClient {
     /// The most expensive operation which reorganizes the chain, based on fork weight
     fn reorg_chain(&mut self, fork_tip_header: ExtendedHeader, last_main_chain_block_height: u64) {
         let fork_tip_height = fork_tip_header.block_height;
+        let old_main_chain_tip_hash = self.mainchain_tip_blockhash.clone();
+
         if last_main_chain_block_height > fork_tip_height {
-            // If we see that main chain is longer than fork we first garbage collect
-            // outstanding main chain blocks:
+            // If we see that main chain is longer than fork we first unlink the outstanding
+            // main chain blocks, keeping them in the pool:
             //
-            //      [m1] - [m2] - [m3] - [m4] <- We should remove [m4]
+            //      [m1] - [m2] - [m3] - [m4] <- [m4] is not in the main chain anymore
             //     /
             // [m0]
             //     \
@@ -710,7 +712,8 @@ impl BtcLightClient {
                     .mainchain_height_to_header
                     .get(&height)
                     .unwrap_or_else(|| env::panic_str("cannot get a block"));
-                self.remove_block_header(&current_main_chain_blockhash);
+                self.mainchain_header_to_height
+                    .remove(&current_main_chain_blockhash);
                 self.mainchain_height_to_header.remove(&height);
             }
         }
@@ -751,10 +754,11 @@ impl BtcLightClient {
             self.mainchain_header_to_height
                 .insert(&current_block_hash, &current_height);
 
-            // If we found a mainchain block at the current height than remove this block from the
-            // header pool and from the header -> height map
+            // A main chain block displaced by the fork stays in the pool: it becomes a part
+            // of the fork the old main chain turns into
             if let Some(current_main_chain_blockhash) = main_chain_block {
-                self.remove_block_header(&current_main_chain_blockhash);
+                self.mainchain_header_to_height
+                    .remove(&current_main_chain_blockhash);
             }
 
             // Switch iterator cursor to the previous block in fork
@@ -763,6 +767,17 @@ impl BtcLightClient {
                 .get(&prev_block_hash)
                 .unwrap_or_else(|| env::panic_str("previous fork block should be there"));
         }
+
+        // The loop above stops at the lowest common ancestor of the fork and the old main chain
+        let lca_height = fork_header_cursor.block_height;
+
+        // The fork is the main chain now, and the old main chain is a fork branching off the LCA
+        self.remove_fork_tip(&fork_tip_hash, fork_tip_height);
+        self.insert_fork_tip(
+            lca_height,
+            old_main_chain_tip_hash,
+            last_main_chain_block_height,
+        );
 
         // Updating tip of the new main chain
         self.mainchain_tip_blockhash = fork_tip_hash;
@@ -801,7 +816,9 @@ impl BtcLightClient {
         let lca_height =
             if let Some(lca_height) = self.mainchain_header_to_height.get(prev_block_hash) {
                 lca_height
-            } else if let Some(index) = self.find_fork_tip(prev_block_hash, header.block_height) {
+            } else if let Some(index) =
+                self.find_fork_tip(prev_block_hash, header.block_height.saturating_sub(1))
+            {
                 self.forks_tips[index].tip_hash = header.block_hash.clone();
                 self.forks_tips[index].tip_height = header.block_height;
                 self.recompute_prefix_max_tip_height(index);
@@ -810,6 +827,10 @@ impl BtcLightClient {
                 self.fork_lca_height(header)
             };
 
+        self.insert_fork_tip(lca_height, header.block_hash.clone(), header.block_height);
+    }
+
+    fn insert_fork_tip(&mut self, lca_height: u64, tip_hash: H256, tip_height: u64) {
         // Insert after the tips with an equal LCA, so that the common case is a plain append
         let index = self
             .forks_tips
@@ -819,27 +840,32 @@ impl BtcLightClient {
             index,
             ForkTip {
                 lca_height,
-                tip_hash: header.block_hash.clone(),
-                tip_height: header.block_height,
+                tip_hash,
+                tip_height,
                 prefix_max_tip_height: 0,
             },
         );
         self.recompute_prefix_max_tip_height(index);
     }
 
-    /// Looks up the tip `block_hash`, the parent of a block at `block_height`.
+    fn remove_fork_tip(&mut self, tip_hash: &H256, tip_height: u64) {
+        if let Some(index) = self.find_fork_tip(tip_hash, tip_height) {
+            self.forks_tips.remove(index);
+            self.recompute_prefix_max_tip_height(index);
+        }
+    }
+
+    /// Looks up the tip `tip_hash` of height `tip_height`.
     ///
     /// Searches backwards, as the recently added tips are at the end, and stops once
     /// `prefix_max_tip_height` drops below the height the tip must have
-    fn find_fork_tip(&self, block_hash: &H256, block_height: u64) -> Option<usize> {
-        let parent_height = block_height.saturating_sub(1);
-
+    fn find_fork_tip(&self, tip_hash: &H256, tip_height: u64) -> Option<usize> {
         for (index, fork_tip) in self.forks_tips.iter().enumerate().rev() {
-            if fork_tip.prefix_max_tip_height < parent_height {
+            if fork_tip.prefix_max_tip_height < tip_height {
                 return None;
             }
 
-            if fork_tip.tip_hash == *block_hash {
+            if fork_tip.tip_hash == *tip_hash {
                 return Some(index);
             }
         }
@@ -1543,6 +1569,66 @@ mod tests {
                     prefix_max_tip_height: 10,
                 }
             ]
+        );
+    }
+
+    #[test]
+    fn test_reorg_registers_the_old_main_chain_as_a_fork() {
+        let mut contract = init_contract_with_chained_blocks();
+        let old_main_chain_tip = contract.get_block_hash_by_height(11).unwrap();
+        let mut prev_block_hash = contract.get_block_hash_by_height(8).unwrap();
+
+        // Four fork blocks outweigh the three main chain blocks above height 8
+        for nonce in 100..104 {
+            prev_block_hash = submit_fork_block(&mut contract, &prev_block_hash, nonce);
+        }
+
+        assert_eq!(contract.mainchain_tip_blockhash, prev_block_hash);
+        assert_eq!(contract.get_last_block_height(), 12);
+        assert_eq!(
+            contract.forks_tips,
+            vec![ForkTip {
+                lca_height: 8,
+                tip_hash: old_main_chain_tip.clone(),
+                tip_height: 11,
+                prefix_max_tip_height: 11,
+            }]
+        );
+
+        // The old main chain is kept in the pool, but it is not the main chain anymore
+        assert!(contract.headers_pool.contains_key(&old_main_chain_tip));
+        assert_eq!(contract.get_height_by_block_hash(old_main_chain_tip), None);
+    }
+
+    #[test]
+    fn test_reorg_to_a_shorter_fork_keeps_the_old_main_chain() {
+        let mut contract = init_contract_with_chained_blocks();
+        let old_main_chain_tip = contract.get_block_hash_by_height(11).unwrap();
+        let old_main_chain_block = contract.get_block_hash_by_height(5).unwrap();
+
+        // A single block of the difficulty-1 target outweighs the whole easy main chain
+        let header = block_header_example();
+        contract.submit_block_header(header.clone(), contract.skip_pow_verification);
+
+        assert_eq!(contract.mainchain_tip_blockhash, header.block_hash());
+        assert_eq!(contract.get_last_block_height(), 1);
+        assert_eq!(
+            contract.forks_tips,
+            vec![ForkTip {
+                lca_height: 0,
+                tip_hash: old_main_chain_tip.clone(),
+                tip_height: 11,
+                prefix_max_tip_height: 11,
+            }]
+        );
+
+        // The blocks above the fork tip are kept as well, and no height maps to them anymore
+        assert!(contract.headers_pool.contains_key(&old_main_chain_tip));
+        assert!(contract.headers_pool.contains_key(&old_main_chain_block));
+        assert!(contract.get_block_hash_by_height(5).is_none());
+        assert_eq!(
+            contract.get_height_by_block_hash(old_main_chain_block),
+            None
         );
     }
 

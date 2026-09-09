@@ -370,16 +370,13 @@ mod test_basics {
         assert!(outcome.is_success());
 
         let storage_usage_after = contract.view_account().await.unwrap().storage_usage;
-        // Reorg removes main_block from storage (replaced by fork_1 at height 2).
-        // delta_reorg = mainchain map overhead only (pool nets to zero: +fork_2, −main_block).
-        // delta_one  = pool entry + mainchain map overhead.
-        // delta_fork = pool entry only.
-        // Therefore: delta_reorg == delta_one − delta_fork.
+        // The reorg keeps main_block in the pool, it is a part of the fork the old main chain
+        // became, and swaps which tip the fork list stores, which nets to zero. What is left
+        // is fork_2 itself: a pool entry plus the mainchain map overhead, i.e. exactly what a
+        // mainchain block costs. Therefore: delta_reorg == delta_one.
         assert_eq!(
             storage_usage_after - storage_usage_fork,
-            storage_usage_one_block
-                - storage_usage_init
-                - (storage_usage_fork - storage_usage_one_block)
+            storage_usage_one_block - storage_usage_init
         );
 
         let outcome = contract
