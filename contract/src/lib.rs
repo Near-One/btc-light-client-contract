@@ -9,7 +9,8 @@ use btc_types::u256::U256;
 use btc_types::utils::target_from_bits;
 use btc_types::utils::work_from_bits;
 use near_plugins::{
-    access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
+    access_control, access_control_any, pause, AccessControlRole, AccessControllable, Pausable,
+    Upgradable,
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
@@ -20,6 +21,9 @@ use omni_utils::macros::trusted_relayer;
 use crate::utils::BlocksGetter;
 
 pub(crate) const ERR_KEY_NOT_EXIST: &str = "ERR_KEY_NOT_EXIST";
+
+/// How far below the main chain tip a fork may branch off to be still worth tracking
+pub(crate) const DEFAULT_MAX_REORG: u64 = 100;
 
 mod utils;
 
@@ -119,6 +123,9 @@ pub struct BtcLightClient {
     // GC threshold - how many blocks we would like to store in memory, and GC the older ones
     gc_threshold: u64,
 
+    // Forks branching off deeper than this below the main chain tip are collected by the GC
+    max_reorg: u64,
+
     // Network type Mainnet/Testnet
     network: Network,
 
@@ -152,6 +159,7 @@ impl BtcLightClient {
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
+            max_reorg: DEFAULT_MAX_REORG,
             network: args.network,
             forks_tips: Vec::new(),
         };
@@ -457,6 +465,13 @@ impl BtcLightClient {
         }
     }
 
+    /// Sets how far below the main chain tip a fork may branch off to be tracked
+    #[access_control_any(roles(Role::DAO))]
+    pub fn set_max_reorg(&mut self, max_reorg: u64) {
+        log!("Max reorg set to {}", max_reorg);
+        self.max_reorg = max_reorg;
+    }
+
     /// Public call to run GC on a mainchain.
     /// `batch_size` is how many block headers should be removed in the execution
     ///
@@ -674,7 +689,7 @@ impl BtcLightClient {
             let last_main_chain_block_height = main_chain_tip_header.block_height;
             let total_main_chain_chainwork = main_chain_tip_header.chain_work;
 
-            self.update_forks_tips(&current_header);
+            self.update_forks_tips(&current_header, last_main_chain_block_height);
             self.store_fork_header(&current_header);
 
             // Current chainwork is higher than on a current mainchain, let's promote the fork
@@ -807,7 +822,7 @@ impl BtcLightClient {
 
     /// Registers a fork block in `forks_tips`: either moves the tip of the fork the block
     /// extends, or inserts a new tip keeping the list sorted by `lca_height`
-    fn update_forks_tips(&mut self, header: &ExtendedHeader) {
+    fn update_forks_tips(&mut self, header: &ExtendedHeader, main_chain_tip_height: u64) {
         // Resubmitting a block, a main chain one included, goes through this very code path
         if self.headers_pool.contains_key(&header.block_hash) {
             return;
@@ -815,21 +830,35 @@ impl BtcLightClient {
 
         let prev_block_hash = &header.block_header.prev_block_hash;
 
-        let lca_height =
+        let (lca_height, extended_tip) =
             if let Some(lca_height) = self.mainchain_header_to_height.get(prev_block_hash) {
-                lca_height
+                (lca_height, None)
             } else if let Some(index) =
                 self.find_fork_tip(prev_block_hash, header.block_height.saturating_sub(1))
             {
-                self.forks_tips[index].tip_hash = header.block_hash.clone();
-                self.forks_tips[index].tip_height = header.block_height;
-                self.recompute_prefix_max_tip_height(index);
-                return;
+                (self.forks_tips[index].lca_height, Some(index))
             } else {
-                self.fork_lca_height(header)
+                (
+                    self.fork_lca_height(header)
+                        .unwrap_or_else(|| env::panic_str("ERR_FORK_LCA_NOT_FOUND")),
+                    None,
+                )
             };
 
-        self.insert_fork_tip(lca_height, header.block_hash.clone(), header.block_height);
+        // A fork branching off this deep is not expected to win a reorg, so it is not stored
+        // at all: this is the very criterion the forks GC collects by
+        require!(
+            main_chain_tip_height.saturating_sub(lca_height) <= self.max_reorg,
+            "ERR_FORK_TOO_DEEP"
+        );
+
+        if let Some(index) = extended_tip {
+            self.forks_tips[index].tip_hash = header.block_hash.clone();
+            self.forks_tips[index].tip_height = header.block_height;
+            self.recompute_prefix_max_tip_height(index);
+        } else {
+            self.insert_fork_tip(lca_height, header.block_hash.clone(), header.block_height);
+        }
     }
 
     fn insert_fork_tip(&mut self, lca_height: u64, tip_hash: H256, tip_height: u64) {
@@ -887,20 +916,88 @@ impl BtcLightClient {
         None
     }
 
+    /// Removes the forks branching off deeper than `max_reorg` below the main chain tip, at
+    /// most `batch_size` block headers per call. Such forks are a prefix of `forks_tips`, as
+    /// it is sorted by `lca_height`
+    #[allow(dead_code)]
+    fn run_forks_gc(&mut self, batch_size: u64) {
+        let cutoff_height = self.get_last_block_height().saturating_sub(self.max_reorg);
+        let outdated_forks = self
+            .forks_tips
+            .partition_point(|fork_tip| fork_tip.lca_height < cutoff_height);
+
+        let mut budget = batch_size;
+        let mut removed_forks = 0;
+
+        for index in 0..outdated_forks {
+            let fork_tip = self.forks_tips[index].clone();
+            let (removed, block_left) = self.remove_fork_blocks(&fork_tip, budget);
+            budget -= removed;
+
+            if let Some((tip_hash, tip_height)) = block_left {
+                // Leave the tip on the highest block left, so that the next call resumes here
+                self.forks_tips[index].tip_hash = tip_hash;
+                self.forks_tips[index].tip_height = tip_height;
+                break;
+            }
+
+            removed_forks = index + 1;
+
+            if budget == 0 {
+                break;
+            }
+        }
+
+        self.forks_tips.drain(..removed_forks);
+        self.recompute_prefix_max_tip_height(0);
+    }
+
+    /// Removes up to `limit` blocks of the fork, walking down from its tip. Returns how many
+    /// were removed and the highest block left, if the fork is not removed completely
+    fn remove_fork_blocks(&mut self, fork_tip: &ForkTip, limit: u64) -> (u64, Option<(H256, u64)>) {
+        let mut block_hash = fork_tip.tip_hash.clone();
+        let mut block_height = fork_tip.tip_height;
+        let mut removed = 0;
+
+        while removed < limit {
+            let Some(header) = self.headers_pool.get(&block_hash) else {
+                return (removed, None);
+            };
+
+            // Stop at the LCA, and never touch the main chain even if the stored LCA is stale
+            if header.block_height <= fork_tip.lca_height
+                || self.mainchain_header_to_height.contains_key(&block_hash)
+            {
+                return (removed, None);
+            }
+
+            self.headers_pool.remove(&block_hash);
+            removed += 1;
+            block_hash = header.block_header.prev_block_hash;
+            block_height = header.block_height - 1;
+        }
+
+        if block_height > fork_tip.lca_height {
+            (removed, Some((block_hash, block_height)))
+        } else {
+            (removed, None)
+        }
+    }
+
     /// Height of the lowest common ancestor of the fork the block belongs to and the main
-    /// chain, found by walking the fork down to the first block of the main chain
-    fn fork_lca_height(&self, header: &ExtendedHeader) -> u64 {
+    /// chain, found by walking the fork down to the first block of the main chain.
+    /// `None` if the walk runs into a block which is not stored anymore
+    fn fork_lca_height(&self, header: &ExtendedHeader) -> Option<u64> {
         let mut block_hash = header.block_header.prev_block_hash.clone();
 
         loop {
             if let Some(height) = self.mainchain_header_to_height.get(&block_hash) {
-                return height;
+                return Some(height);
             }
 
             block_hash = self
                 .headers_pool
-                .get(&block_hash)
-                .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"))
+                .get(&block_hash)?
                 .block_header
                 .prev_block_hash;
         }
@@ -985,7 +1082,7 @@ mod migrate {
         /// whole buffer to be consumed, so exactly one of the layouts can parse:
         /// * current layout: returned unchanged (re-running `migrate` is a no-op)
         /// * `BtcLightClientV3` (after #116, before fork tracking): starts with an empty
-        ///   list of fork tips
+        ///   list of fork tips and the default `max_reorg`
         /// * `BtcLightClientV2` (#101..#116): drops `used_aux_parent_blocks`;
         ///   `network` is carried over from the old state
         ///
@@ -1018,6 +1115,7 @@ mod migrate {
                     headers_pool: old_state.headers_pool,
                     skip_pow_verification: old_state.skip_pow_verification,
                     gc_threshold: old_state.gc_threshold,
+                    max_reorg: crate::DEFAULT_MAX_REORG,
                     network: old_state.network,
                     forks_tips: Vec::new(),
                 };
@@ -1033,6 +1131,7 @@ mod migrate {
                     headers_pool: old_state.headers_pool,
                     skip_pow_verification: old_state.skip_pow_verification,
                     gc_threshold: old_state.gc_threshold,
+                    max_reorg: crate::DEFAULT_MAX_REORG,
                     network: old_state.network,
                     forks_tips: Vec::new(),
                 };
@@ -1674,6 +1773,155 @@ mod tests {
         assert_eq!(contract.dangerous_fork_tip_height(4), Some(5));
         // Both forks do, and the highest tip of the two is reported
         assert_eq!(contract.dangerous_fork_tip_height(9), Some(9));
+    }
+
+    #[test]
+    fn test_forks_gc_removes_the_forks_branching_off_too_deep() {
+        let mut contract = init_contract_with_chained_blocks();
+
+        let block_2 = contract.get_block_hash_by_height(2).unwrap();
+        let block_9 = contract.get_block_hash_by_height(9).unwrap();
+        let outdated_fork_tip = submit_fork_block(&mut contract, &block_2, 100);
+        let recent_fork_tip = submit_fork_block(&mut contract, &block_9, 101);
+
+        contract.max_reorg = 3;
+        contract.run_forks_gc(100);
+
+        assert_eq!(
+            contract.forks_tips,
+            vec![ForkTip {
+                lca_height: 9,
+                tip_hash: recent_fork_tip.clone(),
+                tip_height: 10,
+                prefix_max_tip_height: 10,
+            }]
+        );
+        assert!(!contract.headers_pool.contains_key(&outdated_fork_tip));
+        assert!(contract.headers_pool.contains_key(&recent_fork_tip));
+        // The LCA is a main chain block and is kept
+        assert!(contract.headers_pool.contains_key(&block_2));
+    }
+
+    #[test]
+    fn test_forks_gc_resumes_a_fork_removed_in_batches() {
+        let mut contract = init_contract_with_chained_blocks();
+
+        let block_2 = contract.get_block_hash_by_height(2).unwrap();
+        let mut fork_blocks = vec![];
+        let mut prev_block_hash = block_2.clone();
+        for nonce in 100..103 {
+            prev_block_hash = submit_fork_block(&mut contract, &prev_block_hash, nonce);
+            fork_blocks.push(prev_block_hash.clone());
+        }
+
+        contract.max_reorg = 3;
+        contract.run_forks_gc(2);
+
+        assert!(!contract.headers_pool.contains_key(&fork_blocks[2]));
+        assert!(!contract.headers_pool.contains_key(&fork_blocks[1]));
+        assert!(contract.headers_pool.contains_key(&fork_blocks[0]));
+        assert_eq!(
+            contract.forks_tips,
+            vec![ForkTip {
+                lca_height: 2,
+                tip_hash: fork_blocks[0].clone(),
+                tip_height: 3,
+                prefix_max_tip_height: 3,
+            }]
+        );
+
+        contract.run_forks_gc(2);
+
+        assert!(!contract.headers_pool.contains_key(&fork_blocks[0]));
+        assert!(contract.forks_tips.is_empty());
+        assert!(contract.headers_pool.contains_key(&block_2));
+    }
+
+    #[test]
+    fn test_forks_gc_removes_a_fork_with_two_tips() {
+        let mut contract = init_contract_with_chained_blocks();
+
+        let block_2 = contract.get_block_hash_by_height(2).unwrap();
+        let shared_block = submit_fork_block(&mut contract, &block_2, 100);
+        let first_tip = submit_fork_block(&mut contract, &shared_block, 101);
+        let second_tip = submit_fork_block(&mut contract, &shared_block, 102);
+
+        contract.max_reorg = 3;
+        contract.run_forks_gc(100);
+
+        assert!(contract.forks_tips.is_empty());
+        for block_hash in [&shared_block, &first_tip, &second_tip] {
+            assert!(!contract.headers_pool.contains_key(block_hash));
+        }
+        assert!(contract.headers_pool.contains_key(&block_2));
+    }
+
+    #[test]
+    fn test_forks_gc_keeps_the_forks_within_max_reorg() {
+        let mut contract = init_contract_with_chained_blocks();
+        contract.max_reorg = 11;
+
+        let block_0 = contract.get_block_hash_by_height(0).unwrap();
+        let fork_tip = submit_fork_block(&mut contract, &block_0, 100);
+        let forks_tips_before = contract.forks_tips.clone();
+
+        contract.run_forks_gc(100);
+
+        assert_eq!(contract.forks_tips, forks_tips_before);
+        assert!(contract.headers_pool.contains_key(&fork_tip));
+    }
+
+    #[test]
+    #[should_panic(expected = "ERR_FORK_TOO_DEEP")]
+    fn test_fork_branching_off_deeper_than_max_reorg_is_rejected() {
+        let mut contract = init_contract_with_chained_blocks();
+        contract.max_reorg = 2;
+
+        let block_8 = contract.get_block_hash_by_height(8).unwrap();
+        submit_fork_block(&mut contract, &block_8, 100);
+    }
+
+    #[test]
+    fn test_fork_branching_off_exactly_at_max_reorg_is_accepted() {
+        let mut contract = init_contract_with_chained_blocks();
+        contract.max_reorg = 3;
+
+        // The main chain tip is at height 11, so this fork is exactly at the horizon the
+        // forks GC keeps
+        let block_8 = contract.get_block_hash_by_height(8).unwrap();
+        let fork_tip = submit_fork_block(&mut contract, &block_8, 100);
+
+        contract.run_forks_gc(100);
+
+        assert!(contract.headers_pool.contains_key(&fork_tip));
+        assert_eq!(contract.forks_tips.len(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "ERR_FORK_TOO_DEEP")]
+    fn test_extending_a_fork_below_max_reorg_is_rejected() {
+        let mut contract = init_contract_with_chained_blocks();
+        let block_8 = contract.get_block_hash_by_height(8).unwrap();
+        let fork_block = submit_fork_block(&mut contract, &block_8, 100);
+
+        contract.max_reorg = 1;
+        submit_fork_block(&mut contract, &fork_block, 101);
+    }
+
+    #[test]
+    #[should_panic(expected = "ERR_FORK_LCA_NOT_FOUND")]
+    fn test_fork_with_a_collected_lca_is_rejected() {
+        let mut contract = init_contract_with_chained_blocks();
+        let block_5 = contract.get_block_hash_by_height(5).unwrap();
+        let fork_block = submit_fork_block(&mut contract, &block_5, 100);
+        submit_fork_block(&mut contract, &fork_block, 101);
+
+        // The main chain GC removes the LCA of the fork
+        contract.gc_threshold = 2;
+        contract.run_mainchain_gc(20);
+
+        // Branching off the middle of the fork has to walk down to the missing LCA
+        submit_fork_block(&mut contract, &fork_block, 102);
     }
 
     #[test]
