@@ -837,6 +837,7 @@ impl BtcLightClient {
 
         // The fork is the main chain now, and the old main chain is a fork branching off the LCA
         self.remove_fork_tip(&fork_tip_hash, fork_tip_height);
+        self.update_forks_lca(lca_height);
         self.insert_fork_tip(
             lca_height,
             old_main_chain_tip_hash,
@@ -886,7 +887,7 @@ impl BtcLightClient {
                 (self.forks_tips[index].lca_height, Some(index))
             } else {
                 (
-                    self.fork_lca_height(header)
+                    self.lca_height_by_hash(prev_block_hash.clone())
                         .unwrap_or_else(|| env::panic_str("ERR_FORK_LCA_NOT_FOUND")),
                     None,
                 )
@@ -997,9 +998,7 @@ impl BtcLightClient {
     /// Height of the lowest common ancestor of the fork the block belongs to and the main
     /// chain, found by walking the fork down to the first block of the main chain.
     /// `None` if the walk runs into a block which is not stored anymore
-    fn fork_lca_height(&self, header: &ExtendedHeader) -> Option<u64> {
-        let mut block_hash = header.block_header.prev_block_hash.clone();
-
+    fn lca_height_by_hash(&self, mut block_hash: H256) -> Option<u64> {
         loop {
             if let Some(height) = self.mainchain_header_to_height.get(&block_hash) {
                 return Some(height);
@@ -1010,6 +1009,28 @@ impl BtcLightClient {
                 .get(&block_hash)?
                 .block_header
                 .prev_block_hash;
+        }
+    }
+
+    /// Restores the LCA of the tracked forks after a reorg at `reorg_height`: the forks which
+    /// branched off the replaced part of the main chain branch off the reorg point now
+    fn update_forks_lca(&mut self, reorg_height: u64) {
+        // The forks branching off below the reorg point are not affected
+        let from = self
+            .forks_tips
+            .partition_point(|fork_tip| fork_tip.lca_height < reorg_height);
+
+        // Reinserting keeps the list sorted, as the updated LCA may be both lower and higher
+        for fork_tip in self.forks_tips.split_off(from) {
+            let lca_height = if fork_tip.lca_height > reorg_height {
+                reorg_height
+            } else {
+                // The reorg point itself or the fork which won: only a walk can tell
+                self.lca_height_by_hash(fork_tip.tip_hash.clone())
+                    .unwrap_or(reorg_height)
+            };
+
+            self.insert_fork_tip(lca_height, fork_tip.tip_hash, fork_tip.tip_height);
         }
     }
 
@@ -1931,6 +1952,79 @@ mod tests {
 
         // Branching off the middle of the fork has to walk down to the missing LCA
         submit_fork_block(&mut contract, &fork_block, 102);
+    }
+
+    #[test]
+    fn test_reorg_updates_the_lca_of_the_other_forks() {
+        let mut contract = init_contract_with_chained_blocks();
+        let old_main_chain_tip = contract.get_block_hash_by_height(11).unwrap();
+        let block_3 = contract.get_block_hash_by_height(3).unwrap();
+        let block_8 = contract.get_block_hash_by_height(8).unwrap();
+        let block_10 = contract.get_block_hash_by_height(10).unwrap();
+
+        // A branch below the reorg point and a branch off the old main chain above it
+        let untouched_tip = submit_fork_block(&mut contract, &block_3, 100);
+        let old_chain_branch_tip = submit_fork_block(&mut contract, &block_10, 101);
+
+        // The fork about to win, with a branch of its own hanging off its middle
+        let winner_1 = submit_fork_block(&mut contract, &block_8, 102);
+        let winner_2 = submit_fork_block(&mut contract, &winner_1, 103);
+        let winner_3 = submit_fork_block(&mut contract, &winner_2, 104);
+        let winner_branch_tip = submit_fork_block(&mut contract, &winner_2, 105);
+
+        // The fourth block outweighs the three main chain blocks above height 8
+        let winner_tip = submit_fork_block(&mut contract, &winner_3, 106);
+
+        assert_eq!(contract.mainchain_tip_blockhash, winner_tip);
+        assert_eq!(
+            contract.forks_tips,
+            vec![
+                ForkTip {
+                    lca_height: 3,
+                    tip_hash: untouched_tip.clone(),
+                    tip_height: 4,
+                    prefix_max_tip_height: 4,
+                },
+                // Branched off the old main chain at height 10, which is a fork now
+                ForkTip {
+                    lca_height: 8,
+                    tip_hash: old_chain_branch_tip.clone(),
+                    tip_height: 11,
+                    prefix_max_tip_height: 11,
+                },
+                ForkTip {
+                    lca_height: 8,
+                    tip_hash: old_main_chain_tip.clone(),
+                    tip_height: 11,
+                    prefix_max_tip_height: 11,
+                },
+                // Branched off the winner, which is the main chain now
+                ForkTip {
+                    lca_height: 10,
+                    tip_hash: winner_branch_tip.clone(),
+                    tip_height: 11,
+                    prefix_max_tip_height: 11,
+                }
+            ]
+        );
+
+        // With the LCA of the winner branch left at the reorg point, the GC would collect it
+        // here as well
+        contract.max_reorg = 2;
+        contract.run_forks_gc(100);
+
+        assert_eq!(
+            contract.forks_tips,
+            vec![ForkTip {
+                lca_height: 10,
+                tip_hash: winner_branch_tip,
+                tip_height: 11,
+                prefix_max_tip_height: 11,
+            }]
+        );
+        assert!(!contract.headers_pool.contains_key(&old_main_chain_tip));
+        assert!(!contract.headers_pool.contains_key(&old_chain_branch_tip));
+        assert!(!contract.headers_pool.contains_key(&untouched_tip));
     }
 
     #[test]
