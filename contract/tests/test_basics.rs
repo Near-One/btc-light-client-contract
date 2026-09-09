@@ -199,10 +199,9 @@ mod test_basics {
         Ok(base64::engine::general_purpose::STANDARD.decode(code_base64)?)
     }
 
-    /// Initializes a sandbox contract from the wasm currently deployed on
-    /// mainnet (`btc-client.bridge.near`, which is already on the current state
-    /// layout), upgrades it to the locally built wasm and verifies that
-    /// `migrate` detects the up-to-date layout and keeps the state intact.
+    /// Initializes a sandbox contract from the wasm currently deployed on mainnet
+    /// (`btc-client.bridge.near`, which is on the `V3` state layout), upgrades it to the
+    /// locally built wasm and verifies that `migrate` keeps the state intact.
     #[tokio::test]
     async fn test_migration_from_mainnet_wasm() -> Result<(), Box<dyn std::error::Error>> {
         let sandbox = near_workspaces::sandbox().await?;
@@ -232,9 +231,8 @@ mod test_basics {
             .await?
             .json::<ExtendedHeader>()?;
 
-        // Upgrade to the current wasm and migrate. The mainnet contract was
-        // already migrated to the current layout, so this exercises the
-        // "state is already in the current layout" no-op path.
+        // The mainnet contract is on the `V3` layout, so this exercises the
+        // V3 -> current migration path.
         let new_wasm = near_workspaces::compile_project("./").await?;
         contract
             .as_account()

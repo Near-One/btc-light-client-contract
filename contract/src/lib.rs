@@ -2,7 +2,7 @@ use btc_types::contract_args::{
     InitArgs, ProofArgs, ProofArgsV2, TxBlockMeta, TxInclusionInfo, TxInclusionProof,
 };
 use btc_types::hash::H256;
-use btc_types::header::{BlockHeader, ExtendedHeader, Header, LightHeader};
+use btc_types::header::{BlockHeader, ExtendedHeader, ForkTip, Header, LightHeader};
 use btc_types::network::Network;
 use btc_types::u256::U256;
 #[cfg(not(feature = "dogecoin"))]
@@ -121,6 +121,11 @@ pub struct BtcLightClient {
 
     // Network type Mainnet/Testnet
     network: Network,
+
+    // Tips of all the tracked forks, sorted by `lca_height` in ascending order: fresh forks
+    // branch off close to the main chain tip, so the end of the vector is the part modified
+    // often, while the beginning is consumed by GC
+    forks_tips: Vec<ForkTip>,
 }
 
 #[trusted_relayer(
@@ -148,6 +153,7 @@ impl BtcLightClient {
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
             network: args.network,
+            forks_tips: Vec::new(),
         };
 
         // Make the contract itself super admin. This allows us to grant any role in the
@@ -818,6 +824,20 @@ mod migrate {
         network: Network,
     }
 
+    /// State layout used after #116 and before the fork tracking, i.e. the current
+    /// layout without the `forks_tips` field.
+    #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+    pub struct BtcLightClientV3 {
+        mainchain_height_to_header: LookupMap<u64, H256>,
+        mainchain_header_to_height: LookupMap<H256, u64>,
+        mainchain_tip_blockhash: H256,
+        mainchain_initial_blockhash: H256,
+        headers_pool: LookupMap<H256, ExtendedHeader>,
+        skip_pow_verification: bool,
+        gc_threshold: u64,
+        network: Network,
+    }
+
     #[near]
     impl BtcLightClient {
         /// Migrates the contract state to the current `BtcLightClient` version.
@@ -825,6 +845,8 @@ mod migrate {
         /// The stored state variant is detected automatically. Borsh requires the
         /// whole buffer to be consumed, so exactly one of the layouts can parse:
         /// * current layout: returned unchanged (re-running `migrate` is a no-op)
+        /// * `BtcLightClientV3` (after #116, before fork tracking): starts with an empty
+        ///   list of fork tips
         /// * `BtcLightClientV2` (#101..#116): drops `used_aux_parent_blocks`;
         ///   `network` is carried over from the old state
         ///
@@ -847,6 +869,21 @@ mod migrate {
                 return state;
             }
 
+            if let Ok(old_state) = BtcLightClientV3::try_from_slice(&raw_state) {
+                log!("migrating state from the V3 layout");
+                return Self {
+                    mainchain_height_to_header: old_state.mainchain_height_to_header,
+                    mainchain_header_to_height: old_state.mainchain_header_to_height,
+                    mainchain_tip_blockhash: old_state.mainchain_tip_blockhash,
+                    mainchain_initial_blockhash: old_state.mainchain_initial_blockhash,
+                    headers_pool: old_state.headers_pool,
+                    skip_pow_verification: old_state.skip_pow_verification,
+                    gc_threshold: old_state.gc_threshold,
+                    network: old_state.network,
+                    forks_tips: Vec::new(),
+                };
+            }
+
             if let Ok(old_state) = BtcLightClientV2::try_from_slice(&raw_state) {
                 log!("migrating state from the V2 layout");
                 return Self {
@@ -858,6 +895,7 @@ mod migrate {
                     skip_pow_verification: old_state.skip_pow_verification,
                     gc_threshold: old_state.gc_threshold,
                     network: old_state.network,
+                    forks_tips: Vec::new(),
                 };
             }
 
