@@ -159,7 +159,7 @@ impl BtcLightClient {
             mainchain_tip_blockhash: H256::default(),
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
-            max_reorg: DEFAULT_MAX_REORG,
+            max_reorg: std::cmp::min(DEFAULT_MAX_REORG, args.gc_threshold),
             network: args.network,
             forks_tips: Vec::new(),
         };
@@ -279,6 +279,24 @@ impl BtcLightClient {
         }
 
         block_hashes
+    }
+
+    pub fn get_max_reorg(&self) -> u64 {
+        self.max_reorg
+    }
+
+    /// Returns the tracked fork tips, sorted by the height of their lowest common ancestor
+    /// with the main chain in ascending order, so the most recent forks come last
+    ///
+    /// @param `skip` how many tips to skip from the beginning of the list
+    /// @param `limit` how many tips to return at most
+    pub fn get_forks_tips(&self, skip: u64, limit: u64) -> Vec<ForkTip> {
+        self.forks_tips
+            .iter()
+            .skip(usize::try_from(skip).unwrap_or(usize::MAX))
+            .take(usize::try_from(limit).unwrap_or(usize::MAX))
+            .cloned()
+            .collect()
     }
 
     /// Verifies that a transaction is included in a block at a given block height
@@ -467,8 +485,16 @@ impl BtcLightClient {
     }
 
     /// Sets how far below the main chain tip a fork may branch off to be tracked
+    ///
+    /// # Panics
+    /// If `max_reorg` exceeds `gc_threshold`: the LCA of a fork has to stay in storage
     #[access_control_any(roles(Role::DAO))]
     pub fn set_max_reorg(&mut self, max_reorg: u64) {
+        require!(
+            max_reorg <= self.gc_threshold,
+            "ERR_MAX_REORG_ABOVE_GC_THRESHOLD"
+        );
+
         log!("Max reorg set to {}", max_reorg);
         self.max_reorg = max_reorg;
     }
@@ -1146,7 +1172,7 @@ mod migrate {
                     headers_pool: old_state.headers_pool,
                     skip_pow_verification: old_state.skip_pow_verification,
                     gc_threshold: old_state.gc_threshold,
-                    max_reorg: crate::DEFAULT_MAX_REORG,
+                    max_reorg: std::cmp::min(crate::DEFAULT_MAX_REORG, old_state.gc_threshold),
                     network: old_state.network,
                     forks_tips: Vec::new(),
                 };
@@ -1162,7 +1188,7 @@ mod migrate {
                     headers_pool: old_state.headers_pool,
                     skip_pow_verification: old_state.skip_pow_verification,
                     gc_threshold: old_state.gc_threshold,
-                    max_reorg: crate::DEFAULT_MAX_REORG,
+                    max_reorg: std::cmp::min(crate::DEFAULT_MAX_REORG, old_state.gc_threshold),
                     network: old_state.network,
                     forks_tips: Vec::new(),
                 };
@@ -2025,6 +2051,42 @@ mod tests {
         assert!(!contract.headers_pool.contains_key(&old_main_chain_tip));
         assert!(!contract.headers_pool.contains_key(&old_chain_branch_tip));
         assert!(!contract.headers_pool.contains_key(&untouched_tip));
+    }
+
+    #[test]
+    fn test_max_reorg_is_capped_by_the_gc_threshold() {
+        let contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
+
+        assert_eq!(contract.gc_threshold, 3);
+        assert_eq!(contract.get_max_reorg(), 3);
+    }
+
+    #[test]
+    fn test_max_reorg_defaults_below_the_gc_threshold() {
+        let contract = init_contract_with_chained_blocks();
+
+        assert_eq!(contract.gc_threshold, DEFAULT_MAX_REORG);
+        assert_eq!(contract.get_max_reorg(), DEFAULT_MAX_REORG);
+    }
+
+    #[test]
+    fn test_get_forks_tips_skips_and_limits() {
+        let mut contract = init_contract_with_chained_blocks();
+        for (nonce, lca_height) in [(100, 8), (101, 3), (102, 5)] {
+            let block_hash = contract.get_block_hash_by_height(lca_height).unwrap();
+            submit_fork_block(&mut contract, &block_hash, nonce);
+        }
+
+        assert_eq!(contract.get_forks_tips(0, 10), contract.forks_tips);
+        assert_eq!(
+            contract.get_forks_tips(1, 1),
+            contract.forks_tips[1..2].to_vec()
+        );
+        assert_eq!(
+            contract.get_forks_tips(2, 10),
+            contract.forks_tips[2..].to_vec()
+        );
+        assert!(contract.get_forks_tips(3, 10).is_empty());
     }
 
     #[test]

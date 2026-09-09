@@ -4,7 +4,7 @@ mod test_basics {
         InitArgs, ProofArgs, ProofArgsV2, TxInclusionInfo, TxInclusionProof,
     };
     use btc_types::hash::H256;
-    use btc_types::header::{ExtendedHeader, Header};
+    use btc_types::header::{ExtendedHeader, ForkTip, Header};
     use near_sdk::NearToken;
     use near_workspaces::{Account, Contract};
     use serde_json::json;
@@ -578,6 +578,14 @@ mod test_basics {
             .await?;
         assert!(outcome.is_success(), "{:?}", outcome.failures());
 
+        // The horizon may not exceed gc_threshold, which is 20 for this contract
+        let outcome = user_account
+            .call(contract.id(), "set_max_reorg")
+            .args_json(json!({ "max_reorg": 21 }))
+            .transact()
+            .await?;
+        assert!(outcome.is_failure());
+
         // No reorg is expected at all from now on, so every tracked fork is outdated
         let outcome = user_account
             .call(contract.id(), "set_max_reorg")
@@ -585,6 +593,16 @@ mod test_basics {
             .transact()
             .await?;
         assert!(outcome.is_success(), "{:?}", outcome.failures());
+
+        assert_eq!(
+            contract
+                .view("get_max_reorg")
+                .args_json(json!({}))
+                .await?
+                .json::<u64>()?,
+            0
+        );
+        assert!(!get_forks_tips(&contract).await?.is_empty());
 
         // A submission collects as many fork blocks as it brings blocks, and these two are
         // resubmissions of a stored block, so the call only frees storage
@@ -624,8 +642,19 @@ mod test_basics {
             contract.view_account().await.unwrap().storage_usage,
             storage_after_gc
         );
+        assert!(get_forks_tips(&contract).await?.is_empty());
 
         Ok(())
+    }
+
+    async fn get_forks_tips(
+        contract: &Contract,
+    ) -> Result<Vec<ForkTip>, Box<dyn std::error::Error>> {
+        Ok(contract
+            .view("get_forks_tips")
+            .args_json(json!({ "skip": 0, "limit": 100 }))
+            .await?
+            .json::<Vec<ForkTip>>()?)
     }
 
     #[tokio::test]
