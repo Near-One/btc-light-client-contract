@@ -48,7 +48,7 @@ pub enum Role {
     PauseManager,
     /// Allows to use contract API even after contract is paused
     UnrestrictedSubmitBlocks,
-    // Allows to use `run_mainchain_gc` API on a paused contract
+    // Allows to use the GC API on a paused contract
     UnrestrictedRunGC,
     /// May successfully call any of the protected `Upgradable` methods since below it is passed to
     /// every attribute of `access_control_roles`.
@@ -199,6 +199,7 @@ impl BtcLightClient {
         }
 
         self.run_mainchain_gc(num_of_headers);
+        self.run_forks_gc(num_of_headers);
         let diff_storage_usage = env::storage_usage().saturating_sub(initial_storage);
         let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
 
@@ -517,6 +518,52 @@ impl BtcLightClient {
                 .get(&end_removal_height)
                 .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST));
         }
+    }
+
+    /// Public call to run GC on forks. Removes the forks branching off deeper than
+    /// `max_reorg` below the main chain tip.
+    /// `batch_size` is how many block headers should be removed in the execution
+    ///
+    /// # Panics
+    /// If tip blockheader is not in a header pool
+    #[pause(except(roles(Role::UnrestrictedRunGC)))]
+    pub fn run_forks_gc(&mut self, batch_size: u64) {
+        let cutoff_height = self.get_last_block_height().saturating_sub(self.max_reorg);
+        // The outdated forks are a prefix of `forks_tips`, as it is sorted by `lca_height`
+        let outdated_forks = self
+            .forks_tips
+            .partition_point(|fork_tip| fork_tip.lca_height < cutoff_height);
+
+        if outdated_forks == 0 {
+            return;
+        }
+
+        let mut budget = batch_size;
+        let mut removed_forks = 0;
+
+        for index in 0..outdated_forks {
+            let fork_tip = self.forks_tips[index].clone();
+            let (removed, block_left) = self.remove_fork_blocks(&fork_tip, budget);
+            budget -= removed;
+
+            if let Some((tip_hash, tip_height)) = block_left {
+                // Leave the tip on the highest block left, so that the next call resumes here
+                self.forks_tips[index].tip_hash = tip_hash;
+                self.forks_tips[index].tip_height = tip_height;
+                break;
+            }
+
+            removed_forks = index + 1;
+
+            if budget == 0 {
+                break;
+            }
+        }
+
+        env::log_str(&format!("Num of forks removed {removed_forks}"));
+
+        self.forks_tips.drain(..removed_forks);
+        self.recompute_prefix_max_tip_height(0);
     }
 }
 
@@ -845,8 +892,7 @@ impl BtcLightClient {
                 )
             };
 
-        // A fork branching off this deep is not expected to win a reorg, so it is not stored
-        // at all: this is the very criterion the forks GC collects by
+        // Complementary to the forks GC criterion, so an accepted fork is never outdated at once
         require!(
             main_chain_tip_height.saturating_sub(lca_height) <= self.max_reorg,
             "ERR_FORK_TOO_DEEP"
@@ -914,42 +960,6 @@ impl BtcLightClient {
         }
 
         None
-    }
-
-    /// Removes the forks branching off deeper than `max_reorg` below the main chain tip, at
-    /// most `batch_size` block headers per call. Such forks are a prefix of `forks_tips`, as
-    /// it is sorted by `lca_height`
-    #[allow(dead_code)]
-    fn run_forks_gc(&mut self, batch_size: u64) {
-        let cutoff_height = self.get_last_block_height().saturating_sub(self.max_reorg);
-        let outdated_forks = self
-            .forks_tips
-            .partition_point(|fork_tip| fork_tip.lca_height < cutoff_height);
-
-        let mut budget = batch_size;
-        let mut removed_forks = 0;
-
-        for index in 0..outdated_forks {
-            let fork_tip = self.forks_tips[index].clone();
-            let (removed, block_left) = self.remove_fork_blocks(&fork_tip, budget);
-            budget -= removed;
-
-            if let Some((tip_hash, tip_height)) = block_left {
-                // Leave the tip on the highest block left, so that the next call resumes here
-                self.forks_tips[index].tip_hash = tip_hash;
-                self.forks_tips[index].tip_height = tip_height;
-                break;
-            }
-
-            removed_forks = index + 1;
-
-            if budget == 0 {
-                break;
-            }
-        }
-
-        self.forks_tips.drain(..removed_forks);
-        self.recompute_prefix_max_tip_height(0);
     }
 
     /// Removes up to `limit` blocks of the fork, walking down from its tip. Returns how many
@@ -1886,8 +1896,7 @@ mod tests {
         let mut contract = init_contract_with_chained_blocks();
         contract.max_reorg = 3;
 
-        // The main chain tip is at height 11, so this fork is exactly at the horizon the
-        // forks GC keeps
+        // The main chain tip is at height 11, so this fork is exactly at the horizon
         let block_8 = contract.get_block_hash_by_height(8).unwrap();
         let fork_tip = submit_fork_block(&mut contract, &block_8, 100);
 

@@ -550,6 +550,84 @@ mod test_basics {
         Ok(())
     }
 
+    /// The forks GC runs on every `submit_blocks`, releasing the storage the outdated forks
+    /// occupy
+    #[tokio::test]
+    async fn test_forks_gc() -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_contract().await?;
+        let (main_block, fork_1, _fork_2) = make_reorg_test_blocks();
+
+        // main_block extends the tip, fork_1 competes with it at height 2. On top of that the
+        // init blocks are all children of the genesis, so there are forks at height 1 as well
+        for header in [main_block.clone(), fork_1] {
+            let outcome = user_account
+                .call(contract.id(), "submit_blocks")
+                .args_borsh([header].to_vec())
+                .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+                .transact()
+                .await?;
+            assert!(outcome.is_success(), "{:?}", outcome.failures());
+        }
+
+        let storage_with_forks = contract.view_account().await.unwrap().storage_usage;
+
+        let outcome = contract
+            .call("acl_grant_role")
+            .args_json(json!({ "role": "DAO", "account_id": user_account.id() }))
+            .transact()
+            .await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+
+        // No reorg is expected at all from now on, so every tracked fork is outdated
+        let outcome = user_account
+            .call(contract.id(), "set_max_reorg")
+            .args_json(json!({ "max_reorg": 0 }))
+            .transact()
+            .await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+
+        // A submission collects as many fork blocks as it brings blocks, and these two are
+        // resubmissions of a stored block, so the call only frees storage
+        let outcome = user_account
+            .call(contract.id(), "submit_blocks")
+            .args_borsh([main_block.clone(), main_block].to_vec())
+            .deposit(STORAGE_DEPOSIT_PER_BLOCK)
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+
+        let storage_after_submit = contract.view_account().await.unwrap().storage_usage;
+        assert!(storage_after_submit < storage_with_forks);
+
+        let outcome = user_account
+            .call(contract.id(), "run_forks_gc")
+            .args_json(json!({ "batch_size": 100 }))
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+
+        let storage_after_gc = contract.view_account().await.unwrap().storage_usage;
+        assert!(storage_after_gc < storage_after_submit);
+
+        // Nothing is left to collect
+        let outcome = user_account
+            .call(contract.id(), "run_forks_gc")
+            .args_json(json!({ "batch_size": 100 }))
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+
+        assert_eq!(
+            contract.view_account().await.unwrap().storage_usage,
+            storage_after_gc
+        );
+
+        Ok(())
+    }
+
     #[tokio::test]
     async fn test_payment_on_block_submission() -> Result<(), Box<dyn std::error::Error>> {
         // gc_threshold=200: init (12 blocks) is well below threshold, so the first few
