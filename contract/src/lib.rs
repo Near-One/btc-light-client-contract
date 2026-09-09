@@ -672,6 +672,7 @@ impl BtcLightClient {
             let last_main_chain_block_height = main_chain_tip_header.block_height;
             let total_main_chain_chainwork = main_chain_tip_header.chain_work;
 
+            self.update_forks_tips(&current_header);
             self.store_fork_header(&current_header);
 
             // Current chainwork is higher than on a current mainchain, let's promote the fork
@@ -785,6 +786,104 @@ impl BtcLightClient {
     /// Stores and handles fork submissions
     fn store_fork_header(&mut self, header: &ExtendedHeader) {
         self.headers_pool.insert(&header.block_hash, header);
+    }
+
+    /// Registers a fork block in `forks_tips`: either moves the tip of the fork the block
+    /// extends, or inserts a new tip keeping the list sorted by `lca_height`
+    fn update_forks_tips(&mut self, header: &ExtendedHeader) {
+        // Resubmitting a block, a main chain one included, goes through this very code path
+        if self.headers_pool.contains_key(&header.block_hash) {
+            return;
+        }
+
+        let prev_block_hash = &header.block_header.prev_block_hash;
+
+        let lca_height =
+            if let Some(lca_height) = self.mainchain_header_to_height.get(prev_block_hash) {
+                lca_height
+            } else if let Some(index) = self.find_fork_tip(prev_block_hash, header.block_height) {
+                self.forks_tips[index].tip_hash = header.block_hash.clone();
+                self.forks_tips[index].tip_height = header.block_height;
+                self.recompute_prefix_max_tip_height(index);
+                return;
+            } else {
+                self.fork_lca_height(header)
+            };
+
+        // Insert after the tips with an equal LCA, so that the common case is a plain append
+        let index = self
+            .forks_tips
+            .partition_point(|fork_tip| fork_tip.lca_height <= lca_height);
+
+        self.forks_tips.insert(
+            index,
+            ForkTip {
+                lca_height,
+                tip_hash: header.block_hash.clone(),
+                tip_height: header.block_height,
+                prefix_max_tip_height: 0,
+            },
+        );
+        self.recompute_prefix_max_tip_height(index);
+    }
+
+    /// Looks up the tip `block_hash`, the parent of a block at `block_height`.
+    ///
+    /// Searches backwards, as the recently added tips are at the end, and stops once
+    /// `prefix_max_tip_height` drops below the height the tip must have
+    fn find_fork_tip(&self, block_hash: &H256, block_height: u64) -> Option<usize> {
+        let parent_height = block_height.saturating_sub(1);
+
+        for (index, fork_tip) in self.forks_tips.iter().enumerate().rev() {
+            if fork_tip.prefix_max_tip_height < parent_height {
+                return None;
+            }
+
+            if fork_tip.tip_hash == *block_hash {
+                return Some(index);
+            }
+        }
+
+        None
+    }
+
+    /// Height of the lowest common ancestor of the fork the block belongs to and the main
+    /// chain, found by walking the fork down to the first block of the main chain
+    fn fork_lca_height(&self, header: &ExtendedHeader) -> u64 {
+        let mut block_hash = header.block_header.prev_block_hash.clone();
+
+        loop {
+            if let Some(height) = self.mainchain_header_to_height.get(&block_hash) {
+                return height;
+            }
+
+            block_hash = self
+                .headers_pool
+                .get(&block_hash)
+                .unwrap_or_else(|| env::panic_str("PrevBlockNotFound"))
+                .block_header
+                .prev_block_hash;
+        }
+    }
+
+    /// Restores the `prefix_max_tip_height` invariant broken by the change at `changed_index`
+    fn recompute_prefix_max_tip_height(&mut self, changed_index: usize) {
+        let mut prefix_max = if changed_index == 0 {
+            0
+        } else {
+            self.forks_tips[changed_index - 1].prefix_max_tip_height
+        };
+
+        for (index, fork_tip) in self.forks_tips.iter_mut().enumerate().skip(changed_index) {
+            prefix_max = std::cmp::max(prefix_max, fork_tip.tip_height);
+
+            // The following tips depend on the stored maximum only, so they are correct too
+            if index > changed_index && fork_tip.prefix_max_tip_height == prefix_max {
+                return;
+            }
+
+            fork_tip.prefix_max_tip_height = prefix_max;
+        }
     }
 }
 
@@ -1219,6 +1318,231 @@ mod tests {
                 ]),
                 block_height: 1,
             }
+        );
+    }
+
+    /// Genesis plus `count` properly chained blocks, i.e. a main chain without any forks
+    fn make_chained_submit_blocks(count: u32) -> Vec<Header> {
+        let genesis = genesis_block_header();
+        let mut prev_block_hash = genesis.block_hash();
+        let mut blocks = vec![genesis];
+
+        for nonce in 0..count {
+            let header = make_fork_block(&prev_block_hash, nonce);
+            prev_block_hash = header.block_hash();
+            blocks.push(header);
+        }
+
+        blocks
+    }
+
+    fn make_fork_block(prev_block_hash: &H256, nonce: u32) -> Header {
+        serde_json::from_value(serde_json::json!({
+            "version": 1,
+            "prev_block_hash": prev_block_hash.to_string(),
+            "merkle_root": "0000000000000000000000000000000000000000000000000000000000000000",
+            "time": 1_231_006_506u32 + nonce,
+            "bits": 0x207f_ffffu32,
+            "nonce": nonce,
+        }))
+        .unwrap()
+    }
+
+    /// A contract whose main chain tip is at height 11
+    fn init_contract_with_chained_blocks() -> BtcLightClient {
+        let submit_blocks = make_chained_submit_blocks(11);
+
+        BtcLightClient::init(InitArgs {
+            network: Network::Mainnet,
+            genesis_block_hash: submit_blocks[0].block_hash(),
+            genesis_block_height: 0,
+            skip_pow_verification: true,
+            gc_threshold: 100,
+            submit_blocks,
+        })
+    }
+
+    fn submit_fork_block(
+        contract: &mut BtcLightClient,
+        prev_block_hash: &H256,
+        nonce: u32,
+    ) -> H256 {
+        let header = make_fork_block(prev_block_hash, nonce);
+        let block_hash = header.block_hash();
+        contract.submit_block_header(header, contract.skip_pow_verification);
+        block_hash
+    }
+
+    #[test]
+    fn test_main_chain_blocks_do_not_create_fork_tips() {
+        let mut contract = init_contract_with_chained_blocks();
+        assert!(contract.forks_tips.is_empty());
+
+        // Resubmitting a main chain block goes through the fork submission path
+        let block_5 = contract.get_block_hash_by_height(5).unwrap();
+        let header = contract.headers_pool.get(&block_5).unwrap();
+        assert_eq!(header.block_height, 5);
+
+        contract.submit_block_header(header.block_header, contract.skip_pow_verification);
+
+        assert!(contract.forks_tips.is_empty());
+    }
+
+    #[test]
+    fn test_fork_off_the_main_chain_creates_a_tip() {
+        let mut contract = init_contract_with_chained_blocks();
+        let block_5 = contract.get_block_hash_by_height(5).unwrap();
+        let fork_tip_hash = submit_fork_block(&mut contract, &block_5, 100);
+
+        assert_eq!(
+            contract.forks_tips,
+            vec![ForkTip {
+                lca_height: 5,
+                tip_hash: fork_tip_hash,
+                tip_height: 6,
+                prefix_max_tip_height: 6,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_fork_extending_a_known_tip_moves_it() {
+        let mut contract = init_contract_with_chained_blocks();
+        let block_5 = contract.get_block_hash_by_height(5).unwrap();
+        let first_fork_block = submit_fork_block(&mut contract, &block_5, 100);
+        let fork_tip_hash = submit_fork_block(&mut contract, &first_fork_block, 101);
+
+        assert_eq!(
+            contract.forks_tips,
+            vec![ForkTip {
+                lca_height: 5,
+                tip_hash: fork_tip_hash,
+                tip_height: 7,
+                prefix_max_tip_height: 7,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_fork_branching_off_the_middle_of_a_fork_creates_a_tip() {
+        let mut contract = init_contract_with_chained_blocks();
+        let block_5 = contract.get_block_hash_by_height(5).unwrap();
+        let first_fork_block = submit_fork_block(&mut contract, &block_5, 100);
+        let first_tip = submit_fork_block(&mut contract, &first_fork_block, 101);
+        // Branches off a block which is neither a main chain block nor a known tip
+        let second_tip = submit_fork_block(&mut contract, &first_fork_block, 102);
+
+        assert_eq!(
+            contract.forks_tips,
+            vec![
+                ForkTip {
+                    lca_height: 5,
+                    tip_hash: first_tip,
+                    tip_height: 7,
+                    prefix_max_tip_height: 7,
+                },
+                ForkTip {
+                    lca_height: 5,
+                    tip_hash: second_tip,
+                    tip_height: 7,
+                    prefix_max_tip_height: 7,
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_fork_tips_are_sorted_by_lca_height() {
+        let mut contract = init_contract_with_chained_blocks();
+        let mut tips = vec![];
+
+        // Submitted out of order: the tip with the deepest LCA comes last
+        for (nonce, lca_height) in [(100, 8), (101, 3), (102, 5)] {
+            let block_hash = contract.get_block_hash_by_height(lca_height).unwrap();
+            tips.push((
+                lca_height,
+                submit_fork_block(&mut contract, &block_hash, nonce),
+            ));
+        }
+
+        tips.sort_by_key(|(lca_height, _)| *lca_height);
+        assert_eq!(
+            contract.forks_tips,
+            tips.into_iter()
+                .map(|(lca_height, tip_hash)| ForkTip {
+                    lca_height,
+                    tip_hash,
+                    tip_height: lca_height + 1,
+                    prefix_max_tip_height: lca_height + 1,
+                })
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_extending_the_oldest_tip_is_still_found() {
+        let mut contract = init_contract_with_chained_blocks();
+        let block_3 = contract.get_block_hash_by_height(3).unwrap();
+        let block_8 = contract.get_block_hash_by_height(8).unwrap();
+
+        let old_fork_block = submit_fork_block(&mut contract, &block_3, 100);
+        let recent_tip = submit_fork_block(&mut contract, &block_8, 101);
+        // The extended tip is the first in the list, behind a tip with a higher prefix maximum
+        let old_fork_tip = submit_fork_block(&mut contract, &old_fork_block, 102);
+
+        assert_eq!(
+            contract.forks_tips,
+            vec![
+                ForkTip {
+                    lca_height: 3,
+                    tip_hash: old_fork_tip,
+                    tip_height: 5,
+                    prefix_max_tip_height: 5,
+                },
+                ForkTip {
+                    lca_height: 8,
+                    tip_hash: recent_tip,
+                    tip_height: 9,
+                    prefix_max_tip_height: 9,
+                }
+            ]
+        );
+    }
+
+    #[test]
+    fn test_fork_of_a_fork_next_to_an_older_tip() {
+        let mut contract = init_contract_with_chained_blocks();
+        let block_3 = contract.get_block_hash_by_height(3).unwrap();
+        let block_8 = contract.get_block_hash_by_height(8).unwrap();
+
+        let old_fork_tip = submit_fork_block(&mut contract, &block_3, 100);
+        let branching_block = submit_fork_block(&mut contract, &block_8, 101);
+        let first_tip = submit_fork_block(&mut contract, &branching_block, 102);
+        // The tip search stops before the older tip, so the LCA is computed by walking
+        let second_tip = submit_fork_block(&mut contract, &branching_block, 103);
+
+        assert_eq!(
+            contract.forks_tips,
+            vec![
+                ForkTip {
+                    lca_height: 3,
+                    tip_hash: old_fork_tip,
+                    tip_height: 4,
+                    prefix_max_tip_height: 4,
+                },
+                ForkTip {
+                    lca_height: 8,
+                    tip_hash: first_tip,
+                    tip_height: 10,
+                    prefix_max_tip_height: 10,
+                },
+                ForkTip {
+                    lca_height: 8,
+                    tip_hash: second_tip,
+                    tip_height: 10,
+                    prefix_max_tip_height: 10,
+                }
+            ]
         );
     }
 
