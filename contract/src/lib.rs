@@ -339,7 +339,7 @@ impl BtcLightClient {
     /// threshold (the caller can derive the confirmation depth from the returned heights).
     ///
     /// @param `args` see `TxInclusionProof`
-    /// @return `Some(TxInclusionInfo { tx_block_height, mainchain_tip_height })` if the
+    /// @return `Some(TxInclusionInfo)` with the block heights and the most dangerous fork if the
     ///         referenced block is part of the current main chain and the merkle proof
     ///         reconstructs the block's merkle root; `None` if the merkle proof does not match.
     ///
@@ -386,6 +386,7 @@ impl BtcLightClient {
         (computed_root == meta.expected_merkle_root).then_some(TxInclusionInfo {
             tx_block_height: meta.target_block_height,
             mainchain_tip_height: meta.tip_block_height,
+            dangerous_fork_tip_height: self.dangerous_fork_tip_height(meta.target_block_height),
         })
     }
 
@@ -444,6 +445,7 @@ impl BtcLightClient {
             Some(TxInclusionInfo {
                 tx_block_height,
                 mainchain_tip_height,
+                ..
             }) => {
                 require!(
                     mainchain_tip_height.saturating_sub(tx_block_height) + 1 >= confirmations,
@@ -853,6 +855,18 @@ impl BtcLightClient {
             self.forks_tips.remove(index);
             self.recompute_prefix_max_tip_height(index);
         }
+    }
+
+    /// Tip height of the most dangerous fork for a block at `block_height`: the highest tip
+    /// among the forks branching off below the block, i.e. the ones not containing it
+    fn dangerous_fork_tip_height(&self, block_height: u64) -> Option<u64> {
+        let dangerous_forks = self
+            .forks_tips
+            .partition_point(|fork_tip| fork_tip.lca_height < block_height);
+
+        dangerous_forks
+            .checked_sub(1)
+            .map(|index| self.forks_tips[index].prefix_max_tip_height)
     }
 
     /// Looks up the tip `tip_hash` of height `tip_height`.
@@ -1630,6 +1644,36 @@ mod tests {
             contract.get_height_by_block_hash(old_main_chain_block),
             None
         );
+    }
+
+    #[test]
+    fn test_dangerous_fork_tip_height_ignores_the_forks_containing_the_block() {
+        let mut contract = init_contract_with_chained_blocks();
+        assert_eq!(contract.dangerous_fork_tip_height(5), None);
+
+        let block_3 = contract.get_block_hash_by_height(3).unwrap();
+        submit_fork_block(&mut contract, &block_3, 100);
+
+        // The LCA belongs to both chains, so the blocks up to it are not endangered
+        assert_eq!(contract.dangerous_fork_tip_height(3), None);
+        assert_eq!(contract.dangerous_fork_tip_height(4), Some(4));
+        assert_eq!(contract.dangerous_fork_tip_height(11), Some(4));
+    }
+
+    #[test]
+    fn test_dangerous_fork_tip_height_takes_the_highest_tip() {
+        let mut contract = init_contract_with_chained_blocks();
+        let block_3 = contract.get_block_hash_by_height(3).unwrap();
+        let block_8 = contract.get_block_hash_by_height(8).unwrap();
+
+        let old_fork_block = submit_fork_block(&mut contract, &block_3, 100);
+        submit_fork_block(&mut contract, &old_fork_block, 101);
+        submit_fork_block(&mut contract, &block_8, 102);
+
+        // Only the fork branching off height 3 endangers the block at height 4
+        assert_eq!(contract.dangerous_fork_tip_height(4), Some(5));
+        // Both forks do, and the highest tip of the two is reported
+        assert_eq!(contract.dangerous_fork_tip_height(9), Some(9));
     }
 
     #[test]
