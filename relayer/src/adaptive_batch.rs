@@ -120,6 +120,7 @@ mod tests {
             sleep_time_on_fail_sec: 30,
             sleep_time_on_reach_last_block_sec: 60,
             sleep_time_after_sync_iteration_sec: 5,
+            submit_delay_sec: 0,
             fetch_batch_size: fetch_batch,
             submit_batch_size: submit_batch,
             min_batch_size: 1,
