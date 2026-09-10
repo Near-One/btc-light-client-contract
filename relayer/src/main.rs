@@ -260,6 +260,18 @@ impl Synchronizer {
             let number_of_blocks = blocks_to_submit.len().try_into().unwrap();
             let last_block_hash = blocks_to_submit.last().unwrap().1.block_hash().to_string();
 
+            if self.config.submit_delay_sec > 0 {
+                trace!(
+                    target: "relay",
+                    "Backup mode: waiting {}s before checking/submitting blocks [{} - {}]",
+                    self.config.submit_delay_sec,
+                    start_height,
+                    start_height + number_of_blocks - 1,
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(self.config.submit_delay_sec))
+                    .await;
+            }
+
             if let Ok(true) = self
                 .check_submission_skipped(
                     &last_block_hash,
