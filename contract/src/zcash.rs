@@ -205,9 +205,92 @@ fn zcash_calculate_next_work_required(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use btc_types::hash::H256;
+    use btc_types::header::LightHeader;
     use btc_types::network::Network;
     use btc_types::utils::target_from_bits;
     use more_asserts::assert_lt;
+    use std::cell::Cell;
+
+    const BITS: u32 = 0x1c05a3f4;
+
+    struct MockChain {
+        first_height: u64,
+        headers: Vec<ExtendedHeader>,
+        prev_header_requests: Cell<usize>,
+    }
+
+    fn height_hash(height: u64) -> H256 {
+        let mut hash = [0u8; 32];
+        hash[..8].copy_from_slice(&height.to_le_bytes());
+        H256(hash)
+    }
+
+    impl MockChain {
+        fn new(first_height: u64, tip_height: u64, spacing: u32) -> Self {
+            let headers = (first_height..=tip_height)
+                .map(|height| ExtendedHeader {
+                    block_header: LightHeader {
+                        version: 4,
+                        prev_block_hash: height_hash(height - 1),
+                        merkle_root: H256::default(),
+                        block_commitments: H256::default(),
+                        time: 1_700_000_000
+                            + u32::try_from(height - first_height).unwrap() * spacing,
+                        bits: BITS,
+                    },
+                    block_hash: height_hash(height),
+                    chain_work: U256::ZERO,
+                    block_height: height,
+                })
+                .collect();
+            Self {
+                first_height,
+                headers,
+                prev_header_requests: Cell::new(0),
+            }
+        }
+
+        fn tip(&self) -> ExtendedHeader {
+            self.headers.last().unwrap().clone()
+        }
+    }
+
+    impl BlocksGetter for MockChain {
+        fn get_prev_header(&self, current_header: &LightHeader) -> ExtendedHeader {
+            self.prev_header_requests
+                .set(self.prev_header_requests.get() + 1);
+            self.headers
+                .iter()
+                .find(|h| h.block_hash == current_header.prev_block_hash)
+                .cloned()
+                .unwrap()
+        }
+
+        fn get_header_by_height(&self, height: u64) -> ExtendedHeader {
+            self.headers[usize::try_from(height - self.first_height).unwrap()].clone()
+        }
+    }
+
+    fn next_header(prev: &ExtendedHeader, spacing: u32) -> Header {
+        Header {
+            version: 4,
+            prev_block_hash: prev.block_hash.clone(),
+            merkle_root: H256::default(),
+            block_commitments: H256::default(),
+            time: prev.block_header.time + spacing,
+            bits: 0,
+            nonce: H256::default(),
+            solution: vec![],
+        }
+    }
+
+    fn expected_bits(averaging_window_timespan: u64, actual_timespan: u64) -> u32 {
+        let (target, overflow) = (target_from_bits(BITS) / U256::from(averaging_window_timespan))
+            .overflowing_mul(actual_timespan);
+        assert!(!overflow);
+        target.target_to_bits()
+    }
 
     #[test]
     fn test_zcash_calculate_next_work_pre_blossom() {
@@ -350,5 +433,33 @@ mod tests {
         assert!(!config.is_nu7_active(u64::MAX));
         assert_eq!(config.pow_target_spacing(u64::MAX), 75);
         assert_eq!(config.pow_averaging_window(u64::MAX), 17);
+    }
+
+    #[test]
+    fn test_zcash_get_next_work_required_before_nu7() {
+        let config = btc_types::network::get_zcash_config(Network::Testnet);
+        let tip_height = config.nu7_activation_height.unwrap() - 2;
+        let chain = MockChain::new(tip_height - 200, tip_height, 75);
+        let tip = chain.tip();
+
+        let result = zcash_get_next_work_required(&config, &next_header(&tip, 75), &tip, &chain);
+
+        assert_eq!(chain.prev_header_requests.get(), 17 + 11);
+        assert_eq!(result.expected_bits, expected_bits(17 * 75, 17 * 75));
+    }
+
+    #[test]
+    fn test_zcash_get_next_work_required_at_nu7_activation() {
+        let config = btc_types::network::get_zcash_config(Network::Testnet);
+        let tip_height = config.nu7_activation_height.unwrap() - 1;
+        let chain = MockChain::new(tip_height - 200, tip_height, 75);
+        let tip = chain.tip();
+
+        let result = zcash_get_next_work_required(&config, &next_header(&tip, 25), &tip, &chain);
+
+        assert_eq!(chain.prev_header_requests.get(), 102 + 11);
+        // 102 blocks at the pre-NU7 75s spacing hit the PoWMaxAdjustDown bound
+        assert_eq!(result.expected_bits, expected_bits(2550, 3366));
+        assert_ne!(result.expected_bits, BITS);
     }
 }
