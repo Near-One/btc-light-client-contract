@@ -515,4 +515,78 @@ mod tests {
             assert_ne!(result.expected_bits, config.proof_of_work_limit_bits);
         }
     }
+
+    #[test]
+    fn test_zcash_next_work_required_on_real_testnet_nu7_blocks() {
+        #[derive(serde::Deserialize)]
+        struct RealHeader {
+            height: u64,
+            hash: String,
+            prev_block_hash: String,
+            time: u32,
+            bits: u32,
+        }
+
+        let config = btc_types::network::get_zcash_config(Network::Testnet);
+        let activation_height = config.nu7_activation_height.unwrap();
+        let real_headers: Vec<RealHeader> =
+            serde_json::from_str(include_str!("../tests/data/zcash_testnet_nu7_headers.json"))
+                .unwrap();
+
+        let headers: Vec<ExtendedHeader> = real_headers
+            .iter()
+            .map(|h| ExtendedHeader {
+                block_header: LightHeader {
+                    version: 4,
+                    prev_block_hash: h.prev_block_hash.parse().unwrap(),
+                    merkle_root: H256::default(),
+                    block_commitments: H256::default(),
+                    time: h.time,
+                    bits: h.bits,
+                },
+                block_hash: h.hash.parse().unwrap(),
+                chain_work: U256::ZERO,
+                block_height: h.height,
+            })
+            .collect();
+        let chain = MockChain {
+            first_height: real_headers[0].height,
+            headers,
+            prev_header_requests: Cell::new(0),
+        };
+
+        let mut checked_pre_nu7 = 0;
+        let mut checked_post_nu7 = 0;
+        for (i, real_header) in real_headers.iter().enumerate().skip(1) {
+            let window = usize::try_from(config.pow_averaging_window(real_header.height)).unwrap();
+            if i < window + MEDIAN_TIME_SPAN + 1 {
+                continue;
+            }
+            let prev = chain.headers[i - 1].clone();
+            let header = Header {
+                version: 4,
+                prev_block_hash: prev.block_hash.clone(),
+                merkle_root: H256::default(),
+                block_commitments: H256::default(),
+                time: real_header.time,
+                bits: 0,
+                nonce: H256::default(),
+                solution: vec![],
+            };
+
+            let result = zcash_get_next_work_required(&config, &header, &prev, &chain);
+            assert_eq!(
+                result.expected_bits, real_header.bits,
+                "bits mismatch at height {}",
+                real_header.height
+            );
+            if real_header.height < activation_height {
+                checked_pre_nu7 += 1;
+            } else {
+                checked_post_nu7 += 1;
+            }
+        }
+        assert!(checked_pre_nu7 >= 100);
+        assert_eq!(checked_post_nu7, 170);
+    }
 }
