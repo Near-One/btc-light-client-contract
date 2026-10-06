@@ -106,7 +106,7 @@ mod test_dogecoin {
             skip_pow_verification: false,
             gc_threshold: 20,
             network: Network::Mainnet,
-            submit_blocks: init_blocks,
+            genesis_block: genesis,
         };
 
         let outcome = contract
@@ -123,7 +123,27 @@ mod test_dogecoin {
 
         let user_account = sandbox.dev_create_account().await?;
         grant_relayer_role(&contract, &user_account).await?;
+        bootstrap(&contract, &user_account, &init_blocks[1..]).await?;
         Ok((contract, user_account))
+    }
+
+    async fn bootstrap(
+        contract: &Contract,
+        relayer: &Account,
+        headers: &[Header],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let headers: Vec<(Header, Option<AuxData>)> =
+            headers.iter().map(|h| (h.clone(), None)).collect();
+        let num_headers = u128::try_from(headers.len()).unwrap();
+        let outcome = relayer
+            .call(contract.id(), "submit_blocks")
+            .args_borsh(headers)
+            .deposit(STORAGE_DEPOSIT_PER_BLOCK.saturating_mul(num_headers))
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+        Ok(())
     }
 
     // ---------------------------------------------------------------------------
@@ -311,11 +331,11 @@ mod test_dogecoin {
 
     /// Submit a real 2025 Dogecoin mainnet block with full PoW + AuxPoW verification.
     ///
-    /// Blocks 5_800_000–5_800_012 are pre-loaded during init (the init code always
-    /// uses skip_pow=true for those). Block 5_800_013 is then submitted with
-    /// skip_pow=false (from contract state), exercising the full check_pow path
-    /// (bits + MTP + future-time) and the full check_aux path (AuxPoW validation).
-    /// The 13 init blocks are enough for get_median_time_past (needs 12 blocks back).
+    /// The contract is initialized at 5_800_001 and blocks 5_800_002–5_800_012 are
+    /// bootstrapped without PoW checks. Block 5_800_013 is the first block after the
+    /// bootstrap, exercising the full check_pow path (bits + MTP + future-time) and
+    /// the full check_aux path (AuxPoW validation). get_median_time_past needs 12
+    /// blocks back, which is exactly 5_800_001–5_800_012.
     #[tokio::test]
     async fn test_real_block_submission_succeeds() -> Result<(), Box<dyn std::error::Error>> {
         use btc_types::header::ExtendedHeader;
@@ -326,15 +346,15 @@ mod test_dogecoin {
 
         let mut blocks = mainnet_blocks();
         let test_block = blocks.pop().unwrap(); // 5_800_013
-        let genesis = blocks[0].clone();
+        let genesis = blocks[1].clone();
 
         let args = InitArgs {
             genesis_block_hash: genesis.block_hash(),
-            genesis_block_height: 5_800_000,
-            skip_pow_verification: false, // subsequent submit_blocks will do full verification
+            genesis_block_height: 5_800_001,
+            skip_pow_verification: false,
             gc_threshold: 20,
             network: Network::Mainnet,
-            submit_blocks: blocks, // 5_800_000 .. 5_800_012 (13 blocks, skip=true in init loop)
+            genesis_block: genesis,
         };
 
         let outcome = contract
@@ -351,6 +371,7 @@ mod test_dogecoin {
 
         let user_account = sandbox.dev_create_account().await?;
         grant_relayer_role(&contract, &user_account).await?;
+        bootstrap(&contract, &user_account, &blocks[2..]).await?;
 
         // Submit block 5_800_013 with full PoW + AuxPoW verification.
         let aux_data = build_aux_data_5800013();

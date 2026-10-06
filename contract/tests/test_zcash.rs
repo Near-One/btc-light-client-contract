@@ -65,7 +65,7 @@ mod test_zcash {
             skip_pow_verification: false,
             gc_threshold: 2000,
             network: btc_types::network::Network::Mainnet,
-            submit_blocks: initial_blocks[..29].to_vec(),
+            genesis_block: genesis_block,
         };
 
         let outcome = contract
@@ -76,15 +76,31 @@ mod test_zcash {
             .max_gas()
             .transact()
             .await?;
-
-        println!("outcome: {:?}", outcome);
-
-        assert!(outcome.is_success());
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
 
         let user_account = sandbox.dev_create_account().await?;
         grant_relayer_role(&contract, &user_account).await?;
 
+        // 11 blocks for MTP + 17 for the pre-NU7 averaging window
+        let outcome = submit(&contract, &user_account, initial_blocks[1..29].to_vec()).await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+
         Ok((contract, user_account))
+    }
+
+    async fn submit(
+        contract: &Contract,
+        relayer: &Account,
+        headers: Vec<Header>,
+    ) -> Result<near_workspaces::result::ExecutionFinalResult, Box<dyn std::error::Error>> {
+        let num_headers = u128::try_from(headers.len()).unwrap();
+        Ok(relayer
+            .call(contract.id(), "submit_blocks")
+            .args_borsh(headers)
+            .deposit(STORAGE_DEPOSIT_PER_BLOCK.saturating_mul(num_headers))
+            .max_gas()
+            .transact()
+            .await?)
     }
 
     fn read_zcash_blocks() -> Vec<Header> {
@@ -132,18 +148,18 @@ mod test_zcash {
 
         let contract = sandbox.dev_deploy(&old_wasm).await?;
 
+        // The mainnet wasm still takes the pre-bootstrap `InitArgs` layout.
         let initial_blocks = read_zcash_blocks();
-        let args = InitArgs {
-            genesis_block_hash: initial_blocks[0].block_hash(),
-            genesis_block_height: 2940821,
-            skip_pow_verification: false,
-            gc_threshold: 2000,
-            network: btc_types::network::Network::Mainnet,
-            submit_blocks: initial_blocks[..29].to_vec(),
-        };
         let outcome = contract
             .call("init")
-            .args_json(json!({ "args": serde_json::to_value(args).unwrap() }))
+            .args_json(json!({ "args": {
+                "genesis_block_hash": initial_blocks[0].block_hash(),
+                "genesis_block_height": 2940821,
+                "skip_pow_verification": false,
+                "gc_threshold": 2000,
+                "network": btc_types::network::Network::Mainnet,
+                "submit_blocks": initial_blocks[..29],
+            }}))
             .max_gas()
             .transact()
             .await?;
@@ -201,6 +217,72 @@ mod test_zcash {
             outcome.json::<ExtendedHeader>()?.block_header,
             blocks[28].clone().into()
         );
+
+        Ok(())
+    }
+
+    /// Bootstraps 11 + 102 blocks right before the testnet NU7 activation in
+    /// relayer-sized batches; the next block is fully checked.
+    #[tokio::test]
+    async fn test_bootstrap_before_nu7_activation() -> Result<(), Box<dyn std::error::Error>> {
+        let sandbox = near_workspaces::sandbox().await?;
+        let contract = sandbox.dev_deploy(&build_contract().await).await?;
+
+        let config = btc_types::network::get_zcash_config(btc_types::network::Network::Testnet);
+        let activation_height = config.nu7_activation_height.unwrap();
+        let num_bootstrap_blocks = 1 + 11 + 102;
+
+        let mut headers: Vec<Header> = vec![read_zcash_blocks()[0].clone()];
+        for _ in 0..num_bootstrap_blocks {
+            let prev = headers.last().unwrap();
+            let mut header = prev.clone();
+            header.prev_block_hash = prev.block_hash();
+            header.time = prev.time + 25;
+            headers.push(header);
+        }
+
+        let args = InitArgs {
+            genesis_block_hash: headers[0].block_hash(),
+            genesis_block_height: activation_height - u64::try_from(num_bootstrap_blocks).unwrap(),
+            skip_pow_verification: false,
+            gc_threshold: 2000,
+            network: btc_types::network::Network::Testnet,
+            genesis_block: headers[0].clone(),
+        };
+        let outcome = contract
+            .call("init")
+            .args_json(json!({ "args": serde_json::to_value(args).unwrap() }))
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+
+        let user_account = sandbox.dev_create_account().await?;
+        grant_relayer_role(&contract, &user_account).await?;
+
+        let mut max_batch_gas = 0;
+        for batch in headers[1..num_bootstrap_blocks].chunks(15) {
+            let outcome = submit(&contract, &user_account, batch.to_vec()).await?;
+            assert!(outcome.is_success(), "{:?}", outcome.failures());
+            max_batch_gas = max_batch_gas.max(outcome.total_gas_burnt.as_tgas());
+        }
+        println!("max bootstrap batch gas: {max_batch_gas} Tgas");
+
+        let last_header = contract
+            .view("get_last_block_header")
+            .args_json(json!({}))
+            .await?
+            .json::<ExtendedHeader>()?;
+        assert_eq!(last_header.block_height, activation_height - 1);
+
+        // The synthetic block at the activation height has no valid Equihash solution
+        let outcome = submit(
+            &contract,
+            &user_account,
+            vec![headers[num_bootstrap_blocks].clone()],
+        )
+        .await?;
+        assert!(outcome.is_failure());
 
         Ok(())
     }

@@ -36,7 +36,7 @@ make fmt
 - **headers_pool**: `LookupMap<H256, ExtendedHeader>` — all stored headers (main chain + forks)
 - **mainchain_height_to_header** / **mainchain_header_to_height**: bidirectional main chain index
 - **mainchain_tip_blockhash**: current chain tip
-- **gc_threshold**: max number of mainchain blocks to keep in storage. When the mainchain grows beyond this, the oldest mainchain blocks are pruned. GC runs automatically during `submit_blocks()` (with `batch_size` = number of submitted headers) and can also be triggered manually via `run_mainchain_gc(batch_size)`. Only mainchain blocks are deleted; fork/sidechain blocks are not affected
+- **gc_threshold**: max number of mainchain blocks to keep in storage. When the mainchain grows beyond this, the oldest mainchain blocks are pruned. GC runs automatically during `submit_blocks()` (with `batch_size` = number of submitted headers; skipped while bootstrapping) and can also be triggered manually via `run_mainchain_gc(batch_size)`. Only mainchain blocks are deleted; fork/sidechain blocks are not affected
 
 ### Block Submission Flow
 
@@ -48,6 +48,13 @@ make fmt
    - Computes accumulated `chain_work`
 3. If the block extends the main chain tip → appended directly
 4. If it's a fork → stored separately; if fork's `chain_work` > main chain → **automatic reorg**
+
+### Bootstrap
+
+`init` takes only the genesis block. The history needed for difficulty and MTP checks (12 blocks; 12 + averaging window for Zcash) is then submitted via `submit_blocks` until `bootstrap_end_height`:
+- only `DAO` / `UnrestrictedSubmitBlocks` may call `submit_blocks` while bootstrapping
+- bootstrap blocks must extend the tip and skip all PoW checks
+- `bootstrap_end_height` is reset to 0 once the tip reaches it; strict checks apply from then on
 
 ### Chain Reorganization
 

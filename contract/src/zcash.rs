@@ -1,7 +1,10 @@
 use crate::{utils::BlocksGetter, BtcLightClient, BtcLightClientExt};
 use btc_types::{
     header::{ExtendedHeader, Header},
-    network::{Network, ZcashConfig, MAX_FUTURE_BLOCK_TIME_LOCAL, MAX_FUTURE_BLOCK_TIME_MTP},
+    network::{
+        Network, ZcashConfig, MAX_FUTURE_BLOCK_TIME_LOCAL, MAX_FUTURE_BLOCK_TIME_MTP,
+        MEDIAN_TIME_SPAN,
+    },
     u256::U256,
     utils::target_from_bits,
 };
@@ -15,6 +18,19 @@ impl BtcLightClient {
 
     pub fn get_network(&self) -> (String, Network) {
         ("Zcash".to_owned(), self.network)
+    }
+
+    pub(crate) fn bootstrap_blocks_count(&self, genesis_block_height: u64) -> u64 {
+        // The averaging window only grows with height, so the window at the furthest
+        // possible end of the bootstrap covers every block validated after it
+        let config = self.get_config();
+        let median_span = u64::try_from(MEDIAN_TIME_SPAN).unwrap() + 1;
+        let max_window = config.pow_averaging_window(
+            genesis_block_height
+                + median_span
+                + u64::try_from(config.post_nu7_pow_averaging_window).unwrap(),
+        );
+        median_span + u64::try_from(max_window).unwrap()
     }
 
     // Reference implementation: https://github.com/zcash/zcash/blob/v6.2.0/src/main.cpp#L5019
@@ -80,8 +96,6 @@ fn zcash_get_next_work_required(
     prev_block_header: &ExtendedHeader,
     prev_block_getter: &impl BlocksGetter,
 ) -> NextWorkResult {
-    use btc_types::network::MEDIAN_TIME_SPAN;
-
     let height = prev_block_header.block_height + 1;
     let pow_averaging_window = config.pow_averaging_window(height);
 
