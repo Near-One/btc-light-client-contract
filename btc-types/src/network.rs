@@ -215,6 +215,12 @@ impl ZcashConfig {
     }
 
     //https://zips.z.cash/zip-0218
+    pub fn min_difficulty_block_time_gap(&self, height: u64) -> i64 {
+        let spacings = if self.is_nu7_active(height) { 18 } else { 6 };
+        self.pow_target_spacing(height) * spacings
+    }
+
+    //https://zips.z.cash/zip-0218
     pub fn pow_averaging_window(&self, height: u64) -> i64 {
         if self.is_nu7_active(height) {
             self.post_nu7_pow_averaging_window

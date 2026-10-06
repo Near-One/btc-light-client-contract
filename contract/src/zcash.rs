@@ -124,11 +124,11 @@ fn zcash_get_next_work_required(
         // Comparing with >= because this function returns the work required for the block after prev_block_header
         if prev_block_header.block_height >= pow_allow_min_difficulty_blocks_after_height {
             // Special difficulty rule for testnet:
-            // If the new block's timestamp is more than 6 * block interval minutes
-            // then allow mining of a min-difficulty block.
+            // If the new block's timestamp is more than 6 block intervals (18 after NU7)
+            // after the previous block, then allow mining of a min-difficulty block.
             if i64::from(block_header.time)
                 > i64::from(prev_block_header.block_header.time)
-                    + config.pow_target_spacing(height) * 6
+                    + config.min_difficulty_block_time_gap(height)
             {
                 return NextWorkResult {
                     expected_bits: config.proof_of_work_limit_bits,
@@ -461,5 +461,44 @@ mod tests {
         // 102 blocks at the pre-NU7 75s spacing hit the PoWMaxAdjustDown bound
         assert_eq!(result.expected_bits, expected_bits(2550, 3366));
         assert_ne!(result.expected_bits, BITS);
+    }
+
+    #[test]
+    fn test_zcash_config_min_difficulty_block_time_gap() {
+        let config = btc_types::network::get_zcash_config(Network::Testnet);
+        let activation_height = config.nu7_activation_height.unwrap();
+
+        assert_eq!(
+            config.min_difficulty_block_time_gap(activation_height - 1),
+            6 * 75
+        );
+        assert_eq!(
+            config.min_difficulty_block_time_gap(activation_height),
+            18 * 25
+        );
+    }
+
+    #[test]
+    fn test_zcash_testnet_min_difficulty_block() {
+        let config = btc_types::network::get_zcash_config(Network::Testnet);
+        let activation_height = config.nu7_activation_height.unwrap();
+
+        for tip_height in [activation_height - 2, activation_height - 1] {
+            let chain = MockChain::new(tip_height - 200, tip_height, 75);
+            let tip = chain.tip();
+
+            let result =
+                zcash_get_next_work_required(&config, &next_header(&tip, 451), &tip, &chain);
+            assert_eq!(result.expected_bits, config.proof_of_work_limit_bits);
+
+            let result =
+                zcash_get_next_work_required(&config, &next_header(&tip, 450), &tip, &chain);
+            assert_ne!(result.expected_bits, config.proof_of_work_limit_bits);
+
+            // Above the pre-NU7 gap of 6 * 25 seconds, but below 18 * 25
+            let result =
+                zcash_get_next_work_required(&config, &next_header(&tip, 300), &tip, &chain);
+            assert_ne!(result.expected_bits, config.proof_of_work_limit_bits);
+        }
     }
 }
