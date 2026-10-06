@@ -555,7 +555,10 @@ impl BtcLightClient {
         {
             require!(
                 btc_types::network::MEDIAN_TIME_SPAN
-                    + usize::try_from(config.pow_averaging_window).unwrap()
+                    + usize::try_from(
+                        config.pow_averaging_window(block_height + submit_blocks.len() as u64)
+                    )
+                    .unwrap()
                     == submit_blocks.len() - 1,
                 "ERR_NOT_ENOUGH_BLOCKS_FOR_ZCASH"
             );

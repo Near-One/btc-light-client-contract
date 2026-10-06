@@ -82,6 +82,9 @@ fn zcash_get_next_work_required(
 ) -> NextWorkResult {
     use btc_types::network::MEDIAN_TIME_SPAN;
 
+    let height = prev_block_header.block_height + 1;
+    let pow_averaging_window = config.pow_averaging_window(height);
+
     // Find the first block in the averaging interval
     // and the median time past for the first and last blocks in the interval
     let mut current_header = prev_block_header.clone();
@@ -89,7 +92,7 @@ fn zcash_get_next_work_required(
     let mut median_time = [0u32; MEDIAN_TIME_SPAN];
 
     let prev_block_median_time_past = {
-        for i in 0..usize::try_from(config.pow_averaging_window).unwrap() {
+        for i in 0..usize::try_from(pow_averaging_window).unwrap() {
             if i < MEDIAN_TIME_SPAN {
                 median_time[i] = current_header.block_header.time;
             }
@@ -124,7 +127,8 @@ fn zcash_get_next_work_required(
             // If the new block's timestamp is more than 6 * block interval minutes
             // then allow mining of a min-difficulty block.
             if i64::from(block_header.time)
-                > i64::from(prev_block_header.block_header.time) + config.pow_target_spacing() * 6
+                > i64::from(prev_block_header.block_header.time)
+                    + config.pow_target_spacing(height) * 6
             {
                 return NextWorkResult {
                     expected_bits: config.proof_of_work_limit_bits,
@@ -140,11 +144,12 @@ fn zcash_get_next_work_required(
     //
     // Here we take the floor of MeanTarget(height) immediately, but that is equivalent to doing
     // so only after a further division, as proven in <https://math.stackexchange.com/a/147832/185422>.
-    let average_target = total_target
-        / U256::from(<i64 as TryInto<u64>>::try_into(config.pow_averaging_window).unwrap());
+    let average_target =
+        total_target / U256::from(<i64 as TryInto<u64>>::try_into(pow_averaging_window).unwrap());
 
     let expected_bits = zcash_calculate_next_work_required(
         config,
+        height,
         average_target,
         prev_block_median_time_past,
         first_block_in_interval_median_time_past,
@@ -158,13 +163,14 @@ fn zcash_get_next_work_required(
 
 fn zcash_calculate_next_work_required(
     config: &ZcashConfig,
+    height: u64,
     average_target: U256,
     last_interval_block_median_time_past: u32,
     first_interval_block_median_time_past: u32,
 ) -> u32 {
-    let averaging_window_timespan = config.averaging_window_timespan();
-    let min_actual_timespan = config.min_actual_timespan();
-    let max_actual_timespan = config.max_actual_timespan();
+    let averaging_window_timespan = config.averaging_window_timespan(height);
+    let min_actual_timespan = config.min_actual_timespan(height);
+    let max_actual_timespan = config.max_actual_timespan(height);
 
     // Limit adjustment step
     // Use medians to prevent time-warp attacks
@@ -213,7 +219,7 @@ mod tests {
         let last_time = 1000003570;
 
         let result =
-            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
+            zcash_calculate_next_work_required(&config, 0, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1d011998);
     }
@@ -227,7 +233,7 @@ mod tests {
         let last_time = 1000001445;
 
         let result =
-            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
+            zcash_calculate_next_work_required(&config, 0, average_target, last_time, first_time);
 
         assert_lt!(result, 0x1d011998);
     }
@@ -242,7 +248,7 @@ mod tests {
         let last_time = 1233061996;
 
         let result =
-            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
+            zcash_calculate_next_work_required(&config, 0, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1f07ffff);
     }
@@ -256,7 +262,7 @@ mod tests {
         let last_time = 1233061996;
 
         let result =
-            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
+            zcash_calculate_next_work_required(&config, 0, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1f07ffff);
     }
@@ -271,7 +277,7 @@ mod tests {
         let last_time = 100000917;
 
         let result =
-            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
+            zcash_calculate_next_work_required(&config, 0, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1c04bceb);
     }
@@ -285,7 +291,7 @@ mod tests {
         let last_time = 1000000458;
 
         let result =
-            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
+            zcash_calculate_next_work_required(&config, 0, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1c04bceb);
     }
@@ -300,7 +306,7 @@ mod tests {
         let last_time = 1000005815;
 
         let result =
-            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
+            zcash_calculate_next_work_required(&config, 0, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1c4a93bb);
     }
@@ -314,8 +320,35 @@ mod tests {
         let last_time = 1000002908;
 
         let result =
-            zcash_calculate_next_work_required(&config, average_target, last_time, first_time);
+            zcash_calculate_next_work_required(&config, 0, average_target, last_time, first_time);
 
         assert_eq!(result, 0x1c4a93bb);
+    }
+
+    #[test]
+    fn test_zcash_config_nu7_activation() {
+        let config = btc_types::network::get_zcash_config(Network::Testnet);
+        let activation_height = config.nu7_activation_height.unwrap();
+
+        let pre = activation_height - 1;
+        assert!(!config.is_nu7_active(pre));
+        assert_eq!(config.pow_target_spacing(pre), 75);
+        assert_eq!(config.pow_averaging_window(pre), 17);
+        assert_eq!(config.averaging_window_timespan(pre), 17 * 75);
+
+        assert!(config.is_nu7_active(activation_height));
+        assert_eq!(config.pow_target_spacing(activation_height), 25);
+        assert_eq!(config.pow_averaging_window(activation_height), 102);
+        assert_eq!(config.averaging_window_timespan(activation_height), 2550);
+        assert_eq!(config.min_actual_timespan(activation_height), 2142);
+        assert_eq!(config.max_actual_timespan(activation_height), 3366);
+    }
+
+    #[test]
+    fn test_zcash_config_nu7_not_scheduled() {
+        let config = btc_types::network::get_zcash_config(Network::Mainnet);
+        assert!(!config.is_nu7_active(u64::MAX));
+        assert_eq!(config.pow_target_spacing(u64::MAX), 75);
+        assert_eq!(config.pow_averaging_window(u64::MAX), 17);
     }
 }
