@@ -221,16 +221,15 @@ mod test_zcash {
         Ok(())
     }
 
-    /// Bootstraps 11 + 102 blocks right before the testnet NU7 activation in
-    /// relayer-sized batches; the next block is fully checked.
-    #[tokio::test]
-    async fn test_bootstrap_before_nu7_activation() -> Result<(), Box<dyn std::error::Error>> {
+    /// Inits a testnet contract with synthetic headers and bootstraps them in
+    /// relayer-sized batches. Returns the bootstrapped chain plus one more header
+    /// right after it, which is the first block that gets fully checked.
+    async fn init_synthetic_testnet(
+        genesis_block_height: u64,
+        num_bootstrap_blocks: usize,
+    ) -> Result<(Contract, Account, Vec<Header>), Box<dyn std::error::Error>> {
         let sandbox = near_workspaces::sandbox().await?;
         let contract = sandbox.dev_deploy(&build_contract().await).await?;
-
-        let config = btc_types::network::get_zcash_config(btc_types::network::Network::Testnet);
-        let activation_height = config.nu7_activation_height.unwrap();
-        let num_bootstrap_blocks = 1 + 11 + 102;
 
         let mut headers: Vec<Header> = vec![read_zcash_blocks()[0].clone()];
         for _ in 0..num_bootstrap_blocks {
@@ -243,7 +242,7 @@ mod test_zcash {
 
         let args = InitArgs {
             genesis_block_hash: headers[0].block_hash(),
-            genesis_block_height: activation_height - u64::try_from(num_bootstrap_blocks).unwrap(),
+            genesis_block_height,
             skip_pow_verification: false,
             gc_threshold: 2000,
             network: btc_types::network::Network::Testnet,
@@ -273,7 +272,44 @@ mod test_zcash {
             .args_json(json!({}))
             .await?
             .json::<ExtendedHeader>()?;
-        assert_eq!(last_header.block_height, activation_height - 1);
+        assert_eq!(
+            last_header.block_height,
+            genesis_block_height + u64::try_from(num_bootstrap_blocks).unwrap() - 1
+        );
+
+        Ok((contract, user_account, headers))
+    }
+
+    /// Submits the first fully checked block with wrong `bits`, so it fails right
+    /// after reading the whole averaging window. Returns the burnt gas.
+    async fn fully_checked_block_gas(
+        contract: &Contract,
+        relayer: &Account,
+        mut header: Header,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        header.bits = 0x1d00ffff;
+        let outcome = submit(contract, relayer, vec![header]).await?;
+        assert!(
+            format!("{:?}", outcome.failures()).contains("bad-diffbits"),
+            "{:?}",
+            outcome.failures()
+        );
+        Ok(outcome.total_gas_burnt.as_gas())
+    }
+
+    /// Bootstraps 11 + 102 blocks right before the testnet NU7 activation in
+    /// relayer-sized batches; the next block is fully checked.
+    #[tokio::test]
+    async fn test_bootstrap_before_nu7_activation() -> Result<(), Box<dyn std::error::Error>> {
+        let config = btc_types::network::get_zcash_config(btc_types::network::Network::Testnet);
+        let activation_height = config.nu7_activation_height.unwrap();
+        let num_bootstrap_blocks = 1 + 11 + 102;
+
+        let (contract, user_account, headers) = init_synthetic_testnet(
+            activation_height - u64::try_from(num_bootstrap_blocks).unwrap(),
+            num_bootstrap_blocks,
+        )
+        .await?;
 
         // The synthetic block at the activation height has no valid Equihash solution
         let outcome = submit(
@@ -283,6 +319,55 @@ mod test_zcash {
         )
         .await?;
         assert!(outcome.is_failure());
+
+        Ok(())
+    }
+
+    /// Estimates the gas of a real post-NU7 block: a real pre-NU7 block (17-block
+    /// window, real Equihash) plus the cost of reading 85 more window headers.
+    #[tokio::test]
+    async fn test_check_pow_gas_after_nu7() -> Result<(), Box<dyn std::error::Error>> {
+        let config = btc_types::network::get_zcash_config(btc_types::network::Network::Testnet);
+        let activation_height = config.nu7_activation_height.unwrap();
+
+        let (contract, relayer, headers) =
+            init_synthetic_testnet(activation_height - 200, 1 + 11 + 17).await?;
+        let pre_nu7_window_gas =
+            fully_checked_block_gas(&contract, &relayer, headers[29].clone()).await?;
+
+        let (contract, relayer, headers) =
+            init_synthetic_testnet(activation_height - 114, 1 + 11 + 102).await?;
+        let post_nu7_window_gas =
+            fully_checked_block_gas(&contract, &relayer, headers[114].clone()).await?;
+
+        let (contract, relayer) = init_zcash_contract().await?;
+        let blocks = read_zcash_blocks();
+        let outcome = submit(&contract, &relayer, blocks[29..30].to_vec()).await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+        let real_one_block_gas = outcome.total_gas_burnt.as_gas();
+        let outcome = submit(&contract, &relayer, blocks[30..32].to_vec()).await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+        let real_two_blocks_gas = outcome.total_gas_burnt.as_gas();
+
+        let real_per_block_gas = real_two_blocks_gas - real_one_block_gas;
+        let extra_window_gas = post_nu7_window_gas - pre_nu7_window_gas;
+        let tgas = |gas: u64| gas as f64 / 1e12;
+        println!(
+            "window 17 failed block: {:.2} Tgas, window 102 failed block: {:.2} Tgas",
+            tgas(pre_nu7_window_gas),
+            tgas(post_nu7_window_gas)
+        );
+        println!(
+            "real pre-NU7: 1 block {:.2} Tgas, 2 blocks {:.2} Tgas, per block {:.2} Tgas",
+            tgas(real_one_block_gas),
+            tgas(real_two_blocks_gas),
+            tgas(real_per_block_gas)
+        );
+        println!(
+            "estimated real post-NU7 per block: {:.2} Tgas, fixed cost: {:.2} Tgas",
+            tgas(real_per_block_gas + extra_window_gas),
+            tgas(real_one_block_gas - real_per_block_gas)
+        );
 
         Ok(())
     }
