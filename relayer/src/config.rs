@@ -59,14 +59,23 @@ pub struct InitConfig {
 }
 
 mod defaults {
+    // ZIP 218 recommends a 600-block reorg limit for 25-second Zcash blocks
     pub fn max_fork_len() -> u64 {
-        500
+        if cfg!(feature = "zcash") {
+            600
+        } else {
+            500
+        }
     }
     pub fn sleep_time_on_fail_sec() -> u64 {
         30
     }
     pub fn sleep_time_on_reach_last_block_sec() -> u64 {
-        60
+        if cfg!(feature = "zcash") {
+            15
+        } else {
+            60
+        }
     }
     pub fn sleep_time_after_sync_iteration_sec() -> u64 {
         5
