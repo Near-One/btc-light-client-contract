@@ -65,7 +65,7 @@ mod test_zcash {
             skip_pow_verification: false,
             gc_threshold: 2000,
             network: btc_types::network::Network::Mainnet,
-            genesis_block: genesis_block,
+            genesis_block,
         };
 
         let outcome = contract
