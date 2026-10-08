@@ -136,7 +136,7 @@ mod test_dogecoin {
             headers.iter().map(|h| (h.clone(), None)).collect();
         let num_headers = u128::try_from(headers.len()).unwrap();
         let outcome = relayer
-            .call(contract.id(), "submit_blocks")
+            .call(contract.id(), "bootstrap_blocks")
             .args_borsh(headers)
             .deposit(STORAGE_DEPOSIT_PER_BLOCK.saturating_mul(num_headers))
             .max_gas()

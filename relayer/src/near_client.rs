@@ -30,6 +30,8 @@ use tokio::time;
 use crate::config::NearConfig;
 
 const SUBMIT_BLOCKS: &str = "submit_blocks";
+const BOOTSTRAP_BLOCKS: &str = "bootstrap_blocks";
+const GET_BOOTSTRAP_END_HEIGHT: &str = "get_bootstrap_end_height";
 const GET_LAST_BLOCK_HEADER: &str = "get_last_block_header";
 #[allow(dead_code)]
 const VERIFY_TRANSACTION_INCLUSION: &str = "verify_transaction_inclusion";
@@ -181,7 +183,7 @@ impl NearClient {
             .and_then(|result| result)
     }
 
-    /// Signs one or more transactions to call the `submit_blocks` method on the smart contract.
+    /// Signs one or more transactions to call the `submit_blocks` (or `bootstrap_blocks`) method on the smart contract.
     ///
     /// This method splits the provided block headers into batches of `batch_size` and
     /// creates a signed transaction for each batch. It automatically increments the nonce
@@ -190,6 +192,7 @@ impl NearClient {
     /// # Arguments
     /// * `headers` - A vector of tuples containing block height, block header, and optional auxiliary data.
     /// * `batch_size` - The size of each batch of headers to be processed.
+    /// * `bootstrap` - Submit via `bootstrap_blocks` while the contract is bootstrapping.
     ///
     /// # Returns
     /// A `Result` containing a vector of `SignedSubmitTransaction` if successful, or an error.
@@ -204,7 +207,13 @@ impl NearClient {
         &self,
         headers: Vec<(u64, btc_types::header::Header, Option<AuxData>)>,
         batch_size: usize,
+        bootstrap: bool,
     ) -> Result<Vec<SignedSubmitTransaction>, Box<dyn std::error::Error + Send + Sync>> {
+        let method_name = if bootstrap {
+            BOOTSTRAP_BLOCKS
+        } else {
+            SUBMIT_BLOCKS
+        };
         let mut signed_txs = Vec::new();
 
         let access_key_query_response = self
@@ -260,7 +269,7 @@ impl NearClient {
                 last_block_height,
                 signed_tx: self
                     .sign_tx(
-                        SUBMIT_BLOCKS,
+                        method_name,
                         to_vec(&args)?,
                         5 * 10_u128.pow(23),
                         Some(current_nonce),
@@ -341,6 +350,24 @@ impl NearClient {
         }
 
         Ok(SubmitResult { gas_burnt: 0 })
+    }
+
+    /// Height up to which the contract accepts `bootstrap_blocks`; 0 once bootstrap is finished
+    ///
+    /// # Errors
+    /// * Connection issue
+    pub async fn get_bootstrap_end_height(
+        &self,
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+        match self
+            .submit_view_tx(GET_BOOTSTRAP_END_HEIGHT, json!({}).to_string().into_bytes())
+            .await
+        {
+            Ok(result) => Ok(from_slice::<u64>(&result)?),
+            // Contracts deployed before bootstrap support have no such method
+            Err(err) if err.to_string().contains("MethodNotFound") => Ok(0),
+            Err(err) => Err(err),
+        }
     }
 
     /// Get last Bitcoin Block Header on Near

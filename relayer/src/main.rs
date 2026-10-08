@@ -155,10 +155,11 @@ impl Synchronizer {
         blocks_to_submit: Vec<(u64, btc_types::header::Header, Option<AuxData>)>,
         first_block_height_to_submit: Arc<AtomicU64>,
         batch_size: usize,
+        bootstrap: bool,
     ) {
         let signed_submit_blocks_txs = match self
             .near_client
-            .sign_submit_blocks(blocks_to_submit, batch_size)
+            .sign_submit_blocks(blocks_to_submit, batch_size, bootstrap)
             .await
         {
             Ok(txs) => txs,
@@ -228,6 +229,8 @@ impl Synchronizer {
             self.get_last_correct_block_height().await.unwrap() + 1,
         ));
 
+        let mut is_bootstrapping = true;
+
         'main_loop: loop {
             let (current_fetch_size, current_batch_size) = {
                 let sizer = self.batch_sizer.lock().await;
@@ -243,7 +246,20 @@ impl Synchronizer {
 
             let start_height =
                 first_block_height_to_submit.load(std::sync::atomic::Ordering::Relaxed);
-            let end_height = latest_height.min(start_height.saturating_add(current_fetch_size));
+            let mut end_height = latest_height.min(start_height.saturating_add(current_fetch_size));
+
+            if is_bootstrapping {
+                let bootstrap_end_height = continue_on_fail!(
+                    self.near_client.get_bootstrap_end_height().await,
+                    "NEAR Client: Error on get_bootstrap_end_height",
+                    self.config.sleep_time_on_fail_sec,
+                    'main_loop
+                );
+                is_bootstrapping = bootstrap_end_height > 0;
+                if is_bootstrapping {
+                    end_height = end_height.min(bootstrap_end_height - 1);
+                }
+            }
 
             let blocks_to_submit = self.fetch_blocks_to_submit(start_height, end_height).await;
 
@@ -293,6 +309,7 @@ impl Synchronizer {
                     blocks_to_submit,
                     first_block_height_to_submit.clone(),
                     usize::try_from(current_batch_size).unwrap(),
+                    is_bootstrapping,
                 )
                 .await;
 

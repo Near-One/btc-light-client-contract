@@ -173,7 +173,7 @@ impl BtcLightClient {
         let prev_block_header = self.get_prev_header(&block_header);
         let current_block_hash = block_header.block_hash();
 
-        if !skip_pow_verification && !self.check_bootstrap_block(&prev_block_header) {
+        if !skip_pow_verification {
             self.check_target(&block_header, &prev_block_header);
 
             if let Some(ref aux_data) = aux_data {

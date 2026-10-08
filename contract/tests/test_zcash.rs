@@ -82,7 +82,7 @@ mod test_zcash {
         grant_relayer_role(&contract, &user_account).await?;
 
         // 11 blocks for MTP + 17 for the pre-NU7 averaging window
-        let outcome = submit(&contract, &user_account, initial_blocks[1..29].to_vec()).await?;
+        let outcome = bootstrap(&contract, &user_account, initial_blocks[1..29].to_vec()).await?;
         assert!(outcome.is_success(), "{:?}", outcome.failures());
 
         Ok((contract, user_account))
@@ -93,9 +93,26 @@ mod test_zcash {
         relayer: &Account,
         headers: Vec<Header>,
     ) -> Result<near_workspaces::result::ExecutionFinalResult, Box<dyn std::error::Error>> {
+        call_with_headers(contract, relayer, "submit_blocks", headers).await
+    }
+
+    async fn bootstrap(
+        contract: &Contract,
+        relayer: &Account,
+        headers: Vec<Header>,
+    ) -> Result<near_workspaces::result::ExecutionFinalResult, Box<dyn std::error::Error>> {
+        call_with_headers(contract, relayer, "bootstrap_blocks", headers).await
+    }
+
+    async fn call_with_headers(
+        contract: &Contract,
+        relayer: &Account,
+        method: &str,
+        headers: Vec<Header>,
+    ) -> Result<near_workspaces::result::ExecutionFinalResult, Box<dyn std::error::Error>> {
         let num_headers = u128::try_from(headers.len()).unwrap();
         Ok(relayer
-            .call(contract.id(), "submit_blocks")
+            .call(contract.id(), method)
             .args_borsh(headers)
             .deposit(STORAGE_DEPOSIT_PER_BLOCK.saturating_mul(num_headers))
             .max_gas()
@@ -261,7 +278,7 @@ mod test_zcash {
 
         let mut max_batch_gas = 0;
         for batch in headers[1..num_bootstrap_blocks].chunks(15) {
-            let outcome = submit(&contract, &user_account, batch.to_vec()).await?;
+            let outcome = bootstrap(&contract, &user_account, batch.to_vec()).await?;
             assert!(outcome.is_success(), "{:?}", outcome.failures());
             max_batch_gas = max_batch_gas.max(outcome.total_gas_burnt.as_tgas());
         }

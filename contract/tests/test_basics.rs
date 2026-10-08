@@ -79,8 +79,8 @@ mod test_basics {
         init_contract_in(&sandbox, gc_threshold).await
     }
 
-    /// Inits with the genesis block only and bootstraps the fake blocks of
-    /// `make_init_submit_blocks` through a privileged relayer.
+    /// Inits with the genesis block only and submits the fake blocks of
+    /// `make_init_submit_blocks`; with `skip_pow_verification` there is no bootstrap.
     async fn init_contract_in(
         sandbox: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
         gc_threshold: u64,
@@ -110,19 +110,26 @@ mod test_basics {
 
         let user_account = sandbox.dev_create_account().await?;
         grant_relayer_role(&contract, &user_account).await?;
-        bootstrap(&contract, &user_account, submit_blocks[1..].to_vec()).await?;
+        submit_headers(
+            &contract,
+            &user_account,
+            "submit_blocks",
+            submit_blocks[1..].to_vec(),
+        )
+        .await?;
 
         Ok((contract, user_account))
     }
 
-    async fn bootstrap(
+    async fn submit_headers(
         contract: &Contract,
         relayer: &Account,
+        method: &str,
         headers: Vec<Header>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let num_headers = u128::try_from(headers.len()).unwrap();
         let outcome = relayer
-            .call(contract.id(), "submit_blocks")
+            .call(contract.id(), method)
             .args_borsh(headers)
             .deposit(STORAGE_DEPOSIT_PER_BLOCK.saturating_mul(num_headers))
             .max_gas()
@@ -180,7 +187,13 @@ mod test_basics {
 
         let user_account = sandbox.dev_create_account().await?;
         grant_relayer_role(&contract, &user_account).await?;
-        bootstrap(&contract, &user_account, init_blocks[1..].to_vec()).await?;
+        submit_headers(
+            &contract,
+            &user_account,
+            "bootstrap_blocks",
+            init_blocks[1..].to_vec(),
+        )
+        .await?;
 
         // Return blocks NOT yet submitted (batch[2][5..] onward).
         let remaining = remaining_after_init(&all_block_headers);

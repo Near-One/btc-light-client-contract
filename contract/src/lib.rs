@@ -9,7 +9,8 @@ use btc_types::u256::U256;
 use btc_types::utils::target_from_bits;
 use btc_types::utils::work_from_bits;
 use near_plugins::{
-    access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
+    access_control, access_control_any, pause, AccessControlRole, AccessControllable, Pausable,
+    Upgradable,
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
@@ -180,50 +181,45 @@ impl BtcLightClient {
         &mut self,
         #[serializer(borsh)] headers: Vec<BlockHeader>,
     ) -> PromiseOrValue<()> {
+        require!(self.bootstrap_end_height == 0, "ERR_BOOTSTRAP_IN_PROGRESS");
+
         let amount = env::attached_deposit();
         let initial_storage = env::storage_usage();
         let num_of_headers = headers.len().try_into().unwrap();
-
-        let is_bootstrapping = self.bootstrap_end_height > 0;
-        if is_bootstrapping {
-            require!(
-                self.acl_has_any_role(
-                    vec![
-                        <&str>::from(Role::DAO).to_owned(),
-                        <&str>::from(Role::UnrestrictedSubmitBlocks).to_owned(),
-                    ],
-                    env::predecessor_account_id()
-                ),
-                "ERR_BOOTSTRAP_NOT_ALLOWED"
-            );
-        }
 
         for header in headers {
             self.submit_block_header(header, self.skip_pow_verification);
         }
 
+        self.run_mainchain_gc(num_of_headers);
+        Self::charge_storage_deposit(amount, initial_storage)
+    }
+
+    /// Submits the initial history after `init` without proof of work checks and GC
+    #[payable]
+    #[access_control_any(roles(Role::DAO, Role::UnrestrictedSubmitBlocks))]
+    pub fn bootstrap_blocks(
+        &mut self,
+        #[serializer(borsh)] headers: Vec<BlockHeader>,
+    ) -> PromiseOrValue<()> {
+        require!(self.bootstrap_end_height > 0, "ERR_BOOTSTRAP_FINISHED");
+
+        let amount = env::attached_deposit();
+        let initial_storage = env::storage_usage();
+
+        for header in headers {
+            #[cfg(feature = "dogecoin")]
+            let header = header.0;
+            self.submit_bootstrap_block_header(header);
+        }
+
         self.finish_bootstrap_if_done();
+        Self::charge_storage_deposit(amount, initial_storage)
+    }
 
-        // GC would remove the history the first fully checked block depends on
-        if !is_bootstrapping {
-            self.run_mainchain_gc(num_of_headers);
-        }
-        let diff_storage_usage = env::storage_usage().saturating_sub(initial_storage);
-        let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
-
-        require!(
-            amount >= required_deposit,
-            format!("Required deposit {}", required_deposit)
-        );
-
-        let refund = amount.saturating_sub(required_deposit);
-        if refund > NearToken::from_near(0) {
-            Promise::new(env::predecessor_account_id())
-                .transfer(refund)
-                .into()
-        } else {
-            PromiseOrValue::Value(())
-        }
+    /// Height up to which blocks are accepted via `bootstrap_blocks`; 0 once bootstrap is finished
+    pub fn get_bootstrap_end_height(&self) -> u64 {
+        self.bootstrap_end_height
     }
 
     pub fn get_last_block_header(&self) -> ExtendedHeader {
@@ -572,7 +568,9 @@ impl BtcLightClient {
         self.mainchain_initial_blockhash
             .clone_from(&current_block_hash);
         self.mainchain_tip_blockhash = current_block_hash;
-        self.bootstrap_end_height = block_height + self.bootstrap_blocks_count(block_height);
+        if !self.skip_pow_verification {
+            self.bootstrap_end_height = block_height + self.bootstrap_blocks_count(block_height);
+        }
     }
 
     #[cfg(not(feature = "zcash"))]
@@ -596,15 +594,49 @@ impl BtcLightClient {
         }
     }
 
-    pub(crate) fn check_bootstrap_block(&self, prev_block_header: &ExtendedHeader) -> bool {
-        if prev_block_header.block_height + 1 >= self.bootstrap_end_height {
-            return false;
-        }
+    fn submit_bootstrap_block_header(&mut self, header: Header) {
+        let prev_block_header = self.get_prev_header(&header.clone().into_light());
         require!(
             prev_block_header.block_hash == self.mainchain_tip_blockhash,
             "ERR_BOOTSTRAP_BLOCK_MUST_EXTEND_TIP"
         );
-        true
+        let block_height = prev_block_header.block_height + 1;
+        require!(
+            block_height < self.bootstrap_end_height,
+            "ERR_BLOCK_ABOVE_BOOTSTRAP_END"
+        );
+
+        let (chain_work, overflow) = prev_block_header
+            .chain_work
+            .overflowing_add(work_from_bits(header.bits));
+        require!(!overflow, "Addition of U256 values overflowed");
+
+        let current_header = ExtendedHeader {
+            block_hash: header.block_hash(),
+            block_header: header.into_light(),
+            chain_work,
+            block_height,
+        };
+        self.submit_block_header_inner(current_header, &prev_block_header);
+    }
+
+    fn charge_storage_deposit(amount: NearToken, initial_storage: u64) -> PromiseOrValue<()> {
+        let diff_storage_usage = env::storage_usage().saturating_sub(initial_storage);
+        let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
+
+        require!(
+            amount >= required_deposit,
+            format!("Required deposit {}", required_deposit)
+        );
+
+        let refund = amount.saturating_sub(required_deposit);
+        if refund > NearToken::from_near(0) {
+            Promise::new(env::predecessor_account_id())
+                .transfer(refund)
+                .into()
+        } else {
+            PromiseOrValue::Value(())
+        }
     }
 
     #[cfg(not(feature = "dogecoin"))]
@@ -636,7 +668,7 @@ impl BtcLightClient {
             block_height: 1 + prev_block_header.block_height,
         };
 
-        if !skip_pow_verification && !self.check_bootstrap_block(&prev_block_header) {
+        if !skip_pow_verification {
             self.check_target(&header, &prev_block_header);
 
             let pow_hash = header.block_hash_pow();
@@ -1117,9 +1149,21 @@ mod tests {
             genesis_block: blocks[0].clone(),
         });
         for header in &blocks[1..] {
-            contract.submit_block_header(header.clone(), false);
+            contract.submit_bootstrap_block_header(header.clone());
         }
+        contract.finish_bootstrap_if_done();
         contract
+    }
+
+    fn grant_role(contract: &mut BtcLightClient, role: Role, account_id: &near_sdk::AccountId) {
+        near_sdk::testing_env!(near_sdk::test_utils::VMContextBuilder::new()
+            .predecessor_account_id(env::current_account_id())
+            .build());
+        contract.acl_grant_role(<&str>::from(role).to_owned(), account_id.clone());
+        near_sdk::testing_env!(near_sdk::test_utils::VMContextBuilder::new()
+            .predecessor_account_id(account_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
     }
 
     fn get_default_init_args() -> InitArgs {
@@ -1319,55 +1363,91 @@ mod tests {
         contract.submit_block_header(fork_block_header_example_2(), false);
     }
 
-    #[test]
-    fn test_bootstrap_end_height() {
+    fn init_real_genesis() -> BtcLightClient {
         let blocks = real_block_headers_685440_to_685451();
-        let mut contract = BtcLightClient::init(InitArgs {
+        BtcLightClient::init(InitArgs {
             network: Network::Mainnet,
             genesis_block_hash: blocks[0].block_hash(),
             genesis_block_height: 685440,
             skip_pow_verification: false,
             gc_threshold: 1000,
             genesis_block: blocks[0].clone(),
-        });
-        assert_eq!(contract.bootstrap_end_height, 685452);
+        })
+    }
+
+    #[test]
+    fn test_bootstrap_end_height() {
+        let blocks = real_block_headers_685440_to_685451();
+        let mut contract = init_real_genesis();
+        assert_eq!(contract.get_bootstrap_end_height(), 685452);
 
         for header in &blocks[1..11] {
-            contract.submit_block_header(header.clone(), false);
+            contract.submit_bootstrap_block_header(header.clone());
         }
         contract.finish_bootstrap_if_done();
-        assert_eq!(contract.bootstrap_end_height, 685452);
+        assert_eq!(contract.get_bootstrap_end_height(), 685452);
 
-        contract.submit_block_header(blocks[11].clone(), false);
+        contract.submit_bootstrap_block_header(blocks[11].clone());
         contract.finish_bootstrap_if_done();
-        assert_eq!(contract.bootstrap_end_height, 0);
+        assert_eq!(contract.get_bootstrap_end_height(), 0);
+    }
+
+    #[test]
+    fn test_no_bootstrap_with_skip_pow() {
+        let contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
+        assert_eq!(contract.get_bootstrap_end_height(), 0);
     }
 
     #[test]
     #[should_panic(expected = "ERR_BOOTSTRAP_BLOCK_MUST_EXTEND_TIP")]
     fn test_bootstrap_block_must_extend_tip() {
         let blocks = real_block_headers_685440_to_685451();
-        let mut contract = BtcLightClient::init(InitArgs {
-            network: Network::Mainnet,
-            genesis_block_hash: blocks[0].block_hash(),
-            genesis_block_height: 685440,
-            skip_pow_verification: false,
-            gc_threshold: 1000,
-            genesis_block: blocks[0].clone(),
-        });
-        contract.submit_block_header(blocks[1].clone(), false);
-        contract.submit_block_header(blocks[1].clone(), false);
+        let mut contract = init_real_genesis();
+        contract.submit_bootstrap_block_header(blocks[1].clone());
+        contract.submit_bootstrap_block_header(blocks[1].clone());
     }
 
     #[test]
-    #[should_panic(expected = "ERR_BOOTSTRAP_NOT_ALLOWED")]
-    fn test_bootstrap_rejects_staked_relayer() {
+    #[should_panic(expected = "ERR_BLOCK_ABOVE_BOOTSTRAP_END")]
+    fn test_bootstrap_block_above_end() {
+        let blocks = real_block_headers_685440_to_685451();
+        let mut contract = init_real_genesis();
+        for header in &blocks[1..] {
+            contract.submit_bootstrap_block_header(header.clone());
+        }
+        contract.submit_bootstrap_block_header(block_685452_header());
+    }
+
+    #[test]
+    fn test_bootstrap_blocks_by_role() {
+        let blocks = real_block_headers_685440_to_685451();
+        let mut contract = init_real_genesis();
+        let relayer: near_sdk::AccountId = "relayer.near".parse().unwrap();
+        grant_role(&mut contract, Role::UnrestrictedSubmitBlocks, &relayer);
+
+        let _ = contract.bootstrap_blocks(blocks[1..].to_vec());
+        assert_eq!(contract.get_bootstrap_end_height(), 0);
+        assert_eq!(contract.get_last_block_height(), 685451);
+    }
+
+    #[test]
+    #[should_panic(expected = "ERR_BOOTSTRAP_FINISHED")]
+    fn test_bootstrap_blocks_after_finish() {
+        let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
+        let relayer: near_sdk::AccountId = "relayer.near".parse().unwrap();
+        grant_role(&mut contract, Role::DAO, &relayer);
+        let _ = contract.bootstrap_blocks(vec![block_header_example()]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Insufficient permissions for method bootstrap_blocks")]
+    fn test_bootstrap_blocks_rejects_staked_relayer() {
         let relayer: near_sdk::AccountId = "relayer.near".parse().unwrap();
         near_sdk::testing_env!(near_sdk::test_utils::VMContextBuilder::new()
             .predecessor_account_id(relayer.clone())
             .attached_deposit(NearToken::from_near(1000))
             .build());
-        let mut contract = BtcLightClient::init(get_default_init_args());
+        let mut contract = init_real_genesis();
         contract.apply_for_trusted_relayer();
 
         near_sdk::testing_env!(near_sdk::test_utils::VMContextBuilder::new()
@@ -1375,7 +1455,16 @@ mod tests {
             .block_timestamp(8 * 24 * 60 * 60 * 1_000_000_000)
             .build());
         assert!(contract.is_trusted_relayer(&relayer));
-        let _ = contract.submit_blocks(vec![block_header_example()]);
+        let _ = contract.bootstrap_blocks(real_block_headers_685440_to_685451()[1..].to_vec());
+    }
+
+    #[test]
+    #[should_panic(expected = "ERR_BOOTSTRAP_IN_PROGRESS")]
+    fn test_submit_blocks_rejected_during_bootstrap() {
+        let mut contract = init_real_genesis();
+        let relayer: near_sdk::AccountId = "relayer.near".parse().unwrap();
+        grant_role(&mut contract, Role::UnrestrictedSubmitBlocks, &relayer);
+        let _ = contract.submit_blocks(real_block_headers_685440_to_685451()[1..2].to_vec());
     }
 
     #[test]
