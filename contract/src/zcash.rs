@@ -34,6 +34,8 @@ impl BtcLightClient {
     }
 
     // Reference implementation: https://github.com/zcash/zcash/blob/v6.2.0/src/main.cpp#L5019
+    // Zebra: https://github.com/ZcashFoundation/zebra/blob/v7.0.0-rc.0/zebra-state/src/service/check.rs#L267
+    // Zebra Equihash: https://github.com/ZcashFoundation/zebra/blob/v7.0.0-rc.0/zebra-consensus/src/block/check.rs#L136
     pub(crate) fn check_pow(&self, block_header: &Header, prev_block_header: &ExtendedHeader) {
         let next_work_result =
             zcash_get_next_work_required(&self.get_config(), block_header, prev_block_header, self);
@@ -90,6 +92,7 @@ struct NextWorkResult {
 }
 
 // Reference implementation: https://github.com/zcash/zcash/blob/v6.2.0/src/pow.cpp#L20
+// Zebra: https://github.com/ZcashFoundation/zebra/blob/v7.0.0-rc.0/zebra-state/src/service/check/difficulty.rs#L214
 fn zcash_get_next_work_required(
     config: &ZcashConfig,
     block_header: &Header,
