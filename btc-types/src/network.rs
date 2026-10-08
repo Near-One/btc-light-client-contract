@@ -16,6 +16,13 @@ pub const MAX_FUTURE_BLOCK_TIME_MTP: u32 = 90 * 60;
  */
 pub const MAX_FUTURE_BLOCK_TIME_LOCAL: u32 = 2 * 60 * 60;
 
+/**
+ * Number of block target spacings after the previous block's time beyond which
+ * a Zcash Testnet block may have minimum difficulty, before and after NU7 (ZIP 218).
+ */
+pub const PRE_NU7_MIN_DIFFICULTY_GAP_SPACINGS: i64 = 6;
+pub const POST_NU7_MIN_DIFFICULTY_GAP_SPACINGS: i64 = 18;
+
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Copy, Debug)]
 pub enum Network {
@@ -216,7 +223,11 @@ impl ZcashConfig {
 
     //https://zips.z.cash/zip-0218
     pub fn min_difficulty_block_time_gap(&self, height: u64) -> i64 {
-        let spacings = if self.is_nu7_active(height) { 18 } else { 6 };
+        let spacings = if self.is_nu7_active(height) {
+            POST_NU7_MIN_DIFFICULTY_GAP_SPACINGS
+        } else {
+            PRE_NU7_MIN_DIFFICULTY_GAP_SPACINGS
+        };
         self.pow_target_spacing(height) * spacings
     }
 
