@@ -14,7 +14,7 @@ Prerequisites: You should have access to a Bitcoin full node and a Near node. Al
 
 ### Contract initialization
 
-`--init-contract` sends only the genesis block (height `init_height - num_of_blcoks_to_submit + 1`). The history needed for difficulty checks is then bootstrapped by the regular sync loop, which requires the relayer account to have the `UnrestrictedSubmitBlocks` (or `DAO`) role on the contract. Pick a genesis block deep enough below the chain tip: bootstrap blocks can't be replaced by a fork.
+`--init-contract` sends only the genesis block (height `init_height - num_of_blcoks_to_submit + 1`). The history needed for difficulty checks is then bootstrapped by the regular sync loop, which requires the relayer account to have the `UnrestrictedSubmitBlocks` (or `DAO`) role on the contract. Pick a genesis block deep enough below the chain tip: forks are rejected while bootstrapping.
 
 ### Docker
 
