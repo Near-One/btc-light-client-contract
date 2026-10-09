@@ -1,8 +1,6 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use bitcoin::hashes::Hash;
-use bitcoin::BlockHash;
 use bitcoin_client::AuxData;
 use btc_types::contract_args::InitArgs;
 use log::{info, trace, warn};
@@ -157,10 +155,11 @@ impl Synchronizer {
         blocks_to_submit: Vec<(u64, btc_types::header::Header, Option<AuxData>)>,
         first_block_height_to_submit: Arc<AtomicU64>,
         batch_size: usize,
+        bootstrap: bool,
     ) {
         let signed_submit_blocks_txs = match self
             .near_client
-            .sign_submit_blocks(blocks_to_submit, batch_size)
+            .sign_submit_blocks(blocks_to_submit, batch_size, bootstrap)
             .await
         {
             Ok(txs) => txs,
@@ -230,6 +229,8 @@ impl Synchronizer {
             self.get_last_correct_block_height().await.unwrap() + 1,
         ));
 
+        let mut is_bootstrapping = true;
+
         'main_loop: loop {
             let (current_fetch_size, current_batch_size) = {
                 let sizer = self.batch_sizer.lock().await;
@@ -245,7 +246,20 @@ impl Synchronizer {
 
             let start_height =
                 first_block_height_to_submit.load(std::sync::atomic::Ordering::Relaxed);
-            let end_height = latest_height.min(start_height.saturating_add(current_fetch_size));
+            let mut end_height = latest_height.min(start_height.saturating_add(current_fetch_size));
+
+            if is_bootstrapping {
+                let bootstrap_end_height = continue_on_fail!(
+                    self.near_client.get_bootstrap_end_height().await,
+                    "NEAR Client: Error on get_bootstrap_end_height",
+                    self.config.sleep_time_on_fail_sec,
+                    'main_loop
+                );
+                is_bootstrapping = bootstrap_end_height > 0;
+                if is_bootstrapping {
+                    end_height = end_height.min(bootstrap_end_height - 1);
+                }
+            }
 
             let blocks_to_submit = self.fetch_blocks_to_submit(start_height, end_height).await;
 
@@ -295,6 +309,7 @@ impl Synchronizer {
                     blocks_to_submit,
                     first_block_height_to_submit.clone(),
                     usize::try_from(current_batch_size).unwrap(),
+                    is_bootstrapping,
                 )
                 .await;
 
@@ -354,41 +369,22 @@ async fn init_contract(
 ) {
     info!("Init contract");
 
-    let header_hash = bitcoin_client
-        .get_block_hash(init_config.init_height)
+    let genesis_block_height = init_config.init_height - init_config.num_of_blcoks_to_submit + 1;
+    let genesis_block_hash = bitcoin_client
+        .get_block_hash(genesis_block_height)
         .expect("Failed to get block hash");
-
-    let mut headers = Vec::with_capacity(
-        usize::try_from(init_config.num_of_blcoks_to_submit)
-            .expect("Error on converting num_of_blocks_to_submit to usize"),
-    );
-    let mut current_header = bitcoin_client
-        .get_aux_block_header(&header_hash)
+    let genesis_block = bitcoin_client
+        .get_aux_block_header(&genesis_block_hash)
         .expect("Failed to get initial block header")
         .0;
 
-    headers.push(current_header.clone());
-
-    for _ in 1..init_config.num_of_blcoks_to_submit {
-        let prev_hash = BlockHash::from_byte_array(current_header.prev_block_hash.0);
-        current_header = bitcoin_client
-            .get_aux_block_header(&prev_hash)
-            .expect("Failed to get previous block header")
-            .0;
-        headers.push(current_header.clone());
-    }
-
-    headers.reverse();
-
-    let genesis_block_height = init_config.init_height - init_config.num_of_blcoks_to_submit + 1;
-
     let args = InitArgs {
-        genesis_block_hash: headers[0].block_hash(),
+        genesis_block_hash: genesis_block.block_hash(),
         genesis_block_height,
         skip_pow_verification: init_config.skip_pow_verification,
         gc_threshold: init_config.gc_threshold,
         network: init_config.network,
-        submit_blocks: headers,
+        genesis_block,
     };
 
     info!(

@@ -10,7 +10,7 @@ pub struct InitArgs {
     pub skip_pow_verification: bool,
     pub gc_threshold: u64,
     pub network: Network,
-    pub submit_blocks: Vec<Header>,
+    pub genesis_block: Header,
 }
 
 #[near(serializers = [borsh, json])]

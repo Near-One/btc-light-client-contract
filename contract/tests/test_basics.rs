@@ -21,7 +21,7 @@ mod test_basics {
         Ok(account.view_account().await?.balance)
     }
 
-    // 12-block init list: genesis + 11 fake blocks branching from genesis with
+    // 12-block bootstrap list: genesis + 11 fake blocks branching from genesis with
     // bits=0x207FFFFF (near-zero work). This satisfies the MEDIAN_TIME_SPAN+1
     // requirement while keeping genesis at height 0. Blocks submitted after init
     // with normal bits (e.g. 486_604_799) have enough chainwork to be promoted
@@ -76,6 +76,15 @@ mod test_basics {
         gc_threshold: u64,
     ) -> Result<(Contract, Account), Box<dyn std::error::Error>> {
         let sandbox = near_workspaces::sandbox().await?;
+        init_contract_in(&sandbox, gc_threshold).await
+    }
+
+    /// Inits with the genesis block only and submits the fake blocks of
+    /// `make_init_submit_blocks`; with `skip_pow_verification` there is no bootstrap.
+    async fn init_contract_in(
+        sandbox: &near_workspaces::Worker<near_workspaces::network::Sandbox>,
+        gc_threshold: u64,
+    ) -> Result<(Contract, Account), Box<dyn std::error::Error>> {
         let contract_wasm = near_workspaces::compile_project("./").await?;
 
         let contract = sandbox.dev_deploy(&contract_wasm).await?;
@@ -87,7 +96,7 @@ mod test_basics {
             skip_pow_verification: true,
             gc_threshold,
             network: btc_types::network::Network::Mainnet,
-            submit_blocks,
+            genesis_block: submit_blocks[0].clone(),
         };
         // Call the init method on the contract
         let outcome = contract
@@ -101,8 +110,33 @@ mod test_basics {
 
         let user_account = sandbox.dev_create_account().await?;
         grant_relayer_role(&contract, &user_account).await?;
+        submit_headers(
+            &contract,
+            &user_account,
+            "submit_blocks",
+            submit_blocks[1..].to_vec(),
+        )
+        .await?;
 
         Ok((contract, user_account))
+    }
+
+    async fn submit_headers(
+        contract: &Contract,
+        relayer: &Account,
+        method: &str,
+        headers: Vec<Header>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let num_headers = u128::try_from(headers.len()).unwrap();
+        let outcome = relayer
+            .call(contract.id(), method)
+            .args_borsh(headers)
+            .deposit(STORAGE_DEPOSIT_PER_BLOCK.saturating_mul(num_headers))
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+        Ok(())
     }
 
     async fn init_contract_from_file(
@@ -124,7 +158,7 @@ mod test_basics {
         let all_block_headers =
             read_blocks_from_json("./tests/data/blocks_headers_685440-687456_mainnet.json");
 
-        // Init with 12 blocks (685440-685451) so that MTP can be computed for the
+        // Bootstrap 12 blocks (685440-685451) so that MTP can be computed for the
         // first submitted block (needs 11 ancestors in storage).
         // Layout in JSON: batch[0]=[685440], batch[1]=[685441-685446], batch[2][0..5]=[685447-685451]
         let mut init_blocks: Vec<Header> = Vec::new();
@@ -139,7 +173,7 @@ mod test_basics {
             skip_pow_verification: false,
             gc_threshold,
             network: btc_types::network::Network::Mainnet,
-            submit_blocks: init_blocks,
+            genesis_block: init_blocks[0].clone(),
         };
         // Call the init method on the contract
         let outcome = contract
@@ -153,13 +187,20 @@ mod test_basics {
 
         let user_account = sandbox.dev_create_account().await?;
         grant_relayer_role(&contract, &user_account).await?;
+        submit_headers(
+            &contract,
+            contract.as_account(),
+            "bootstrap_blocks",
+            init_blocks[1..].to_vec(),
+        )
+        .await?;
 
         // Return blocks NOT yet submitted (batch[2][5..] onward).
         let remaining = remaining_after_init(&all_block_headers);
         Ok((sandbox, contract, user_account, remaining))
     }
 
-    // Returns the blocks from the JSON that are not included in the 12-block init.
+    // Returns the blocks from the JSON that are not included in the 12-block bootstrap.
     // The first 12 blocks are: batch[0] (1) + batch[1] (6) + batch[2][0..5] (5).
     fn remaining_after_init(all_headers: &[Vec<Header>]) -> Vec<Vec<Header>> {
         let mut result = Vec::new();
@@ -200,9 +241,8 @@ mod test_basics {
     }
 
     /// Initializes a sandbox contract from the wasm currently deployed on
-    /// mainnet (`btc-client.bridge.near`, which is already on the current state
-    /// layout), upgrades it to the locally built wasm and verifies that
-    /// `migrate` detects the up-to-date layout and keeps the state intact.
+    /// mainnet (`btc-client.bridge.near`, V3 state layout), upgrades it to the
+    /// locally built wasm and verifies that `migrate` keeps the state intact.
     #[tokio::test]
     async fn test_migration_from_mainnet_wasm() -> Result<(), Box<dyn std::error::Error>> {
         let sandbox = near_workspaces::sandbox().await?;
@@ -210,18 +250,18 @@ mod test_basics {
 
         let contract = sandbox.dev_deploy(&old_wasm).await?;
 
+        // The mainnet wasm still takes the pre-bootstrap `InitArgs` layout.
         let submit_blocks = make_init_submit_blocks();
-        let args = InitArgs {
-            genesis_block_hash: submit_blocks[0].block_hash(),
-            genesis_block_height: 0,
-            skip_pow_verification: true,
-            gc_threshold: 20,
-            network: btc_types::network::Network::Mainnet,
-            submit_blocks,
-        };
         let outcome = contract
             .call("init")
-            .args_json(json!({ "args": serde_json::to_value(args).unwrap() }))
+            .args_json(json!({ "args": {
+                "genesis_block_hash": submit_blocks[0].block_hash(),
+                "genesis_block_height": 0,
+                "skip_pow_verification": true,
+                "gc_threshold": 20,
+                "network": btc_types::network::Network::Mainnet,
+                "submit_blocks": submit_blocks,
+            }}))
             .transact()
             .await?;
         assert!(outcome.is_success(), "{:?}", outcome.failures());
@@ -232,9 +272,7 @@ mod test_basics {
             .await?
             .json::<ExtendedHeader>()?;
 
-        // Upgrade to the current wasm and migrate. The mainnet contract was
-        // already migrated to the current layout, so this exercises the
-        // "state is already in the current layout" no-op path.
+        // Upgrade to the current wasm and migrate from the V3 layout.
         let new_wasm = near_workspaces::compile_project("./").await?;
         contract
             .as_account()
@@ -277,7 +315,7 @@ mod test_basics {
     async fn test_setting_genesis_block() -> Result<(), Box<dyn std::error::Error>> {
         let (contract, _user_account) = init_contract().await?;
 
-        // init provides genesis + 11 fake blocks; verify genesis is recorded at height 0
+        // genesis + 11 bootstrapped fake blocks; verify genesis is recorded at height 0
         let outcome = contract
             .view("get_block_hash_by_height")
             .args_json(json!({"height": 0}))
@@ -685,26 +723,7 @@ mod test_basics {
     async fn test_unauthorized_account_cannot_submit_blocks(
     ) -> Result<(), Box<dyn std::error::Error>> {
         let sandbox = near_workspaces::sandbox().await?;
-        let contract_wasm = near_workspaces::compile_project("./").await?;
-        let contract = sandbox.dev_deploy(&contract_wasm).await?;
-
-        let submit_blocks = make_init_submit_blocks();
-        let args = InitArgs {
-            genesis_block_hash: submit_blocks[0].block_hash(),
-            genesis_block_height: 0,
-            skip_pow_verification: true,
-            gc_threshold: 20,
-            network: btc_types::network::Network::Mainnet,
-            submit_blocks,
-        };
-        let outcome = contract
-            .call("init")
-            .args_json(json!({
-                "args": serde_json::to_value(args).unwrap(),
-            }))
-            .transact()
-            .await?;
-        assert!(outcome.is_success());
+        let (contract, _relayer) = init_contract_in(&sandbox, 20).await?;
 
         // Create an account but do NOT grant any role.
         let unauthorized_account = sandbox.dev_create_account().await?;

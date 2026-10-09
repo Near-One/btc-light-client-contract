@@ -12,6 +12,10 @@ Prerequisites: You should have access to a Bitcoin full node and a Near node. Al
 2. Run the server with `cargo run --release` in release mode. Or you can just run with `cargo run` in debug mode.
 3. For Zcash, you need to pass the feature flag like this: `cargo run --features "zcash"`
 
+### Contract initialization
+
+`--init-contract` sends only the genesis block (height `init_height - num_of_blcoks_to_submit + 1`). The history needed for difficulty checks is then submitted by the regular sync loop via `bootstrap_blocks`, which is private: until the bootstrap is finished the relayer must run with the contract account's key. After that, switch to the relayer account, which needs the `UnrestrictedSubmitBlocks` role (or a trusted relayer stake). Pick a genesis block deep enough below the chain tip: forks are rejected while bootstrapping.
+
 ### Docker
 
 To run the relayer together with a bitcoin node you can use docker compose.

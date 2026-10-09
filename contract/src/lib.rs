@@ -121,6 +121,9 @@ pub struct BtcLightClient {
 
     // Network type Mainnet/Testnet
     network: Network,
+
+    // Blocks below this height skip PoW checks while the initial history is loaded; 0 once done
+    bootstrap_end_height: u64,
 }
 
 #[trusted_relayer(
@@ -148,6 +151,7 @@ impl BtcLightClient {
             skip_pow_verification: args.skip_pow_verification,
             gc_threshold: args.gc_threshold,
             network: args.network,
+            bootstrap_end_height: 0,
         };
 
         // Make the contract itself super admin. This allows us to grant any role in the
@@ -160,7 +164,7 @@ impl BtcLightClient {
         contract.init_genesis(
             &args.genesis_block_hash,
             args.genesis_block_height,
-            args.submit_blocks,
+            args.genesis_block,
         );
 
         contract
@@ -176,6 +180,8 @@ impl BtcLightClient {
         &mut self,
         #[serializer(borsh)] headers: Vec<BlockHeader>,
     ) -> PromiseOrValue<()> {
+        require!(self.bootstrap_end_height == 0, "ERR_BOOTSTRAP_IN_PROGRESS");
+
         let amount = env::attached_deposit();
         let initial_storage = env::storage_usage();
         let num_of_headers = headers.len().try_into().unwrap();
@@ -185,22 +191,35 @@ impl BtcLightClient {
         }
 
         self.run_mainchain_gc(num_of_headers);
-        let diff_storage_usage = env::storage_usage().saturating_sub(initial_storage);
-        let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
+        Self::charge_storage_deposit(amount, initial_storage)
+    }
 
-        require!(
-            amount >= required_deposit,
-            format!("Required deposit {}", required_deposit)
-        );
+    /// Submits the initial history after `init` without proof of work checks and GC
+    #[payable]
+    #[private]
+    #[pause]
+    pub fn bootstrap_blocks(
+        &mut self,
+        #[serializer(borsh)] headers: Vec<BlockHeader>,
+    ) -> PromiseOrValue<()> {
+        require!(self.bootstrap_end_height > 0, "ERR_BOOTSTRAP_FINISHED");
 
-        let refund = amount.saturating_sub(required_deposit);
-        if refund > NearToken::from_near(0) {
-            Promise::new(env::predecessor_account_id())
-                .transfer(refund)
-                .into()
-        } else {
-            PromiseOrValue::Value(())
+        let amount = env::attached_deposit();
+        let initial_storage = env::storage_usage();
+
+        for header in headers {
+            #[cfg(feature = "dogecoin")]
+            let header = header.0;
+            self.submit_bootstrap_block_header(header);
         }
+
+        self.finish_bootstrap_if_done();
+        Self::charge_storage_deposit(amount, initial_storage)
+    }
+
+    /// Height up to which blocks are accepted via `bootstrap_blocks`; 0 once bootstrap is finished
+    pub fn get_bootstrap_end_height(&self) -> u64 {
+        self.bootstrap_end_height
     }
 
     pub fn get_last_block_header(&self) -> ExtendedHeader {
@@ -518,50 +537,22 @@ impl BtcLightClient {
         }
     }
 
-    fn init_genesis(
-        &mut self,
-        block_hash: &H256,
-        block_height: u64,
-        mut submit_blocks: Vec<Header>,
-    ) {
+    fn init_genesis(&mut self, block_hash: &H256, block_height: u64, block_header: Header) {
         env::log_str(&format!(
             "Init with block hash {block_hash} at height {block_height}"
         ));
-        require!(
-            !submit_blocks.is_empty(),
-            "At least one block header must be submitted"
-        );
 
-        let config = self.get_config();
         #[cfg(feature = "bitcoin")]
         {
+            let config = self.get_config();
             require!(block_height.is_multiple_of(config.difficulty_adjustment_interval), format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
         }
         #[cfg(any(feature = "litecoin", feature = "dogecoin"))]
         {
+            let config = self.get_config();
             require!((block_height + 1).is_multiple_of(config.difficulty_adjustment_interval), format!("Error: The initial block height  + 1 must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
         }
-        #[cfg(any(feature = "litecoin", feature = "dogecoin", feature = "bitcoin"))]
-        {
-            require!(
-                submit_blocks.len() > btc_types::network::MEDIAN_TIME_SPAN,
-                format!(
-                    "At least {} initial blocks must be submitted to support MTP computation",
-                    btc_types::network::MEDIAN_TIME_SPAN + 1
-                )
-            );
-        }
-        #[cfg(feature = "zcash")]
-        {
-            require!(
-                btc_types::network::MEDIAN_TIME_SPAN
-                    + usize::try_from(config.pow_averaging_window).unwrap()
-                    == submit_blocks.len() - 1,
-                "ERR_NOT_ENOUGH_BLOCKS_FOR_ZCASH"
-            );
-        }
 
-        let block_header = submit_blocks.remove(0);
         let current_block_hash = block_header.block_hash();
         require!(&current_block_hash == block_hash, "Invalid block hash");
         let chain_work = work_from_bits(block_header.bits);
@@ -577,12 +568,74 @@ impl BtcLightClient {
         self.mainchain_initial_blockhash
             .clone_from(&current_block_hash);
         self.mainchain_tip_blockhash = current_block_hash;
+        if !self.skip_pow_verification {
+            self.bootstrap_end_height = block_height + self.bootstrap_blocks_count(block_height);
+        }
+    }
 
-        for block_header in submit_blocks {
-            #[cfg(feature = "dogecoin")]
-            self.submit_block_header((block_header, None), true);
-            #[cfg(not(feature = "dogecoin"))]
-            self.submit_block_header(block_header, true);
+    #[cfg(not(feature = "zcash"))]
+    #[allow(clippy::unused_self)]
+    fn bootstrap_blocks_count(&self, _genesis_block_height: u64) -> u64 {
+        u64::try_from(btc_types::network::MEDIAN_TIME_SPAN).unwrap() + 1
+    }
+
+    fn finish_bootstrap_if_done(&mut self) {
+        if self.bootstrap_end_height == 0 {
+            return;
+        }
+        let tip_height = self
+            .headers_pool
+            .get(&self.mainchain_tip_blockhash)
+            .unwrap_or_else(|| env::panic_str(ERR_KEY_NOT_EXIST))
+            .block_height;
+        if tip_height + 1 >= self.bootstrap_end_height {
+            log!("Bootstrap finished at height {}", tip_height);
+            self.bootstrap_end_height = 0;
+        }
+    }
+
+    fn submit_bootstrap_block_header(&mut self, header: Header) {
+        let prev_block_header = self.get_prev_header(&header.clone().into_light());
+        require!(
+            prev_block_header.block_hash == self.mainchain_tip_blockhash,
+            "ERR_BOOTSTRAP_BLOCK_MUST_EXTEND_TIP"
+        );
+        let block_height = prev_block_header.block_height + 1;
+        require!(
+            block_height < self.bootstrap_end_height,
+            "ERR_BLOCK_ABOVE_BOOTSTRAP_END"
+        );
+
+        let (chain_work, overflow) = prev_block_header
+            .chain_work
+            .overflowing_add(work_from_bits(header.bits));
+        require!(!overflow, "Addition of U256 values overflowed");
+
+        let current_header = ExtendedHeader {
+            block_hash: header.block_hash(),
+            block_header: header.into_light(),
+            chain_work,
+            block_height,
+        };
+        self.submit_block_header_inner(current_header, &prev_block_header);
+    }
+
+    fn charge_storage_deposit(amount: NearToken, initial_storage: u64) -> PromiseOrValue<()> {
+        let diff_storage_usage = env::storage_usage().saturating_sub(initial_storage);
+        let required_deposit = env::storage_byte_cost().saturating_mul(diff_storage_usage.into());
+
+        require!(
+            amount >= required_deposit,
+            format!("Required deposit {}", required_deposit)
+        );
+
+        let refund = amount.saturating_sub(required_deposit);
+        if refund > NearToken::from_near(0) {
+            Promise::new(env::predecessor_account_id())
+                .transfer(refund)
+                .into()
+        } else {
+            PromiseOrValue::Value(())
         }
     }
 
@@ -803,6 +856,19 @@ mod migrate {
         ExtendedHeader, LookupMap, Network, PanicOnDefault, H256,
     };
 
+    /// State layout before `bootstrap_end_height` was added.
+    #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+    pub struct BtcLightClientV3 {
+        mainchain_height_to_header: LookupMap<u64, H256>,
+        mainchain_header_to_height: LookupMap<H256, u64>,
+        mainchain_tip_blockhash: H256,
+        mainchain_initial_blockhash: H256,
+        headers_pool: LookupMap<H256, ExtendedHeader>,
+        skip_pow_verification: bool,
+        gc_threshold: u64,
+        network: Network,
+    }
+
     /// State layout used between #101 and #116, which contained the
     /// `used_aux_parent_blocks` field in all chain builds.
     #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
@@ -825,8 +891,9 @@ mod migrate {
         /// The stored state variant is detected automatically. Borsh requires the
         /// whole buffer to be consumed, so exactly one of the layouts can parse:
         /// * current layout: returned unchanged (re-running `migrate` is a no-op)
+        /// * `BtcLightClientV3`: adds `bootstrap_end_height = 0`
         /// * `BtcLightClientV2` (#101..#116): drops `used_aux_parent_blocks`;
-        ///   `network` is carried over from the old state
+        ///   `network` is carried over from the old state, `bootstrap_end_height = 0`
         ///
         /// Note: any entries stored under the dropped `LookupSet` prefix are left
         /// orphaned in storage. They are only present on Dogecoin deployments;
@@ -847,6 +914,21 @@ mod migrate {
                 return state;
             }
 
+            if let Ok(old_state) = BtcLightClientV3::try_from_slice(&raw_state) {
+                log!("migrating state from the V3 layout");
+                return Self {
+                    mainchain_height_to_header: old_state.mainchain_height_to_header,
+                    mainchain_header_to_height: old_state.mainchain_header_to_height,
+                    mainchain_tip_blockhash: old_state.mainchain_tip_blockhash,
+                    mainchain_initial_blockhash: old_state.mainchain_initial_blockhash,
+                    headers_pool: old_state.headers_pool,
+                    skip_pow_verification: old_state.skip_pow_verification,
+                    gc_threshold: old_state.gc_threshold,
+                    network: old_state.network,
+                    bootstrap_end_height: 0,
+                };
+            }
+
             if let Ok(old_state) = BtcLightClientV2::try_from_slice(&raw_state) {
                 log!("migrating state from the V2 layout");
                 return Self {
@@ -858,6 +940,7 @@ mod migrate {
                     skip_pow_verification: old_state.skip_pow_verification,
                     gc_threshold: old_state.gc_threshold,
                     network: old_state.network,
+                    bootstrap_end_height: 0,
                 };
             }
 
@@ -1053,43 +1136,34 @@ mod tests {
         .unwrap()
     }
 
-    // Initializes with 12 real mainnet blocks (685440-685451), skip_pow=false.
+    // Initializes with real mainnet block 685440 and bootstraps 685441-685451, skip_pow=false.
     // Height 685440 is a difficulty-adjustment boundary (685440 % 2016 == 0).
-    fn get_init_args_with_real_blocks() -> InitArgs {
+    fn init_with_real_blocks() -> BtcLightClient {
         let blocks = real_block_headers_685440_to_685451();
-        let genesis_hash = blocks[0].block_hash();
-        InitArgs {
+        let mut contract = BtcLightClient::init(InitArgs {
             network: Network::Mainnet,
-            genesis_block_hash: genesis_hash,
+            genesis_block_hash: blocks[0].block_hash(),
             genesis_block_height: 685440,
             skip_pow_verification: false,
             gc_threshold: 1000,
-            submit_blocks: blocks,
+            genesis_block: blocks[0].clone(),
+        });
+        for header in &blocks[1..] {
+            contract.submit_bootstrap_block_header(header.clone());
         }
+        contract.finish_bootstrap_if_done();
+        contract
     }
 
-    // Builds 12-block init list: genesis + 11 fake blocks all branching from genesis.
-    // Fakes have bits=0x207FFFFF (near-zero work), so any normally-difficulty block
-    // submitted afterward (bits=486_604_799, work≈2^32) outweighs the fake mainchain
-    // tip and gets promoted. This satisfies the MEDIAN_TIME_SPAN+1 init requirement
-    // without disrupting tests that check block_height=1, chain_work=2W, etc.
-    fn make_default_submit_blocks() -> Vec<Header> {
-        let genesis = genesis_block_header();
-        let genesis_hash = genesis.block_hash().to_string();
-        let mut blocks = vec![genesis];
-        for i in 0u32..11 {
-            let fake: Header = serde_json::from_value(serde_json::json!({
-                "version": 1,
-                "prev_block_hash": genesis_hash,
-                "merkle_root": "0000000000000000000000000000000000000000000000000000000000000000",
-                "time": 1_231_006_506u32 + i,
-                "bits": 0x207fffffu32,
-                "nonce": i,
-            }))
-            .unwrap();
-            blocks.push(fake);
-        }
-        blocks
+    fn grant_role(contract: &mut BtcLightClient, role: Role, account_id: &near_sdk::AccountId) {
+        near_sdk::testing_env!(near_sdk::test_utils::VMContextBuilder::new()
+            .predecessor_account_id(env::current_account_id())
+            .build());
+        contract.acl_grant_role(<&str>::from(role).to_owned(), account_id.clone());
+        near_sdk::testing_env!(near_sdk::test_utils::VMContextBuilder::new()
+            .predecessor_account_id(account_id.clone())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
     }
 
     fn get_default_init_args() -> InitArgs {
@@ -1100,19 +1174,14 @@ mod tests {
             genesis_block_height: 0,
             skip_pow_verification: false,
             gc_threshold: 3,
-            submit_blocks: make_default_submit_blocks(),
+            genesis_block,
         }
     }
 
     fn get_default_init_args_with_skip_pow() -> InitArgs {
-        let genesis_block = genesis_block_header();
         InitArgs {
-            network: Network::Mainnet,
-            genesis_block_hash: genesis_block.block_hash(),
-            genesis_block_height: 0,
             skip_pow_verification: true,
-            gc_threshold: 3,
-            submit_blocks: make_default_submit_blocks(),
+            ..get_default_init_args()
         }
     }
 
@@ -1124,7 +1193,7 @@ mod tests {
             .build());
         let mut header = block_685452_header();
         header.nonce += 1; // tampered nonce → hash won't satisfy PoW target
-        let mut contract = BtcLightClient::init(get_init_args_with_real_blocks());
+        let mut contract = init_with_real_blocks();
         contract.submit_block_header(header, contract.skip_pow_verification);
     }
 
@@ -1134,7 +1203,7 @@ mod tests {
             .block_timestamp(1_622_344_600_000_000_000u64)
             .build());
         let header = block_685452_header();
-        let mut contract = BtcLightClient::init(get_init_args_with_real_blocks());
+        let mut contract = init_with_real_blocks();
         contract.submit_block_header(header.clone(), contract.skip_pow_verification);
 
         let received_header = contract.get_last_block_header();
@@ -1280,6 +1349,7 @@ mod tests {
     #[should_panic(expected = "bad-diffbits: incorrect proof of work")]
     fn test_submitting_block_with_incorrect_bits_same_period() {
         let mut contract = BtcLightClient::init(get_default_init_args());
+        contract.bootstrap_end_height = 0;
         let mut next_header = block_header_example();
         next_header.bits += 1;
         contract.submit_block_header(next_header, contract.skip_pow_verification);
@@ -1291,5 +1361,113 @@ mod tests {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
 
         contract.submit_block_header(fork_block_header_example_2(), false);
+    }
+
+    fn init_real_genesis() -> BtcLightClient {
+        let blocks = real_block_headers_685440_to_685451();
+        BtcLightClient::init(InitArgs {
+            network: Network::Mainnet,
+            genesis_block_hash: blocks[0].block_hash(),
+            genesis_block_height: 685440,
+            skip_pow_verification: false,
+            gc_threshold: 1000,
+            genesis_block: blocks[0].clone(),
+        })
+    }
+
+    #[test]
+    fn test_bootstrap_end_height() {
+        let blocks = real_block_headers_685440_to_685451();
+        let mut contract = init_real_genesis();
+        assert_eq!(contract.get_bootstrap_end_height(), 685452);
+
+        for header in &blocks[1..11] {
+            contract.submit_bootstrap_block_header(header.clone());
+        }
+        contract.finish_bootstrap_if_done();
+        assert_eq!(contract.get_bootstrap_end_height(), 685452);
+
+        contract.submit_bootstrap_block_header(blocks[11].clone());
+        contract.finish_bootstrap_if_done();
+        assert_eq!(contract.get_bootstrap_end_height(), 0);
+    }
+
+    #[test]
+    fn test_no_bootstrap_with_skip_pow() {
+        let contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
+        assert_eq!(contract.get_bootstrap_end_height(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "ERR_BOOTSTRAP_BLOCK_MUST_EXTEND_TIP")]
+    fn test_bootstrap_block_must_extend_tip() {
+        let blocks = real_block_headers_685440_to_685451();
+        let mut contract = init_real_genesis();
+        contract.submit_bootstrap_block_header(blocks[1].clone());
+        contract.submit_bootstrap_block_header(blocks[1].clone());
+    }
+
+    #[test]
+    #[should_panic(expected = "ERR_BLOCK_ABOVE_BOOTSTRAP_END")]
+    fn test_bootstrap_block_above_end() {
+        let blocks = real_block_headers_685440_to_685451();
+        let mut contract = init_real_genesis();
+        for header in &blocks[1..] {
+            contract.submit_bootstrap_block_header(header.clone());
+        }
+        contract.submit_bootstrap_block_header(block_685452_header());
+    }
+
+    fn as_contract_account() {
+        near_sdk::testing_env!(near_sdk::test_utils::VMContextBuilder::new()
+            .predecessor_account_id(env::current_account_id())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
+    }
+
+    #[test]
+    fn test_bootstrap_blocks_by_contract_account() {
+        let blocks = real_block_headers_685440_to_685451();
+        let mut contract = init_real_genesis();
+        as_contract_account();
+
+        let _ = contract.bootstrap_blocks(blocks[1..].to_vec());
+        assert_eq!(contract.get_bootstrap_end_height(), 0);
+        assert_eq!(contract.get_last_block_height(), 685451);
+    }
+
+    #[test]
+    #[should_panic(expected = "ERR_BOOTSTRAP_FINISHED")]
+    fn test_bootstrap_blocks_after_finish() {
+        let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
+        as_contract_account();
+        let _ = contract.bootstrap_blocks(vec![block_header_example()]);
+    }
+
+    #[test]
+    #[should_panic(expected = "ERR_BOOTSTRAP_IN_PROGRESS")]
+    fn test_submit_blocks_rejected_during_bootstrap() {
+        let mut contract = init_real_genesis();
+        let relayer: near_sdk::AccountId = "relayer.near".parse().unwrap();
+        grant_role(&mut contract, Role::UnrestrictedSubmitBlocks, &relayer);
+        let _ = contract.submit_blocks(real_block_headers_685440_to_685451()[1..2].to_vec());
+    }
+
+    #[test]
+    fn test_migrate_from_v3_layout() {
+        let contract = BtcLightClient::init(get_default_init_args());
+        let mut raw_state = borsh::to_vec(&contract).unwrap();
+        // V3 is the current layout without the trailing `bootstrap_end_height`
+        raw_state.truncate(raw_state.len() - 8);
+        env::storage_write(b"STATE", &raw_state);
+
+        let migrated = BtcLightClient::migrate();
+        assert_eq!(migrated.bootstrap_end_height, 0);
+        assert_eq!(
+            migrated.mainchain_tip_blockhash,
+            contract.mainchain_tip_blockhash
+        );
+        assert!(matches!(migrated.network, Network::Mainnet));
+        assert_eq!(migrated.gc_threshold, contract.gc_threshold);
     }
 }

@@ -49,6 +49,14 @@ make fmt
 3. If the block extends the main chain tip → appended directly
 4. If it's a fork → stored separately; if fork's `chain_work` > main chain → **automatic reorg**
 
+### Bootstrap
+
+`init` takes only the genesis block. The history needed for difficulty and MTP checks (12 blocks; 12 + averaging window for Zcash) is then submitted via `bootstrap_blocks` up to `bootstrap_end_height` (view: `get_bootstrap_end_height`):
+- `bootstrap_blocks` is private (callable only by the contract account itself) and pausable
+- bootstrap blocks must extend the tip; PoW checks and GC are skipped
+- `submit_blocks` is rejected until the tip reaches `bootstrap_end_height`, which is then reset to 0
+- with `skip_pow_verification` there is no bootstrap
+
 ### Chain Reorganization
 
 When a fork accumulates more work than the main chain:
