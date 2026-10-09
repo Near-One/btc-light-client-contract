@@ -10,12 +10,12 @@ use btc_types::header::ExtendedHeader;
 use log::info;
 use merkle_tools::H256;
 use near_crypto::Signer;
-use near_jsonrpc_client::methods::broadcast_tx_async::RpcBroadcastTxAsyncResponse;
 use near_jsonrpc_client::methods::tx::RpcTransactionResponse;
 use near_jsonrpc_client::{methods, JsonRpcClient, MethodCallResult};
 use near_jsonrpc_primitives::types::query::QueryResponseKind;
 use near_jsonrpc_primitives::types::transactions::{RpcTransactionError, TransactionInfo};
 use near_primitives::borsh;
+use near_primitives::hash::CryptoHash;
 use near_primitives::transaction::{
     Action, FunctionCallAction, SignedTransaction, Transaction, TransactionV0,
 };
@@ -611,21 +611,30 @@ impl NearClient {
         ))
     }
 
+    /// Broadcasts the transaction without waiting for it to be executed.
+    ///
+    /// Uses `send_tx` with `wait_until = None` rather than the deprecated
+    /// `broadcast_tx_async`: some RPC providers no longer expose the latter and answer
+    /// with `-32601 Method not found`, which makes every submission routed to them fail.
     async fn submit_tx(
         &self,
         signed_tx: SignedTransaction,
-    ) -> Result<RpcBroadcastTxAsyncResponse, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(self
-            .client
-            .call(methods::broadcast_tx_async::RpcBroadcastTxAsyncRequest {
+    ) -> Result<CryptoHash, Box<dyn std::error::Error + Send + Sync>> {
+        let tx_hash = signed_tx.get_hash();
+
+        self.client
+            .call(methods::send_tx::RpcSendTransactionRequest {
                 signed_transaction: signed_tx,
+                wait_until: TxExecutionStatus::None,
             })
-            .await?)
+            .await?;
+
+        Ok(tx_hash)
     }
 
     async fn get_tx_status(
         &self,
-        tx_hash: RpcBroadcastTxAsyncResponse,
+        tx_hash: CryptoHash,
     ) -> MethodCallResult<RpcTransactionResponse, RpcTransactionError> {
         self.client
             .call(methods::tx::RpcTransactionStatusRequest {
