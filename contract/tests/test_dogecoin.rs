@@ -123,7 +123,7 @@ mod test_dogecoin {
 
         let user_account = sandbox.dev_create_account().await?;
         grant_relayer_role(&contract, &user_account).await?;
-        bootstrap(&contract, &user_account, &init_blocks[1..]).await?;
+        bootstrap(&contract, contract.as_account(), &init_blocks[1..]).await?;
         Ok((contract, user_account))
     }
 
@@ -371,7 +371,7 @@ mod test_dogecoin {
 
         let user_account = sandbox.dev_create_account().await?;
         grant_relayer_role(&contract, &user_account).await?;
-        bootstrap(&contract, &user_account, &blocks[2..]).await?;
+        bootstrap(&contract, contract.as_account(), &blocks[2..]).await?;
 
         // Submit block 5_800_013 with full PoW + AuxPoW verification.
         let aux_data = build_aux_data_5800013();

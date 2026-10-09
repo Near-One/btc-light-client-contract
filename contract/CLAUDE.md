@@ -52,7 +52,7 @@ make fmt
 ### Bootstrap
 
 `init` takes only the genesis block. The history needed for difficulty and MTP checks (12 blocks; 12 + averaging window for Zcash) is then submitted via `bootstrap_blocks` up to `bootstrap_end_height` (view: `get_bootstrap_end_height`):
-- only `DAO` / `UnrestrictedSubmitBlocks` may call `bootstrap_blocks`
+- `bootstrap_blocks` is private (callable only by the contract account itself) and pausable
 - bootstrap blocks must extend the tip; PoW checks and GC are skipped
 - `submit_blocks` is rejected until the tip reaches `bootstrap_end_height`, which is then reset to 0
 - with `skip_pow_verification` there is no bootstrap

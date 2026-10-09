@@ -189,7 +189,7 @@ mod test_basics {
         grant_relayer_role(&contract, &user_account).await?;
         submit_headers(
             &contract,
-            &user_account,
+            contract.as_account(),
             "bootstrap_blocks",
             init_blocks[1..].to_vec(),
         )

@@ -9,8 +9,7 @@ use btc_types::u256::U256;
 use btc_types::utils::target_from_bits;
 use btc_types::utils::work_from_bits;
 use near_plugins::{
-    access_control, access_control_any, pause, AccessControlRole, AccessControllable, Pausable,
-    Upgradable,
+    access_control, pause, AccessControlRole, AccessControllable, Pausable, Upgradable,
 };
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::collections::LookupMap;
@@ -197,7 +196,8 @@ impl BtcLightClient {
 
     /// Submits the initial history after `init` without proof of work checks and GC
     #[payable]
-    #[access_control_any(roles(Role::DAO, Role::UnrestrictedSubmitBlocks))]
+    #[private]
+    #[pause]
     pub fn bootstrap_blocks(
         &mut self,
         #[serializer(borsh)] headers: Vec<BlockHeader>,
@@ -1418,12 +1418,18 @@ mod tests {
         contract.submit_bootstrap_block_header(block_685452_header());
     }
 
+    fn as_contract_account() {
+        near_sdk::testing_env!(near_sdk::test_utils::VMContextBuilder::new()
+            .predecessor_account_id(env::current_account_id())
+            .attached_deposit(NearToken::from_near(1))
+            .build());
+    }
+
     #[test]
-    fn test_bootstrap_blocks_by_role() {
+    fn test_bootstrap_blocks_by_contract_account() {
         let blocks = real_block_headers_685440_to_685451();
         let mut contract = init_real_genesis();
-        let relayer: near_sdk::AccountId = "relayer.near".parse().unwrap();
-        grant_role(&mut contract, Role::UnrestrictedSubmitBlocks, &relayer);
+        as_contract_account();
 
         let _ = contract.bootstrap_blocks(blocks[1..].to_vec());
         assert_eq!(contract.get_bootstrap_end_height(), 0);
@@ -1434,28 +1440,8 @@ mod tests {
     #[should_panic(expected = "ERR_BOOTSTRAP_FINISHED")]
     fn test_bootstrap_blocks_after_finish() {
         let mut contract = BtcLightClient::init(get_default_init_args_with_skip_pow());
-        let relayer: near_sdk::AccountId = "relayer.near".parse().unwrap();
-        grant_role(&mut contract, Role::DAO, &relayer);
+        as_contract_account();
         let _ = contract.bootstrap_blocks(vec![block_header_example()]);
-    }
-
-    #[test]
-    #[should_panic(expected = "Insufficient permissions for method bootstrap_blocks")]
-    fn test_bootstrap_blocks_rejects_staked_relayer() {
-        let relayer: near_sdk::AccountId = "relayer.near".parse().unwrap();
-        near_sdk::testing_env!(near_sdk::test_utils::VMContextBuilder::new()
-            .predecessor_account_id(relayer.clone())
-            .attached_deposit(NearToken::from_near(1000))
-            .build());
-        let mut contract = init_real_genesis();
-        contract.apply_for_trusted_relayer();
-
-        near_sdk::testing_env!(near_sdk::test_utils::VMContextBuilder::new()
-            .predecessor_account_id(relayer.clone())
-            .block_timestamp(8 * 24 * 60 * 60 * 1_000_000_000)
-            .build());
-        assert!(contract.is_trusted_relayer(&relayer));
-        let _ = contract.bootstrap_blocks(real_block_headers_685440_to_685451()[1..].to_vec());
     }
 
     #[test]

@@ -51,6 +51,21 @@ mod test_zcash {
     }
 
     async fn init_zcash_contract() -> Result<(Contract, Account), Box<dyn std::error::Error>> {
+        let (contract, user_account) = init_zcash_genesis().await?;
+
+        // 11 blocks for MTP + 17 for the pre-NU7 averaging window
+        let outcome = bootstrap(
+            &contract,
+            contract.as_account(),
+            read_zcash_blocks()[1..29].to_vec(),
+        )
+        .await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+
+        Ok((contract, user_account))
+    }
+
+    async fn init_zcash_genesis() -> Result<(Contract, Account), Box<dyn std::error::Error>> {
         let sandbox = near_workspaces::sandbox().await?;
         let contract_wasm = build_contract().await;
 
@@ -81,11 +96,28 @@ mod test_zcash {
         let user_account = sandbox.dev_create_account().await?;
         grant_relayer_role(&contract, &user_account).await?;
 
-        // 11 blocks for MTP + 17 for the pre-NU7 averaging window
-        let outcome = bootstrap(&contract, &user_account, initial_blocks[1..29].to_vec()).await?;
-        assert!(outcome.is_success(), "{:?}", outcome.failures());
-
         Ok((contract, user_account))
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_blocks_is_private() -> Result<(), Box<dyn std::error::Error>> {
+        let (contract, relayer) = init_zcash_genesis().await?;
+
+        let outcome = bootstrap(&contract, &relayer, read_zcash_blocks()[1..29].to_vec()).await?;
+        assert!(
+            format!("{:?}", outcome.failures()).contains("Method bootstrap_blocks is private"),
+            "{:?}",
+            outcome.failures()
+        );
+
+        let outcome = submit(&contract, &relayer, read_zcash_blocks()[1..2].to_vec()).await?;
+        assert!(
+            format!("{:?}", outcome.failures()).contains("ERR_BOOTSTRAP_IN_PROGRESS"),
+            "{:?}",
+            outcome.failures()
+        );
+
+        Ok(())
     }
 
     async fn submit(
@@ -278,7 +310,7 @@ mod test_zcash {
 
         let mut max_batch_gas = 0;
         for batch in headers[1..num_bootstrap_blocks].chunks(15) {
-            let outcome = bootstrap(&contract, &user_account, batch.to_vec()).await?;
+            let outcome = bootstrap(&contract, contract.as_account(), batch.to_vec()).await?;
             assert!(outcome.is_success(), "{:?}", outcome.failures());
             max_batch_gas = max_batch_gas.max(outcome.total_gas_burnt.as_tgas());
         }
