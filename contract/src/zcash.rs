@@ -445,11 +445,23 @@ mod tests {
     }
 
     #[test]
-    fn test_zcash_config_nu7_not_scheduled() {
+    fn test_zcash_config_mainnet_nu7_activation() {
         let config = btc_types::network::get_zcash_config(Network::Mainnet);
-        assert!(!config.is_nu7_active(u64::MAX));
-        assert_eq!(config.pow_target_spacing(u64::MAX), 75);
-        assert_eq!(config.pow_averaging_window(u64::MAX), 17);
+        let activation_height = config.nu7_activation_height.unwrap();
+        assert_eq!(activation_height, 3_543_405);
+
+        let pre = activation_height - 1;
+        assert!(!config.is_nu7_active(pre));
+        assert_eq!(config.pow_target_spacing(pre), 75);
+        assert_eq!(config.pow_averaging_window(pre), 17);
+        assert_eq!(config.min_difficulty_block_time_gap(pre), 6 * 75);
+
+        assert!(config.is_nu7_active(activation_height));
+        assert_eq!(config.pow_target_spacing(activation_height), 25);
+        assert_eq!(config.pow_averaging_window(activation_height), 102);
+        assert_eq!(config.averaging_window_timespan(activation_height), 2550);
+        assert_eq!(config.min_actual_timespan(activation_height), 2142);
+        assert_eq!(config.max_actual_timespan(activation_height), 3366);
     }
 
     #[test]

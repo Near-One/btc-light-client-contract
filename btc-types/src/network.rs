@@ -148,7 +148,8 @@ pub fn get_zcash_config(network: Network) -> ZcashConfig {
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L110
             //https://github.com/ZcashFoundation/zebra/blob/v7.0.0-rc.0/zebra-chain/src/parameters/network_upgrade.rs#L568
             pow_allow_min_difficulty_blocks_after_height: None,
-            nu7_activation_height: None,
+            //https://github.com/ZcashFoundation/zebra/blob/v7.0.0/zebra-chain/src/parameters/constants.rs#L106
+            nu7_activation_height: Some(3_543_405),
         },
         Network::Testnet => ZcashConfig {
             //https://github.com/zcash/zcash/blob/2352fbc1ed650ac4369006bea11f7f20ee046b84/src/chainparams.cpp#L629
