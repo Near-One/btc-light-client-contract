@@ -101,11 +101,13 @@ fn zcash_get_next_work_required(
 ) -> NextWorkResult {
     let height = prev_block_header.block_height + 1;
     let pow_averaging_window = config.pow_averaging_window(height);
+    let window = U256::from(<i64 as TryInto<u64>>::try_into(pow_averaging_window).unwrap());
 
     // Find the first block in the averaging interval
     // and the median time past for the first and last blocks in the interval
     let mut current_header = prev_block_header.clone();
-    let mut total_target = U256::ZERO;
+    let mut total_quotient = U256::ZERO;
+    let mut total_remainder = U256::ZERO;
     let mut median_time = [0u32; MEDIAN_TIME_SPAN];
 
     let prev_block_median_time_past = {
@@ -114,10 +116,13 @@ fn zcash_get_next_work_required(
                 median_time[i] = current_header.block_header.time;
             }
 
-            let (sum, overflow) =
-                total_target.overflowing_add(target_from_bits(current_header.block_header.bits));
+            let target = target_from_bits(current_header.block_header.bits);
+            let (sum, overflow) = total_quotient.overflowing_add(target / window);
             require!(!overflow, "Addition of U256 values overflowed");
-            total_target = sum;
+            total_quotient = sum;
+            let (sum, overflow) = total_remainder.overflowing_add(target % window);
+            require!(!overflow, "Addition of U256 values overflowed");
+            total_remainder = sum;
 
             current_header = prev_block_getter.get_prev_header(&current_header.block_header);
         }
@@ -161,8 +166,8 @@ fn zcash_get_next_work_required(
     //
     // Here we take the floor of MeanTarget(height) immediately, but that is equivalent to doing
     // so only after a further division, as proven in <https://math.stackexchange.com/a/147832/185422>.
-    let average_target =
-        total_target / U256::from(<i64 as TryInto<u64>>::try_into(pow_averaging_window).unwrap());
+    let (average_target, overflow) = total_quotient.overflowing_add(total_remainder / window);
+    require!(!overflow, "Addition of U256 values overflowed");
 
     let expected_bits = zcash_calculate_next_work_required(
         config,
@@ -490,6 +495,25 @@ mod tests {
         // 102 blocks at the pre-NU7 75s spacing hit the PoWMaxAdjustDown bound
         assert_eq!(result.expected_bits, expected_bits(2550, 3366));
         assert_ne!(result.expected_bits, BITS);
+    }
+
+    #[test]
+    fn test_zcash_get_next_work_required_testnet_pow_limit_window() {
+        let config = btc_types::network::get_zcash_config(Network::Testnet);
+        let tip_height = config.nu7_activation_height.unwrap() + 200;
+        let mut chain = MockChain::new(tip_height - 200, tip_height, 25);
+        for header in &mut chain.headers {
+            header.block_header.bits = config.proof_of_work_limit_bits;
+        }
+        let tip = chain.tip();
+
+        let result = zcash_get_next_work_required(&config, &next_header(&tip, 25), &tip, &chain);
+
+        let (target, overflow) = (target_from_bits(config.proof_of_work_limit_bits)
+            / U256::from(2550u64))
+        .overflowing_mul(2550);
+        assert!(!overflow);
+        assert_eq!(result.expected_bits, target.target_to_bits());
     }
 
     #[test]
