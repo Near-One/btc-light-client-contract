@@ -197,7 +197,7 @@ mod test_zcash {
 
         let contract = sandbox.dev_deploy(&old_wasm).await?;
 
-        // The mainnet wasm still takes the pre-bootstrap `InitArgs` layout.
+        // The mainnet wasm (0.6.1) takes `genesis_block` in `InitArgs` and bootstraps separately.
         let initial_blocks = read_zcash_blocks();
         let outcome = contract
             .call("init")
@@ -207,11 +207,19 @@ mod test_zcash {
                 "skip_pow_verification": false,
                 "gc_threshold": 2000,
                 "network": btc_types::network::Network::Mainnet,
-                "submit_blocks": initial_blocks[..29],
+                "genesis_block": initial_blocks[0],
             }}))
             .max_gas()
             .transact()
             .await?;
+        assert!(outcome.is_success(), "{:?}", outcome.failures());
+
+        let outcome = bootstrap(
+            &contract,
+            contract.as_account(),
+            initial_blocks[1..29].to_vec(),
+        )
+        .await?;
         assert!(outcome.is_success(), "{:?}", outcome.failures());
 
         // Upgrade to the current wasm.
