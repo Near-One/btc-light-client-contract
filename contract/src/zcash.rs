@@ -101,13 +101,11 @@ fn zcash_get_next_work_required(
 ) -> NextWorkResult {
     let height = prev_block_header.block_height + 1;
     let pow_averaging_window = config.pow_averaging_window(height);
-    let window = U256::from(<i64 as TryInto<u64>>::try_into(pow_averaging_window).unwrap());
 
     // Find the first block in the averaging interval
     // and the median time past for the first and last blocks in the interval
     let mut current_header = prev_block_header.clone();
-    let mut total_quotient = U256::ZERO;
-    let mut total_remainder = U256::ZERO;
+    let mut targets = Vec::with_capacity(usize::try_from(pow_averaging_window).unwrap());
     let mut median_time = [0u32; MEDIAN_TIME_SPAN];
 
     let prev_block_median_time_past = {
@@ -116,13 +114,7 @@ fn zcash_get_next_work_required(
                 median_time[i] = current_header.block_header.time;
             }
 
-            let target = target_from_bits(current_header.block_header.bits);
-            let (sum, overflow) = total_quotient.overflowing_add(target / window);
-            require!(!overflow, "Addition of U256 values overflowed");
-            total_quotient = sum;
-            let (sum, overflow) = total_remainder.overflowing_add(target % window);
-            require!(!overflow, "Addition of U256 values overflowed");
-            total_remainder = sum;
+            targets.push(target_from_bits(current_header.block_header.bits));
 
             current_header = prev_block_getter.get_prev_header(&current_header.block_header);
         }
@@ -166,8 +158,7 @@ fn zcash_get_next_work_required(
     //
     // Here we take the floor of MeanTarget(height) immediately, but that is equivalent to doing
     // so only after a further division, as proven in <https://math.stackexchange.com/a/147832/185422>.
-    let (average_target, overflow) = total_quotient.overflowing_add(total_remainder / window);
-    require!(!overflow, "Addition of U256 values overflowed");
+    let average_target = mean_target(&targets);
 
     let expected_bits = zcash_calculate_next_work_required(
         config,
@@ -181,6 +172,35 @@ fn zcash_get_next_work_required(
         expected_bits,
         prev_block_median_time_past,
     }
+}
+
+fn mean_target(targets: &[U256]) -> U256 {
+    let window = U256::from(u64::try_from(targets.len()).unwrap());
+    let mut total_target = U256::ZERO;
+    for target in targets {
+        let (sum, overflow) = total_target.overflowing_add(*target);
+        if overflow {
+            return mean_target_by_parts(targets, window);
+        }
+        total_target = sum;
+    }
+    total_target / window
+}
+
+fn mean_target_by_parts(targets: &[U256], window: U256) -> U256 {
+    let mut total_quotient = U256::ZERO;
+    let mut total_remainder = U256::ZERO;
+    for target in targets {
+        let (sum, overflow) = total_quotient.overflowing_add(*target / window);
+        require!(!overflow, "Addition of U256 values overflowed");
+        total_quotient = sum;
+        let (sum, overflow) = total_remainder.overflowing_add(*target % window);
+        require!(!overflow, "Addition of U256 values overflowed");
+        total_remainder = sum;
+    }
+    let (average_target, overflow) = total_quotient.overflowing_add(total_remainder / window);
+    require!(!overflow, "Addition of U256 values overflowed");
+    average_target
 }
 
 fn zcash_calculate_next_work_required(
@@ -514,6 +534,27 @@ mod tests {
         .overflowing_mul(2550);
         assert!(!overflow);
         assert_eq!(result.expected_bits, target.target_to_bits());
+    }
+
+    #[test]
+    fn test_mean_target_by_parts_matches_plain_mean() {
+        let targets: Vec<U256> = [
+            0x1c05_a3f4,
+            0x1d00_ffff,
+            0x2007_ffff,
+            0x2002_1643,
+            0x0300_0065,
+        ]
+        .into_iter()
+        .map(target_from_bits)
+        .chain([U256::from(101u64), U256::from(7u64)])
+        .collect();
+        let window = U256::from(u64::try_from(targets.len()).unwrap());
+
+        assert_eq!(
+            mean_target_by_parts(&targets, window),
+            mean_target(&targets)
+        );
     }
 
     #[test]
