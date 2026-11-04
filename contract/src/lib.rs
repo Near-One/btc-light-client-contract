@@ -5,7 +5,6 @@ use btc_types::hash::H256;
 use btc_types::header::{BlockHeader, ExtendedHeader, Header, LightHeader};
 use btc_types::network::Network;
 use btc_types::u256::U256;
-#[cfg(not(feature = "dogecoin"))]
 use btc_types::utils::target_from_bits;
 use btc_types::utils::work_from_bits;
 use near_plugins::{
@@ -26,14 +25,8 @@ mod utils;
 #[cfg(feature = "zcash")]
 mod zcash;
 
-#[cfg(feature = "dogecoin")]
-mod dogecoin;
-
 #[cfg(feature = "bitcoin")]
 mod bitcoin;
-
-#[cfg(feature = "litecoin")]
-mod litecoin;
 
 /// Define roles for access control of `Pausable` features. Accounts which are
 /// granted a role are authorized to execute the corresponding action.
@@ -208,8 +201,6 @@ impl BtcLightClient {
         let initial_storage = env::storage_usage();
 
         for header in headers {
-            #[cfg(feature = "dogecoin")]
-            let header = header.0;
             self.submit_bootstrap_block_header(header);
         }
 
@@ -547,11 +538,6 @@ impl BtcLightClient {
             let config = self.get_config();
             require!(block_height.is_multiple_of(config.difficulty_adjustment_interval), format!("Error: The initial block height must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
         }
-        #[cfg(any(feature = "litecoin", feature = "dogecoin"))]
-        {
-            let config = self.get_config();
-            require!((block_height + 1).is_multiple_of(config.difficulty_adjustment_interval), format!("Error: The initial block height  + 1 must be divisible by {} to ensure proper alignment with difficulty adjustment periods.", config.difficulty_adjustment_interval));
-        }
 
         let current_block_hash = block_header.block_hash();
         require!(&current_block_hash == block_hash, "Invalid block hash");
@@ -639,7 +625,6 @@ impl BtcLightClient {
         }
     }
 
-    #[cfg(not(feature = "dogecoin"))]
     #[allow(clippy::needless_pass_by_value)]
     fn submit_block_header(&mut self, header: Header, skip_pow_verification: bool) {
         // We do not have a previous block in the headers_pool, there is a high probability

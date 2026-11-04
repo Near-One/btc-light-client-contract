@@ -2,7 +2,7 @@ MAKEFILE_DIR :=  $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 LINT_OPTIONS = -D warnings -D clippy::pedantic -A clippy::must_use_candidate -A clippy::used_underscore_binding -A clippy::needless_range_loop
 NEAR_MANIFEST := $(MAKEFILE_DIR)/contract/Cargo.toml
 
-FEATURES = bitcoin dogecoin litecoin zcash
+FEATURES = bitcoin zcash
 
 build: $(addprefix build-,$(FEATURES))
 

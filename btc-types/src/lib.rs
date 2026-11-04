@@ -1,4 +1,3 @@
-pub mod aux;
 pub mod btc_header;
 pub mod contract_args;
 pub mod hash;

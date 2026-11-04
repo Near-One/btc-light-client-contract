@@ -17,7 +17,7 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-2x
     strategy:
       matrix:
-        chain: [btc, ltc, zec]
+        chain: [btc, zec]
     
     permissions:
       contents: read
@@ -57,7 +57,6 @@ jobs:
         run: |
           case "${{ matrix.chain }}" in
             btc) echo "features=" >> $GITHUB_OUTPUT ;;
-            ltc) echo "features=" >> $GITHUB_OUTPUT ;;
             zec) echo "features=zcash" >> $GITHUB_OUTPUT ;;
           esac
 

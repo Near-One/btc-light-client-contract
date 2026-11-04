@@ -1,10 +1,3 @@
-#[cfg(not(feature = "zcash"))]
-use bitcoin::consensus::{encode, serialize};
-#[cfg(not(feature = "zcash"))]
-use bitcoin::Transaction;
-use bitcoin::TxMerkleNode;
-#[cfg(not(feature = "zcash"))]
-use bitcoincore_rpc::bitcoin::block::Header as BitcoinHeader;
 use bitcoincore_rpc::bitcoin::hashes::Hash;
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::jsonrpc::minreq_http::HttpError;
@@ -12,21 +5,8 @@ use bitcoincore_rpc::jsonrpc::Transport;
 use bitcoincore_rpc::{jsonrpc, RpcApi};
 use btc_types::header::Header;
 use jsonrpc::{Request, Response};
-use std::error::Error;
 
 use crate::config::Config;
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct AuxData {
-    pub(crate) coinbase_tx: bitcoin::Transaction,
-    pub(crate) parent_block_hash: BlockHash,
-    pub(crate) merkle_branch: Vec<TxMerkleNode>,
-    pub(crate) merkle_index: u32,
-    pub(crate) chainmerkle_branch: Vec<TxMerkleNode>,
-    pub(crate) chain_index: u32,
-    pub(crate) parent_block: Header,
-}
 
 struct CustomMinreqHttpTransport {
     url: String,
@@ -147,7 +127,6 @@ impl Client {
     ///
     /// # Errors
     /// * issue with connection to the Bitcoin Node
-    #[allow(dead_code)]
     pub fn get_block_header(
         &self,
         block_hash: &BlockHash,
@@ -160,72 +139,6 @@ impl Client {
         Ok(Header::from_block_header_vec(&decoded_hex)?)
     }
 
-    #[cfg(feature = "zcash")]
-    pub fn get_aux_block_header(
-        &self,
-        block_hash: &BlockHash,
-    ) -> Result<(Header, Option<AuxData>), Box<dyn Error + Send + Sync>> {
-        Ok((self.get_block_header(block_hash)?, None))
-    }
-
-    /// Get aux block header
-    ///
-    /// # Errors
-    /// * issue with connection to the Bitcoin Node
-    #[cfg(not(feature = "zcash"))]
-    pub fn get_aux_block_header(
-        &self,
-        block_hash: &BlockHash,
-    ) -> Result<(Header, Option<AuxData>), Box<dyn Error + Send + Sync>> {
-        let hex: String = self
-            .inner
-            .call("getblockheader", &[into_json(block_hash)?, false.into()])?;
-        if hex.len() == 160 {
-            let decoded_hex = hex::decode(hex)?;
-            let block1: Header = Header::from_block_header_vec(&decoded_hex)?;
-            return Ok((block1, None));
-        }
-        let data_bytes = hex::decode(&hex)?;
-        let mut cursor = 0;
-        let (block1, readed_len): (BitcoinHeader, usize) =
-            encode::deserialize_partial(&data_bytes)?;
-        cursor += readed_len;
-        let (coinbase_tx, readed_len): (Transaction, usize) =
-            encode::deserialize_partial(&data_bytes[cursor..])?;
-        cursor += readed_len;
-        let (parent_block_hash, readed_len): (BlockHash, usize) =
-            encode::deserialize_partial(&data_bytes[cursor..])?;
-        cursor += readed_len;
-        let (merkle_branch, readed_len): (Vec<TxMerkleNode>, usize) =
-            encode::deserialize_partial(&data_bytes[cursor..])?;
-        cursor += readed_len;
-        let (merkle_index, readed_len): (u32, usize) =
-            encode::deserialize_partial(&data_bytes[cursor..])?;
-        cursor += readed_len;
-        let (chainmerkle_branch, readed_len): (Vec<TxMerkleNode>, usize) =
-            encode::deserialize_partial(&data_bytes[cursor..])?;
-        cursor += readed_len;
-        let (chain_index, readed_len): (u32, usize) =
-            encode::deserialize_partial(&data_bytes[cursor..])?;
-        cursor += readed_len;
-        let (parent_block, _readed_len): (BitcoinHeader, usize) =
-            encode::deserialize_partial(&data_bytes[cursor..])?;
-        let parent_block: Header = Header::from_block_header_vec(&serialize(&parent_block))?;
-
-        let aux_data = AuxData {
-            coinbase_tx: coinbase_tx.clone(),
-            parent_block_hash,
-            merkle_branch: merkle_branch.clone(),
-            merkle_index,
-            chainmerkle_branch: chainmerkle_branch.clone(),
-            chain_index,
-            parent_block,
-        };
-
-        let block1: Header = Header::from_block_header_vec(&serialize(&block1))?;
-        Ok((block1, Some(aux_data)))
-    }
-
     /// Get block header by bock height
     ///
     /// # Errors
@@ -235,7 +148,7 @@ impl Client {
         height: u64,
     ) -> Result<Header, Box<dyn std::error::Error + Send + Sync>> {
         let block_hash = self.get_block_hash(height)?;
-        Ok(self.get_aux_block_header(&block_hash)?.0)
+        self.get_block_header(&block_hash)
     }
 
     /// Get block by block hash
@@ -277,12 +190,4 @@ impl Client {
 
         merkle_tools::merkle_proof_calculator(transactions, transaction_position)
     }
-}
-
-#[cfg(not(feature = "zcash"))]
-fn into_json<T>(val: T) -> Result<serde_json::Value, bitcoincore_rpc::Error>
-where
-    T: serde::ser::Serialize,
-{
-    Ok(serde_json::to_value(val)?)
 }

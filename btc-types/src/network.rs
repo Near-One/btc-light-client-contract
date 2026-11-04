@@ -59,62 +59,6 @@ pub fn get_bitcoin_config(network: Network) -> NetworkConfig {
     }
 }
 
-pub fn get_litecoin_config(network: Network) -> NetworkConfig {
-    match network {
-        Network::Mainnet => NetworkConfig {
-            difficulty_adjustment_interval: 2016,
-            pow_target_timespan: 2016 * 150,
-            proof_of_work_limit_bits: 0x1e0fffff,
-            pow_target_spacing: 150, // 2.5 minutes
-            pow_allow_min_difficulty_blocks: false,
-            pow_limit: U256::new(
-                0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
-                0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
-            ),
-        },
-        Network::Testnet => NetworkConfig {
-            difficulty_adjustment_interval: 2016,
-            pow_target_timespan: 2016 * 150,
-            proof_of_work_limit_bits: 0x1e0fffff,
-            pow_target_spacing: 150, // 2.5 minutes
-            pow_allow_min_difficulty_blocks: true,
-            pow_limit: U256::new(
-                0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
-                0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
-            ),
-        },
-    }
-}
-
-pub fn get_dogecoin_config(network: Network) -> DogecoinConfig {
-    match network {
-        Network::Mainnet => DogecoinConfig {
-            difficulty_adjustment_interval: 1,
-            pow_target_timespan: 60,
-            proof_of_work_limit_bits: 0x1e0fffff,
-            pow_target_spacing: 60, // 1 minute
-            pow_allow_min_difficulty_blocks: false,
-            pow_limit: U256::new(
-                0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
-                0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
-            ),
-            aux_chain_id: 0x0062,
-        },
-        Network::Testnet => DogecoinConfig {
-            difficulty_adjustment_interval: 1,
-            pow_target_timespan: 60,
-            proof_of_work_limit_bits: 0x1e0fffff,
-            pow_target_spacing: 60, // 1 minute
-            pow_allow_min_difficulty_blocks: true,
-            pow_limit: U256::new(
-                0x0000_0fff_ffff_ffff_ffff_ffff_ffff_ffff,
-                0xffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff,
-            ),
-            aux_chain_id: 0x0062,
-        },
-    }
-}
-
 pub fn get_zcash_config(network: Network) -> ZcashConfig {
     match network {
         Network::Mainnet => ZcashConfig {
@@ -198,19 +142,6 @@ pub struct NetworkConfig {
     pub pow_target_spacing: u32,
     pub pow_allow_min_difficulty_blocks: bool,
     pub pow_limit: U256,
-}
-
-#[near(serializers = [borsh, json])]
-#[derive(Clone, Copy, Debug)]
-pub struct DogecoinConfig {
-    pub pow_target_timespan: i64,
-    pub difficulty_adjustment_interval: u64,
-    pub proof_of_work_limit_bits: u32,
-    pub pow_target_spacing: u32,
-    pub pow_allow_min_difficulty_blocks: bool,
-    pub pow_limit: U256,
-    // https://github.com/dogecoin/dogecoin/blob/master/src/chainparams.cpp#L276
-    pub aux_chain_id: i32,
 }
 
 #[near(serializers = [borsh, json])]

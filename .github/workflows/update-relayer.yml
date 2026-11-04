@@ -22,18 +22,12 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             variant: zcash
-          - target: x86_64-unknown-linux-gnu
-            runner: ubuntu-latest
-            variant: dogecoin
           - target: aarch64-apple-darwin
             runner: macos-latest
             variant: default
           - target: aarch64-apple-darwin
             runner: macos-latest
             variant: zcash
-          - target: aarch64-apple-darwin
-            runner: macos-latest
-            variant: dogecoin
 
     steps:
       - name: Checkout repository
@@ -54,7 +48,6 @@ jobs:
           case "${{ matrix.variant }}" in
             default) FLAGS="" ;;
             zcash)   FLAGS="--no-default-features --features zcash" ;;
-            dogecoin)FLAGS="--no-default-features --features dogecoin" ;;
           esac
 
           cargo build --release --target ${{ matrix.target }} $FLAGS

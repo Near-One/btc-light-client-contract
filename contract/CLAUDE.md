@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A Bitcoin/Litecoin/Dogecoin/Zcash SPV light client implemented as a NEAR Protocol smart contract. It verifies and stores block headers on-chain, enabling trustless verification of Bitcoin (and other UTXO chain) transactions without running a full node. Relayers can submit blocks and they are verified on-chain via proof-of-work validation, difficulty adjustment checks, and chain selection rules.
+A Bitcoin/Zcash SPV light client implemented as a NEAR Protocol smart contract. It verifies and stores block headers on-chain, enabling trustless verification of Bitcoin (and other UTXO chain) transactions without running a full node. Relayers can submit blocks and they are verified on-chain via proof-of-work validation, difficulty adjustment checks, and chain selection rules.
 
 ## Build & Test
 
@@ -11,8 +11,6 @@ Requires: Rust 1.86.0, `cargo-near`, `wasm32-unknown-unknown` target.
 ```bash
 # Build specific chain variant (reproducible via cargo-near)
 make build-bitcoin       # default, feature: bitcoin
-make build-litecoin      # feature: litecoin
-make build-dogecoin      # feature: dogecoin
 make build-zcash         # feature: zcash
 
 # Build all chain variants locally (non-reproducible)
@@ -89,7 +87,5 @@ Each chain lives in its own module and is selected at compile time via mutually 
 | Chain | Module | PoW Hash | Difficulty Algorithm | Special |
 |-------|--------|----------|---------------------|---------|
 | Bitcoin | `bitcoin.rs` | SHA-256d | Every 2016 blocks, 14-day target | — |
-| Litecoin | `litecoin.rs` | Scrypt | Every 2016 blocks, 3.5-day target | Right-shift before multiply |
-| Dogecoin | `dogecoin.rs` | Scrypt | Per-block Digishield (after 145k) | AuxPoW merged mining |
 | Zcash | `zcash.rs` | Equihash (200,9) | 17-block averaging window, MTP | Blossom hardfork handling |
 
