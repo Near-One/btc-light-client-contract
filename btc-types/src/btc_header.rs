@@ -4,7 +4,7 @@ use crate::hash::{double_sha256, H256};
 
 pub type Error = crate::utils::DecodeHeaderError;
 
-// Represents a Bitcoin/Litecoin/Dogecoin block header, which contains metadata about the block
+// Represents a Bitcoin block header, which contains metadata about the block
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Header {
@@ -36,20 +36,7 @@ impl Header {
     }
 
     pub fn block_hash_pow(&self) -> H256 {
-        let block_header = self.get_block_header_vec();
-        #[cfg(feature = "scrypt_hash")]
-        {
-            let params = scrypt::Params::new(10, 1, 1, 32).unwrap(); // N=1024 (2^10), r=1, p=1
-
-            let mut output = [0u8; 32];
-            scrypt::scrypt(&block_header, &block_header, &params, &mut output).unwrap();
-            H256::from(output)
-        }
-
-        #[cfg(not(feature = "scrypt_hash"))]
-        {
-            double_sha256(&block_header)
-        }
+        self.block_hash()
     }
 
     fn get_block_header_vec(&self) -> Vec<u8> {

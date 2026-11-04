@@ -1,9 +1,5 @@
 use std::str::FromStr;
 
-#[cfg(feature = "dogecoin")]
-use bitcoin::consensus::serialize;
-#[cfg(feature = "dogecoin")]
-use bitcoincore_rpc::bitcoin::hashes::Hash;
 use borsh::to_vec;
 use btc_types::contract_args::InitArgs;
 use btc_types::header::ExtendedHeader;
@@ -24,7 +20,6 @@ use near_primitives::views::TxExecutionStatus;
 use near_token::NearToken;
 use serde_json::{from_slice, json};
 
-use crate::bitcoin_client::AuxData;
 use tokio::time;
 
 use crate::config::NearConfig;
@@ -67,28 +62,6 @@ pub struct SignedSubmitTransaction {
     pub first_block_height: u64,
     pub last_block_height: u64,
     pub signed_tx: SignedTransaction,
-}
-
-#[cfg(feature = "dogecoin")]
-fn get_aux_data(aux_data: Option<AuxData>) -> Option<btc_types::aux::AuxData> {
-    match aux_data {
-        None => None,
-        Some(aux_data) => Some(btc_types::aux::AuxData {
-            coinbase_tx: serialize(&aux_data.coinbase_tx),
-            merkle_proof: aux_data
-                .merkle_branch
-                .iter()
-                .map(|h| H256::from(h.to_raw_hash().to_byte_array()))
-                .collect(),
-            chain_merkle_proof: aux_data
-                .chainmerkle_branch
-                .iter()
-                .map(|h| H256::from(h.to_raw_hash().to_byte_array()))
-                .collect(),
-            chain_id: aux_data.chain_index.try_into().unwrap(),
-            parent_block: aux_data.parent_block,
-        }),
-    }
 }
 
 impl NearClient {
@@ -190,7 +163,7 @@ impl NearClient {
     /// for each transaction based on the current access key state.
     ///
     /// # Arguments
-    /// * `headers` - A vector of tuples containing block height, block header, and optional auxiliary data.
+    /// * `headers` - A vector of tuples containing block height and block header.
     /// * `batch_size` - The size of each batch of headers to be processed.
     /// * `bootstrap` - Submit via `bootstrap_blocks` while the contract is bootstrapping.
     ///
@@ -205,7 +178,7 @@ impl NearClient {
     /// * No last block height in the current chunk.
     pub async fn sign_submit_blocks(
         &self,
-        headers: Vec<(u64, btc_types::header::Header, Option<AuxData>)>,
+        headers: Vec<(u64, btc_types::header::Header)>,
         batch_size: usize,
         bootstrap: bool,
     ) -> Result<Vec<SignedSubmitTransaction>, Box<dyn std::error::Error + Send + Sync>> {
@@ -243,25 +216,17 @@ impl NearClient {
                 );
             }
 
-            let Some(first_block_height) = header_chunk.first().map(|(height, _, _)| *height)
-            else {
+            let Some(first_block_height) = header_chunk.first().map(|(height, _)| *height) else {
                 return Err("No blocks to submit in the current chunk".into());
             };
 
-            let Some(last_block_height) = header_chunk.last().map(|(height, _, _)| *height) else {
+            let Some(last_block_height) = header_chunk.last().map(|(height, _)| *height) else {
                 return Err("No last block height in the current chunk".into());
             };
 
-            #[cfg(feature = "dogecoin")]
             let args: Vec<_> = header_chunk
                 .iter()
-                .map(|(_, header, aux_data)| (header.clone(), get_aux_data(aux_data.clone())))
-                .collect();
-
-            #[cfg(not(feature = "dogecoin"))]
-            let args: Vec<_> = header_chunk
-                .iter()
-                .map(|(_, header, _)| header.clone())
+                .map(|(_, header)| header.clone())
                 .collect();
 
             signed_txs.push(SignedSubmitTransaction {

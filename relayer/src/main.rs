@@ -1,7 +1,6 @@
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use bitcoin_client::AuxData;
 use btc_types::contract_args::InitArgs;
 use log::{info, trace, warn};
 use tokio::sync::Mutex;
@@ -42,17 +41,17 @@ macro_rules! continue_on_fail {
 fn get_block_header(
     bitcoin_client: &Arc<BitcoinClient>,
     current_height: u64,
-) -> Result<(u64, btc_types::header::Header, Option<AuxData>), u64> {
+) -> Result<(u64, btc_types::header::Header), u64> {
     let Ok(block_hash) = bitcoin_client.get_block_hash(current_height) else {
         warn!("Failed to get block hash at height {current_height}");
         return Err(current_height);
     };
-    let Ok((block_header, aux_data)) = bitcoin_client.get_aux_block_header(&block_hash) else {
+    let Ok(block_header) = bitcoin_client.get_block_header(&block_hash) else {
         warn!("Failed to get block header at height {current_height}");
         return Err(current_height);
     };
 
-    Ok((current_height, block_header, aux_data))
+    Ok((current_height, block_header))
 }
 
 impl Synchronizer {
@@ -74,7 +73,7 @@ impl Synchronizer {
         &self,
         start_height: u64,
         end_height: u64,
-    ) -> Vec<(u64, btc_types::header::Header, Option<AuxData>)> {
+    ) -> Vec<(u64, btc_types::header::Header)> {
         let mut handles = Vec::new();
         for current_height in start_height..=end_height {
             handles.push(tokio::spawn({
@@ -88,8 +87,8 @@ impl Synchronizer {
 
         for handler in handles {
             match handler.await {
-                Ok(Ok((height, block_header, aux_data))) => {
-                    blocks.push((height, block_header, aux_data));
+                Ok(Ok((height, block_header))) => {
+                    blocks.push((height, block_header));
                 }
                 Ok(Err(current_height)) => {
                     warn!("Failed to process block at height {current_height}");
@@ -109,9 +108,9 @@ impl Synchronizer {
             }
         }
 
-        blocks.sort_by_key(|(height, _, _)| *height);
+        blocks.sort_by_key(|(height, _)| *height);
         if let Some(min_failed_height) = min_failed_height {
-            blocks.retain(|(height, _, _)| *height < min_failed_height);
+            blocks.retain(|(height, _)| *height < min_failed_height);
         }
 
         blocks
@@ -152,7 +151,7 @@ impl Synchronizer {
 
     async fn prepare_and_submit_batches(
         self: Arc<Self>,
-        blocks_to_submit: Vec<(u64, btc_types::header::Header, Option<AuxData>)>,
+        blocks_to_submit: Vec<(u64, btc_types::header::Header)>,
         first_block_height_to_submit: Arc<AtomicU64>,
         batch_size: usize,
         bootstrap: bool,
@@ -374,9 +373,8 @@ async fn init_contract(
         .get_block_hash(genesis_block_height)
         .expect("Failed to get block hash");
     let genesis_block = bitcoin_client
-        .get_aux_block_header(&genesis_block_hash)
-        .expect("Failed to get initial block header")
-        .0;
+        .get_block_header(&genesis_block_hash)
+        .expect("Failed to get initial block header");
 
     let args = InitArgs {
         genesis_block_hash: genesis_block.block_hash(),

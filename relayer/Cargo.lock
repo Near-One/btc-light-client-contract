@@ -407,7 +407,6 @@ name = "btc-relayer"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "bitcoin",
  "bitcoincore-rpc",
  "borsh",
  "btc-types",
@@ -440,7 +439,6 @@ dependencies = [
 name = "btc-types"
 version = "0.2.0"
 dependencies = [
- "bitcoin",
  "borsh",
  "hex",
  "near-sdk",
